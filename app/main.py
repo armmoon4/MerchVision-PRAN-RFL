@@ -1,0 +1,518 @@
+"""
+app/main.py — FastAPI application entry point.
+
+Endpoints:
+    GET    /                          → interactive web UI dashboard
+    GET    /ui                        → interactive web UI dashboard
+    GET    /health                    → liveness check
+    POST   /uploads                   → upload rack photo, start AI analysis
+    GET    /uploads                   → list all analysis results with filtering & pagination
+    GET    /uploads/summary           → aggregate analysis metrics & top products
+    GET    /uploads/{upload_id}       → get analysis result by ID
+    GET    /uploads/{upload_id}/result→ poll for analysis result
+    DELETE /uploads/{upload_id}       → delete upload record & file
+
+Images are served as static files at /media/...
+"""
+from __future__ import annotations
+
+from collections import defaultdict
+import logging
+import os
+import uuid
+from pathlib import Path
+
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
+from app.config import get_settings
+from app.database import Base, engine, get_db
+from app.models import ProcessingStatus, RackUpload
+from app.schemas import (
+    AnalysisSummaryResponse,
+    DeleteResponse,
+    HealthResponse,
+    TopProductItem,
+    UploadListResponse,
+    UploadResponse,
+    UploadResultResponse,
+)
+from app.services.ai_service import AIServiceError, analyze_rack_image
+from app.services.storage_service import StorageError, save_image
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# ── App bootstrap ─────────────────────────────────────────────────────────────
+
+settings = get_settings()
+
+# Create all DB tables on startup (idempotent)
+Base.metadata.create_all(bind=engine)
+
+# Ensure media directory exists
+_MEDIA_ROOT = Path("media")
+_MEDIA_ROOT.mkdir(exist_ok=True)
+Path(settings.storage_media_dir).mkdir(parents=True, exist_ok=True)
+
+app = FastAPI(
+    title="PRAN-RFL Rack Recognition System",
+    description=(
+        "AI-powered retail merchandising backend. "
+        "Upload a rack photo to get a structured list of detected PRAN-RFL products."
+    ),
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── Static files (served uploaded images) ────────────────────────────────────
+
+app.mount("/media", StaticFiles(directory="media"), name="media")
+
+
+# ── Background task ───────────────────────────────────────────────────────────
+
+
+def process_upload(upload_id: str, image_url: str) -> None:
+    """
+    Background task: call Gemini via OpenRouter and write results to the DB.
+
+    This runs AFTER the HTTP 202 response has already been sent to the client.
+    Uses its own DB session (not the request-scoped one, which is closed).
+    """
+    from app.database import SessionLocal  # local import to avoid circular refs at module level
+
+    db = SessionLocal()
+    try:
+        upload = db.query(RackUpload).filter(RackUpload.id == upload_id).first()
+        if not upload:
+            logger.error("process_upload: upload %s not found in DB", upload_id)
+            return
+
+        # ── Set PROCESSING ────────────────────────────────────────────────────
+        upload.status = ProcessingStatus.PROCESSING
+        db.commit()
+        logger.info("Upload %s: status → PROCESSING", upload_id)
+
+        # ── Call Gemini ───────────────────────────────────────────────────────
+        try:
+            products = analyze_rack_image(image_url)
+            upload.detected_products = products
+            upload.status = ProcessingStatus.COMPLETED
+            logger.info(
+                "Upload %s: status → COMPLETED, %d products found",
+                upload_id,
+                len(products),
+            )
+        except AIServiceError as exc:
+            upload.status = ProcessingStatus.FAILED
+            upload.error_message = str(exc)
+            logger.error("Upload %s: status → FAILED — %s", upload_id, exc)
+
+        db.commit()
+
+    except Exception as exc:
+        # Catch-all so an unexpected crash doesn't silently leave PROCESSING forever
+        logger.exception("process_upload: unexpected error for upload %s: %s", upload_id, exc)
+        try:
+            upload = db.query(RackUpload).filter(RackUpload.id == upload_id).first()
+            if upload:
+                upload.status = ProcessingStatus.FAILED
+                upload.error_message = f"Internal processing error: {exc}"
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+
+@app.get(
+    "/",
+    response_class=HTMLResponse,
+    summary="Web UI tester & dashboard",
+    include_in_schema=False,
+)
+@app.get(
+    "/ui",
+    response_class=HTMLResponse,
+    summary="Web UI tester & dashboard",
+    include_in_schema=False,
+)
+def get_ui():
+    """Serves the interactive web UI if testui.html is present."""
+    ui_path = Path("testui.html")
+    if ui_path.exists():
+        return FileResponse(ui_path)
+    return HTMLResponse("<h1>PRAN-RFL Rack Recognition System</h1><p><a href='/docs'>Swagger API Docs</a></p>")
+
+
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    summary="Liveness check",
+    tags=["System"],
+)
+def health_check() -> HealthResponse:
+    """Returns `{"status": "ok"}` when the server is running."""
+    return HealthResponse()
+
+
+@app.post(
+    "/uploads",
+    response_model=UploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Upload a rack photo and start AI analysis",
+    tags=["Uploads"],
+)
+async def create_upload(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(..., description="Rack photo (JPEG, PNG, or WebP)"),
+    shop_id: str | None = Form(None, description="Shop identifier"),
+    merchandiser_id: str | None = Form(None, description="Merchandiser identifier"),
+    db: Session = Depends(get_db),
+) -> UploadResponse:
+    """
+    Accept a rack photo, save it locally, create a DB row with status=PENDING,
+    return 202 immediately, then run AI analysis in the background.
+    """
+    # ── Validate content type ─────────────────────────────────────────────────
+    content_type = (file.content_type or "").lower()
+    if content_type not in settings.allowed_image_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Unsupported file type: '{content_type}'. "
+                f"Allowed types: {', '.join(settings.allowed_image_types)}"
+            ),
+        )
+
+    # ── Read & validate file size ─────────────────────────────────────────────
+    image_bytes = await file.read()
+    if len(image_bytes) > settings.max_upload_size_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"File too large ({len(image_bytes) / 1024 / 1024:.1f} MB). "
+                f"Maximum allowed: {settings.max_upload_size_mb} MB."
+            ),
+        )
+
+    # ── Save to local storage ─────────────────────────────────────────────────
+    try:
+        image_url, image_key = save_image(
+            image_bytes=image_bytes,
+            content_type=content_type,
+            shop_id=shop_id,
+        )
+    except StorageError as exc:
+        logger.error("Storage error: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save the uploaded image. Please try again.",
+        )
+
+    # ── Create DB row ─────────────────────────────────────────────────────────
+    upload_id = str(uuid.uuid4())
+    db_row = RackUpload(
+        id=upload_id,
+        shop_id=shop_id,
+        merchandiser_id=merchandiser_id,
+        image_url=image_url,
+        image_key=image_key,
+        status=ProcessingStatus.PENDING,
+    )
+    db.add(db_row)
+    db.commit()
+    logger.info(
+        "Upload %s created (shop=%s, merchandiser=%s)", upload_id, shop_id, merchandiser_id
+    )
+
+    # ── Schedule background analysis ──────────────────────────────────────────
+    background_tasks.add_task(process_upload, upload_id, image_url)
+
+    return UploadResponse(
+        upload_id=upload_id,
+        status=ProcessingStatus.PENDING,
+        message="Image received. Processing started.",
+    )
+
+
+@app.get(
+    "/uploads",
+    response_model=UploadListResponse,
+    summary="List all uploads and analysis results",
+    tags=["Uploads"],
+)
+@app.get(
+    "/analysis",
+    response_model=UploadListResponse,
+    include_in_schema=False,
+)
+@app.get(
+    "/results",
+    response_model=UploadListResponse,
+    include_in_schema=False,
+)
+def list_uploads(
+    status: ProcessingStatus | None = Query(None, description="Filter by processing status"),
+    shop_id: str | None = Query(None, description="Filter by shop ID (case-insensitive substring)"),
+    merchandiser_id: str | None = Query(None, description="Filter by merchandiser ID (case-insensitive substring)"),
+    search: str | None = Query(None, description="Search across shop ID, merchandiser ID, or error message"),
+    limit: int = Query(50, ge=1, le=100, description="Max number of items to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    db: Session = Depends(get_db),
+) -> UploadListResponse:
+    """
+    Fetch paginated list of all rack photo uploads and their analysis results.
+    Supports filtering by status, shop ID, merchandiser ID, and generic search.
+    """
+    query = db.query(RackUpload)
+
+    if status:
+        query = query.filter(RackUpload.status == status)
+
+    if shop_id and shop_id.strip():
+        query = query.filter(RackUpload.shop_id.ilike(f"%{shop_id.strip()}%"))
+
+    if merchandiser_id and merchandiser_id.strip():
+        query = query.filter(RackUpload.merchandiser_id.ilike(f"%{merchandiser_id.strip()}%"))
+
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                RackUpload.shop_id.ilike(term),
+                RackUpload.merchandiser_id.ilike(term),
+                RackUpload.id.ilike(term),
+                RackUpload.error_message.ilike(term),
+            )
+        )
+
+    total = query.count()
+    rows = query.order_by(RackUpload.created_at.desc()).offset(offset).limit(limit).all()
+
+    items = [
+        UploadResultResponse(
+            upload_id=row.id,
+            status=row.status,
+            shop_id=row.shop_id,
+            merchandiser_id=row.merchandiser_id,
+            image_url=row.image_url,
+            detected_products=row.detected_products,
+            error_message=row.error_message,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+        for row in rows
+    ]
+
+    return UploadListResponse(
+        total=total,
+        limit=limit,
+        offset=offset,
+        items=items,
+    )
+
+
+@app.get(
+    "/uploads/summary",
+    response_model=AnalysisSummaryResponse,
+    summary="Get aggregated summary metrics of all rack analyses",
+    tags=["Analytics"],
+)
+@app.get(
+    "/analysis/summary",
+    response_model=AnalysisSummaryResponse,
+    include_in_schema=False,
+)
+def get_analysis_summary(db: Session = Depends(get_db)) -> AnalysisSummaryResponse:
+    """
+    Returns high-level statistics across all scanned racks, including success rate,
+    total products counted, unique products detected, and top detected items.
+    """
+    total_scans = db.query(RackUpload).count()
+    completed_scans = db.query(RackUpload).filter(RackUpload.status == ProcessingStatus.COMPLETED).count()
+    processing_scans = db.query(RackUpload).filter(RackUpload.status == ProcessingStatus.PROCESSING).count()
+    pending_scans = db.query(RackUpload).filter(RackUpload.status == ProcessingStatus.PENDING).count()
+    failed_scans = db.query(RackUpload).filter(RackUpload.status == ProcessingStatus.FAILED).count()
+
+    # Aggregate detected products
+    completed_rows = (
+        db.query(RackUpload.detected_products)
+        .filter(RackUpload.status == ProcessingStatus.COMPLETED)
+        .all()
+    )
+
+    product_totals: dict[str, int] = defaultdict(int)
+    product_appearances: dict[str, int] = defaultdict(int)
+    total_products_detected = 0
+
+    for (products_json,) in completed_rows:
+        if not isinstance(products_json, list):
+            continue
+        seen_in_scan: set[str] = set()
+        for item in products_json:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("product_name", "Unknown Product")).strip()
+            qty_raw = item.get("quantity_visible")
+            qty = int(qty_raw) if isinstance(qty_raw, (int, float)) and qty_raw > 0 else 1
+
+            product_totals[name] += qty
+            total_products_detected += qty
+
+            if name not in seen_in_scan:
+                product_appearances[name] += 1
+                seen_in_scan.add(name)
+
+    top_products = [
+        TopProductItem(
+            product_name=name,
+            total_quantity=qty,
+            scan_appearances=product_appearances[name],
+        )
+        for name, qty in sorted(product_totals.items(), key=lambda x: x[1], reverse=True)[:10]
+    ]
+
+    recent_rows = db.query(RackUpload).order_by(RackUpload.created_at.desc()).limit(5).all()
+    recent_uploads = [
+        UploadResultResponse(
+            upload_id=row.id,
+            status=row.status,
+            shop_id=row.shop_id,
+            merchandiser_id=row.merchandiser_id,
+            image_url=row.image_url,
+            detected_products=row.detected_products,
+            error_message=row.error_message,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+        for row in recent_rows
+    ]
+
+    return AnalysisSummaryResponse(
+        total_scans=total_scans,
+        completed_scans=completed_scans,
+        processing_scans=processing_scans,
+        pending_scans=pending_scans,
+        failed_scans=failed_scans,
+        total_products_detected=total_products_detected,
+        unique_products_count=len(product_totals),
+        top_products=top_products,
+        recent_uploads=recent_uploads,
+    )
+
+
+@app.get(
+    "/uploads/{upload_id}",
+    response_model=UploadResultResponse,
+    summary="Get analysis result for an upload by ID",
+    tags=["Uploads"],
+)
+@app.get(
+    "/uploads/{upload_id}/result",
+    response_model=UploadResultResponse,
+    summary="Get analysis result for an upload (polling endpoint)",
+    tags=["Uploads"],
+)
+def get_upload_result(
+    upload_id: str,
+    db: Session = Depends(get_db),
+) -> UploadResultResponse:
+    """
+    Fetch the current status and AI result for a given upload ID.
+    Poll this endpoint until `status` is `COMPLETED` or `FAILED`.
+    """
+    row = db.query(RackUpload).filter(RackUpload.id == upload_id).first()
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Upload '{upload_id}' not found.",
+        )
+
+    return UploadResultResponse(
+        upload_id=row.id,
+        status=row.status,
+        shop_id=row.shop_id,
+        merchandiser_id=row.merchandiser_id,
+        image_url=row.image_url,
+        detected_products=row.detected_products,
+        error_message=row.error_message,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+@app.delete(
+    "/uploads/{upload_id}",
+    response_model=DeleteResponse,
+    summary="Delete an upload record and its image",
+    tags=["Uploads"],
+)
+def delete_upload(
+    upload_id: str,
+    db: Session = Depends(get_db),
+) -> DeleteResponse:
+    """
+    Permanently delete a rack upload record and remove the stored image file from disk.
+    """
+    row = db.query(RackUpload).filter(RackUpload.id == upload_id).first()
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Upload '{upload_id}' not found.",
+        )
+
+    # Delete local image file if it exists
+    if row.image_key:
+        try:
+            media_root = Path(settings.storage_media_dir).parent
+            file_path = media_root / row.image_key
+            if file_path.exists() and file_path.is_file():
+                file_path.unlink()
+                logger.info("Deleted image file %s for upload %s", file_path, upload_id)
+        except OSError as exc:
+            logger.warning("Could not delete file for upload %s: %s", upload_id, exc)
+
+    db.delete(row)
+    db.commit()
+    logger.info("Upload %s deleted from database", upload_id)
+
+    return DeleteResponse(
+        upload_id=upload_id,
+        message=f"Upload '{upload_id}' and associated media deleted successfully.",
+    )

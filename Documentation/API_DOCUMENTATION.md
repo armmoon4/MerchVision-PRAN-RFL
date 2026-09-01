@@ -114,6 +114,47 @@ curl -X POST http://localhost:8000/uploads \
 
 ---
 
+#### `POST /uploads/url`
+Accepts a publicly accessible rack image URL, downloads and validates the image, and enqueues a background AI recognition job.
+
+- **URL:** `/uploads/url`
+- **Method:** `POST`
+- **Content-Type:** `application/json`
+
+**JSON Request Body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `image_url` | String | **Yes** | Publicly accessible HTTP/HTTPS image URL (`JPEG`, `PNG`, `WebP`). Max size: 10 MB. |
+| `shop_id` | String | No | Unique shop identifier (e.g. `SHOP-Gulshan-102`). |
+| `merchandiser_id` | String | No | Merchandiser identifier or name (e.g. `MER-Rahim-45`). |
+
+**Example Request (cURL):**
+```bash
+curl -X POST http://localhost:8000/uploads/url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_url": "https://example.com/rack_shelf.jpg",
+    "shop_id": "SHOP-102",
+    "merchandiser_id": "MER-45"
+  }'
+```
+
+**Response `202 Accepted`:**
+```json
+{
+  "upload_id": "f0051207-7e9f-4f5d-a8a1-8b1fed212103",
+  "status": "PENDING",
+  "message": "Image URL received. Processing started."
+}
+```
+
+**Error Responses:**
+- `400 Bad Request`: Invalid URL scheme (only HTTP/HTTPS supported), image unreachable, invalid image type, or file size exceeds limit (10 MB).
+- `500 Internal Server Error`: Failed to save downloaded image to disk storage.
+
+---
+
 #### `GET /uploads/{upload_id}` or `GET /uploads/{upload_id}/result`
 Retrieves the status and detected products for a specific upload.
 

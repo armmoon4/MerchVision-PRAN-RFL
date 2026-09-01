@@ -6,6 +6,7 @@ Endpoints:
     GET    /ui                        → interactive web UI dashboard
     GET    /health                    → liveness check
     POST   /uploads                   → upload rack photo, start AI analysis
+    POST   /uploads/url               → provide rack photo URL, start AI analysis
     GET    /uploads                   → list all analysis results with filtering & pagination
     GET    /uploads/summary           → aggregate analysis metrics & top products
     GET    /uploads/{upload_id}       → get analysis result by ID
@@ -51,9 +52,15 @@ from app.schemas import (
     UploadListResponse,
     UploadResponse,
     UploadResultResponse,
+    UploadUrlRequest,
 )
 from app.services.ai_service import AIServiceError, analyze_rack_image
-from app.services.storage_service import StorageError, save_image
+from app.services.storage_service import (
+    InvalidImageURLError,
+    StorageError,
+    download_and_save_image,
+    save_image,
+)
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -268,6 +275,77 @@ async def create_upload(
         upload_id=upload_id,
         status=ProcessingStatus.PENDING,
         message="Image received. Processing started.",
+    )
+
+
+@app.post(
+    "/uploads/url",
+    response_model=UploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Submit a rack photo URL and start AI analysis",
+    tags=["Uploads"],
+)
+@app.post(
+    "/analyze/url",
+    response_model=UploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
+async def create_upload_from_url(
+    payload: UploadUrlRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> UploadResponse:
+    """
+    Accept a publicly accessible rack photo image URL, download and validate the image,
+    save it locally, create a DB record with status=PENDING, return 202 immediately,
+    and trigger AI analysis in the background.
+    """
+    # ── Download and save image from URL ──────────────────────────────────────
+    try:
+        image_url, image_key = download_and_save_image(
+            url=payload.image_url,
+            shop_id=payload.shop_id,
+        )
+    except InvalidImageURLError as exc:
+        logger.warning("Invalid image URL '%s': %s", payload.image_url, exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    except StorageError as exc:
+        logger.error("Storage error processing URL '%s': %s", payload.image_url, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save the image from the provided URL.",
+        )
+
+    # ── Create DB row ─────────────────────────────────────────────────────────
+    upload_id = str(uuid.uuid4())
+    db_row = RackUpload(
+        id=upload_id,
+        shop_id=payload.shop_id,
+        merchandiser_id=payload.merchandiser_id,
+        image_url=image_url,
+        image_key=image_key,
+        status=ProcessingStatus.PENDING,
+    )
+    db.add(db_row)
+    db.commit()
+    logger.info(
+        "Upload %s created from URL (shop=%s, merchandiser=%s)",
+        upload_id,
+        payload.shop_id,
+        payload.merchandiser_id,
+    )
+
+    # ── Schedule background analysis ──────────────────────────────────────────
+    background_tasks.add_task(process_upload, upload_id, image_url)
+
+    return UploadResponse(
+        upload_id=upload_id,
+        status=ProcessingStatus.PENDING,
+        message="Image URL received. Processing started.",
     )
 
 

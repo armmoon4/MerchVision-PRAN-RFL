@@ -257,6 +257,47 @@ curl -X POST http://localhost:8000/uploads \
 
 ---
 
+### `POST /uploads/url`
+
+Provide a publicly accessible rack photo URL to start AI analysis. Returns **202** immediately.
+
+**Request** — `application/json`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `image_url` | string | ✅ | HTTP or HTTPS URL to JPEG, PNG, or WebP image |
+| `shop_id` | string | No | Shop identifier |
+| `merchandiser_id` | string | No | Merchandiser identifier |
+
+```bash
+curl -X POST http://localhost:8000/uploads/url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_url": "https://example.com/rack_photo.jpg",
+    "shop_id": "SHOP-102",
+    "merchandiser_id": "MER-45"
+  }'
+```
+
+**Response 202**
+
+```json
+{
+  "upload_id": "b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d",
+  "status": "PENDING",
+  "message": "Image URL received. Processing started."
+}
+```
+
+**Errors**
+
+| Status | Cause |
+|---|---|
+| `400` | Invalid URL, unreachable host, wrong file type, or file exceeds size limit |
+| `500` | Could not save downloaded image to disk |
+
+---
+
 ### `GET /uploads`
 
 List all rack upload analysis results with filtering and pagination.

@@ -21,6 +21,17 @@ class DetectedProduct(BaseModel):
     quantity_visible: Optional[int] = None
 
 
+# ── Request models ────────────────────────────────────────────────────────────
+
+
+class UploadUrlRequest(BaseModel):
+    """Request payload for initiating rack analysis from an image URL."""
+
+    image_url: str
+    shop_id: Optional[str] = None
+    merchandiser_id: Optional[str] = None
+
+
 # ── Response models ───────────────────────────────────────────────────────────
 
 

@@ -1,4 +1,4 @@
-# PRAN-RFL Rack Recognition System
+# MerchVision-PRAN-RFL
 
 > AI-powered retail merchandising backend — field merchandisers upload a photo of a product rack, Gemini 3.7 Flash identifies every PRAN-RFL product visible, and returns a structured list with quantities.
 >

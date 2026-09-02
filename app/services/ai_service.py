@@ -81,16 +81,19 @@ class AIServiceError(Exception):
 # ── Main function ─────────────────────────────────────────────────────────────
 
 
-def analyze_rack_image(image_url: str) -> list[dict[str, Any]]:
+def analyze_rack_image(image_url: str) -> dict[str, Any]:
     """
-    Send *image_url* to Gemini via OpenRouter and return the parsed product list.
+    Send *image_url* to Gemini via OpenRouter and return the parsed product list
+    along with token usage metrics and estimated cost.
 
     Args:
-        image_url: Publicly accessible URL of the rack photo.
+        image_url: Publicly accessible URL or local path of the rack photo.
 
     Returns:
-        List of dicts, each with "product_name" and "quantity_visible".
-        May be an empty list if no PRAN-RFL products are detected.
+        Dict with keys:
+            - "products": list of {"product_name", "quantity_visible"}
+            - "token_usage": {"input_tokens", "output_tokens", "total_tokens", "estimated_cost_usd"}
+            - "raw_text": raw completion text from model
 
     Raises:
         AIServiceError: on network timeout, API error, invalid JSON, or
@@ -143,6 +146,23 @@ def analyze_rack_image(image_url: str) -> list[dict[str, Any]]:
     except Exception as exc:
         raise AIServiceError(f"Unexpected error calling OpenRouter: {exc}") from exc
 
+    # ── Extract token usage & calculate cost ──────────────────────────────────
+    usage_data = getattr(response, "usage", None)
+    prompt_tokens = int(getattr(usage_data, "prompt_tokens", 0) or 0) if usage_data else 0
+    completion_tokens = int(getattr(usage_data, "completion_tokens", 0) or 0) if usage_data else 0
+    total_tokens = int(getattr(usage_data, "total_tokens", prompt_tokens + completion_tokens) or 0) if usage_data else (prompt_tokens + completion_tokens)
+
+    prompt_cost = (prompt_tokens / 1_000_000.0) * float(settings.token_cost_input_per_million)
+    completion_cost = (completion_tokens / 1_000_000.0) * float(settings.token_cost_output_per_million)
+    estimated_cost_usd = round(prompt_cost + completion_cost, 6)
+
+    token_usage = {
+        "input_tokens": prompt_tokens,
+        "output_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "estimated_cost_usd": estimated_cost_usd,
+    }
+
     # ── Parse the model's text output ─────────────────────────────────────────
     raw_text: str = response.choices[0].message.content or ""
     raw_text_stripped = raw_text.strip()
@@ -179,4 +199,8 @@ def analyze_rack_image(image_url: str) -> list[dict[str, Any]]:
             }
         )
 
-    return normalized
+    return {
+        "products": normalized,
+        "token_usage": token_usage,
+        "raw_text": raw_text,
+    }

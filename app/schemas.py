@@ -21,6 +21,15 @@ class DetectedProduct(BaseModel):
     quantity_visible: Optional[int] = None
 
 
+class TokenUsage(BaseModel):
+    """Token metrics and estimated USD cost for an image AI analysis call."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+
+
 # ── Request models ────────────────────────────────────────────────────────────
 
 
@@ -40,7 +49,7 @@ class HealthResponse(BaseModel):
 
 
 class UploadResponse(BaseModel):
-    """Returned immediately (202) after a successful upload."""
+    """Returned immediately (202) after a successful async upload."""
 
     upload_id: str
     status: ProcessingStatus
@@ -58,9 +67,34 @@ class UploadResultResponse(BaseModel):
     merchandiser_id: Optional[str] = None
     image_url: str
     detected_products: Optional[List[DetectedProduct]] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    estimated_cost_usd: Optional[float] = None
+    token_usage: Optional[TokenUsage] = None
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+
+class DirectAnalyzeResponse(BaseModel):
+    """Immediate synchronous result from the unified single-call /analyze API."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    upload_id: str
+    status: ProcessingStatus
+    shop_id: Optional[str] = None
+    merchandiser_id: Optional[str] = None
+    image_url: str
+    detected_products: List[DetectedProduct]
+    token_usage: TokenUsage
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    estimated_cost_usd: float
+    error_message: Optional[str] = None
+    created_at: datetime
 
 
 class UploadListResponse(BaseModel):
@@ -81,7 +115,7 @@ class TopProductItem(BaseModel):
 
 
 class AnalysisSummaryResponse(BaseModel):
-    """Overall analytics and summary of rack recognition results."""
+    """Overall analytics, aggregate token usage, and summary of rack recognition results."""
 
     total_scans: int
     completed_scans: int
@@ -90,6 +124,13 @@ class AnalysisSummaryResponse(BaseModel):
     failed_scans: int
     total_products_detected: int
     unique_products_count: int
+    # Token analytics
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_tokens: int = 0
+    total_estimated_cost_usd: float = 0.0
+    avg_tokens_per_scan: float = 0.0
+    avg_cost_per_scan_usd: float = 0.0
     top_products: List[TopProductItem]
     recent_uploads: List[UploadResultResponse]
 
@@ -99,4 +140,3 @@ class DeleteResponse(BaseModel):
 
     upload_id: str
     message: str
-

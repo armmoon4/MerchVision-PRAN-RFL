@@ -3,18 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PRAN-RFL MerchVision Dashboard</title>
+  <title>PRAN-RFL MerchVision — AI Vision & Token Cost Analytics</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-dark: #0f172a;
-      --card-bg: #1e293b;
+      --bg-dark: #090d16;
+      --card-bg: rgba(30, 41, 59, 0.7);
       --border-color: #334155;
       --primary: #38bdf8;
       --primary-hover: #0ea5e9;
       --accent: #f97316;
+      --token-in: #818cf8;
+      --token-out: #34d399;
+      --token-cost: #fbbf24;
       --text-main: #f8fafc;
       --text-muted: #94a3b8;
       --success: #22c55e;
@@ -24,21 +27,21 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Inter', sans-serif;
-      background: radial-gradient(circle at top right, #1e1b4b, #0f172a 60%);
+      background: radial-gradient(circle at top right, #1e1b4b, #090d16 65%);
       color: var(--text-main);
       min-height: 100vh;
       padding: 24px;
     }
-    .container { max-width: 1200px; margin: 0 auto; }
+    .container { max-width: 1240px; margin: 0 auto; }
     header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding-bottom: 24px;
+      padding-bottom: 20px;
       border-bottom: 1px solid var(--border-color);
       margin-bottom: 24px;
     }
-    h1 { font-size: 24px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 10px; }
+    h1 { font-size: 24px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 10px; }
     .badge {
       background: linear-gradient(135deg, #f97316, #ea580c);
       font-size: 11px;
@@ -52,22 +55,54 @@
       text-decoration: none;
       font-size: 14px;
       margin-left: 16px;
+      font-weight: 600;
     }
+    .links a:hover { text-decoration: underline; }
+
+    /* Summary Stats Grid */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+    }
+    .stat-val {
+      font-size: 22px;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      margin-top: 4px;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-    @media (max-width: 840px) { .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
     .card {
       background: var(--card-bg);
+      backdrop-filter: blur(12px);
       border: 1px solid var(--border-color);
       border-radius: 12px;
       padding: 20px;
-      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);
+      box-shadow: 0 10px 30px -5px rgba(0,0,0,0.5);
     }
     .tabs { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
     .tab-btn {
       background: transparent;
       border: none;
       color: var(--text-muted);
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 600;
       cursor: pointer;
       padding: 6px 12px;
@@ -83,17 +118,28 @@
     input[type="text"], input[type="url"], input[type="file"] {
       width: 100%;
       padding: 10px 12px;
-      background: #0f172a;
+      background: #090d16;
       border: 1px solid var(--border-color);
       border-radius: 6px;
       color: #fff;
       font-size: 14px;
     }
     input:focus { outline: none; border-color: var(--primary); }
+    .api-mode-switch {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding: 10px;
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .api-mode-switch input { cursor: pointer; }
     button.submit-btn {
       width: 100%;
       background: var(--primary);
-      color: #0f172a;
+      color: #090d16;
       font-weight: 700;
       padding: 12px;
       border: none;
@@ -103,6 +149,33 @@
       transition: background 0.2s;
     }
     button.submit-btn:hover { background: var(--primary-hover); }
+
+    /* Token cost chips */
+    .token-breakdown {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin: 14px 0;
+      padding: 12px;
+      background: #090d16;
+      border-radius: 8px;
+      border: 1px solid #1e293b;
+    }
+    .token-chip {
+      text-align: center;
+    }
+    .token-chip-title {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    .token-chip-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 14px;
+      margin-top: 2px;
+    }
+
     .status-badge {
       display: inline-block;
       padding: 4px 10px;
@@ -120,7 +193,7 @@
       display: flex;
       justify-content: space-between;
       padding: 8px 12px;
-      background: #0f172a;
+      background: #090d16;
       border-radius: 6px;
       margin-bottom: 6px;
       font-size: 13px;
@@ -128,7 +201,7 @@
     .product-qty { font-weight: 700; color: var(--primary); }
     .image-preview {
       width: 100%;
-      max-height: 250px;
+      max-height: 230px;
       object-fit: cover;
       border-radius: 8px;
       margin-top: 12px;
@@ -143,12 +216,36 @@
 <body>
   <div class="container">
     <header>
-      <h1>PRAN-RFL MerchVision <span class="badge">AI Vision</span></h1>
+      <h1>PRAN-RFL MerchVision <span class="badge">Token & Vision Analytics</span></h1>
       <div class="links">
         <a href="/docs" target="_blank">Swagger API</a>
         <a href="/redoc" target="_blank">ReDoc</a>
       </div>
     </header>
+
+    <!-- Aggregated Token & Scan Statistics -->
+    <div class="summary-grid" id="summaryStats">
+      <div class="stat-card">
+        <div class="stat-label">Total Scans</div>
+        <div class="stat-val" id="statScans" style="color:var(--text-main);">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Input Tokens</div>
+        <div class="stat-val" id="statInTokens" style="color:var(--token-in);">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Output Tokens</div>
+        <div class="stat-val" id="statOutTokens" style="color:var(--token-out);">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Tokens</div>
+        <div class="stat-val" id="statTotalTokens" style="color:var(--primary);">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Cost (USD)</div>
+        <div class="stat-val" id="statCost" style="color:var(--token-cost);">-</div>
+      </div>
+    </div>
 
     <div class="grid">
       <!-- Upload Panel -->
@@ -156,6 +253,13 @@
         <div class="tabs">
           <button class="tab-btn active" id="tabUrl" onclick="setMode('url')">Analyze via Image URL</button>
           <button class="tab-btn" id="tabFile" onclick="setMode('file')">Upload Image File</button>
+        </div>
+
+        <div class="api-mode-switch">
+          <input type="checkbox" id="singleApiMode" checked>
+          <label for="singleApiMode" style="margin:0; cursor:pointer; color:var(--text-main);">
+            <strong>Single-Call 1-API Direct Mode</strong> (immediate result with token cost, no polling)
+          </label>
         </div>
 
         <!-- Mode URL -->
@@ -195,9 +299,9 @@
 
       <!-- Live Result Panel -->
       <div class="card" id="resultCard">
-        <h2 style="font-size: 16px; margin-bottom: 12px; color: var(--text-muted);">Current Analysis Result</h2>
+        <h2 style="font-size: 16px; margin-bottom: 12px; color: var(--text-muted);">Current Analysis & Token Cost Result</h2>
         <div id="resultContent" style="color: var(--text-muted); font-size: 14px;">
-          Submit an image URL or file to see live AI detection results here.
+          Submit an image URL or file to see live AI detection and token cost breakdown here.
         </div>
       </div>
     </div>
@@ -205,8 +309,8 @@
     <!-- History Panel -->
     <div class="card history-card">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h2 style="font-size: 16px; color: var(--text-muted);">Recent Scan History</h2>
-        <button onclick="loadHistory()" style="background:transparent; border:1px solid var(--border-color); color:var(--text-muted); padding:4px 8px; border-radius:4px; cursor:pointer;">Refresh</button>
+        <h2 style="font-size: 16px; color: var(--text-muted);">Recent Scan & Token History</h2>
+        <button onclick="loadHistory(); loadSummaryStats();" style="background:transparent; border:1px solid var(--border-color); color:var(--text-muted); padding:4px 8px; border-radius:4px; cursor:pointer;">Refresh</button>
       </div>
       <div id="historyTableContainer">Loading history...</div>
     </div>
@@ -225,8 +329,9 @@
     async function submitUrl(e) {
       e.preventDefault();
       const btn = document.getElementById('btnSubmitUrl');
+      const isSingleApi = document.getElementById('singleApiMode').checked;
       btn.disabled = true;
-      btn.innerText = 'Submitting URL...';
+      btn.innerText = isSingleApi ? 'Analyzing in 1 API Call...' : 'Submitting URL...';
 
       const payload = {
         image_url: document.getElementById('imgUrl').value.trim(),
@@ -235,14 +340,22 @@
       };
 
       try {
-        const res = await fetch('/uploads/url', {
+        const endpoint = isSingleApi ? '/analyze/url' : '/uploads/url';
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Upload failed');
-        startPolling(data.upload_id);
+        if (!res.ok) throw new Error(data.detail || 'Analysis failed');
+
+        if (isSingleApi) {
+          renderResult(data);
+          loadHistory();
+          loadSummaryStats();
+        } else {
+          startPolling(data.upload_id);
+        }
       } catch (err) {
         alert('Error: ' + err.message);
       } finally {
@@ -254,8 +367,9 @@
     async function submitFile(e) {
       e.preventDefault();
       const btn = document.getElementById('btnSubmitFile');
+      const isSingleApi = document.getElementById('singleApiMode').checked;
       btn.disabled = true;
-      btn.innerText = 'Uploading File...';
+      btn.innerText = isSingleApi ? 'Analyzing in 1 API Call...' : 'Uploading File...';
 
       const formData = new FormData();
       formData.append('file', document.getElementById('imgFile').files[0]);
@@ -265,13 +379,21 @@
       if (merch) formData.append('merchandiser_id', merch);
 
       try {
-        const res = await fetch('/uploads', {
+        const endpoint = isSingleApi ? '/analyze' : '/uploads';
+        const res = await fetch(endpoint, {
           method: 'POST',
           body: formData
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Upload failed');
-        startPolling(data.upload_id);
+        if (!res.ok) throw new Error(data.detail || 'Analysis failed');
+
+        if (isSingleApi) {
+          renderResult(data);
+          loadHistory();
+          loadSummaryStats();
+        } else {
+          startPolling(data.upload_id);
+        }
       } catch (err) {
         alert('Error: ' + err.message);
       } finally {
@@ -294,6 +416,7 @@
         if (data.status === 'COMPLETED' || data.status === 'FAILED') {
           clearInterval(pollInterval);
           loadHistory();
+          loadSummaryStats();
         }
       } catch (err) {
         console.error(err);
@@ -314,6 +437,32 @@
         productsHtml = '<p style="color:var(--text-muted); margin-top:8px;">No PRAN-RFL products identified in this scan.</p>';
       }
 
+      const inTok = data.input_tokens || (data.token_usage ? data.token_usage.input_tokens : 0) || 0;
+      const outTok = data.output_tokens || (data.token_usage ? data.token_usage.output_tokens : 0) || 0;
+      const totTok = data.total_tokens || (data.token_usage ? data.token_usage.total_tokens : 0) || (inTok + outTok);
+      const cost = data.estimated_cost_usd !== undefined ? data.estimated_cost_usd : (data.token_usage ? data.token_usage.estimated_cost_usd : 0);
+
+      const tokenChipsHtml = data.status === 'COMPLETED' ? `
+        <div class="token-breakdown">
+          <div class="token-chip">
+            <div class="token-chip-title">Input Tokens</div>
+            <div class="token-chip-val" style="color:var(--token-in);">${inTok.toLocaleString()}</div>
+          </div>
+          <div class="token-chip">
+            <div class="token-chip-title">Output Tokens</div>
+            <div class="token-chip-val" style="color:var(--token-out);">${outTok.toLocaleString()}</div>
+          </div>
+          <div class="token-chip">
+            <div class="token-chip-title">Total Tokens</div>
+            <div class="token-chip-val" style="color:var(--primary);">${totTok.toLocaleString()}</div>
+          </div>
+          <div class="token-chip">
+            <div class="token-chip-title">Est. Cost</div>
+            <div class="token-chip-val" style="color:var(--token-cost);">$${Number(cost || 0).toFixed(6)}</div>
+          </div>
+        </div>
+      ` : '';
+
       container.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <strong>Upload ID:</strong> <span style="font-family:monospace; font-size:12px;">${data.upload_id}</span>
@@ -321,9 +470,25 @@
         </div>
         <div><strong>Shop:</strong> ${data.shop_id || 'Unassigned'} | <strong>Merchandiser:</strong> ${data.merchandiser_id || 'Unassigned'}</div>
         ${data.error_message ? `<div style="color:var(--danger); margin-top:8px;">Error: ${data.error_message}</div>` : ''}
+        ${tokenChipsHtml}
         ${productsHtml}
         ${data.image_url ? `<img src="${data.image_url}" class="image-preview" alt="Rack Preview">` : ''}
       `;
+    }
+
+    async function loadSummaryStats() {
+      try {
+        const res = await fetch('/uploads/summary');
+        if (!res.ok) return;
+        const data = await res.json();
+        document.getElementById('statScans').innerText = data.total_scans;
+        document.getElementById('statInTokens').innerText = (data.total_input_tokens || 0).toLocaleString();
+        document.getElementById('statOutTokens').innerText = (data.total_output_tokens || 0).toLocaleString();
+        document.getElementById('statTotalTokens').innerText = (data.total_tokens || 0).toLocaleString();
+        document.getElementById('statCost').innerText = '$' + Number(data.total_estimated_cost_usd || 0).toFixed(5);
+      } catch (err) {
+        console.error('Failed to load summary stats:', err);
+      }
     }
 
     async function loadHistory() {
@@ -341,21 +506,32 @@
               <tr>
                 <th>Time</th>
                 <th>Shop ID</th>
-                <th>Merchandiser</th>
                 <th>Status</th>
                 <th>Products Detected</th>
+                <th>Token Breakdown (In / Out / Total)</th>
+                <th>Est. Cost ($)</th>
               </tr>
             </thead>
             <tbody>
-              ${data.items.map(item => `
+              ${data.items.map(item => {
+                const inT = item.input_tokens || 0;
+                const outT = item.output_tokens || 0;
+                const totT = item.total_tokens || (inT + outT);
+                const cost = item.estimated_cost_usd ? '$' + Number(item.estimated_cost_usd).toFixed(6) : '-';
+                return `
                 <tr style="cursor:pointer;" onclick="startPolling('${item.upload_id}')">
                   <td>${new Date(item.created_at).toLocaleTimeString()}</td>
                   <td>${item.shop_id || '-'}</td>
-                  <td>${item.merchandiser_id || '-'}</td>
                   <td><span class="status-badge status-${item.status}">${item.status}</span></td>
-                  <td>${item.detected_products ? item.detected_products.length : 0} items</td>
+                  <td>${item.detected_products ? item.detected_products.length + ' items' : '-'}</td>
+                  <td style="font-family:'JetBrains Mono', monospace; font-size:12px;">
+                    ${totT > 0 ? `${inT} / ${outT} / <strong>${totT}</strong>` : '-'}
+                  </td>
+                  <td style="font-family:'JetBrains Mono', monospace; font-size:12px; color:var(--token-cost);">
+                    ${cost}
+                  </td>
                 </tr>
-              `).join('')}
+              `;}).join('')}
             </tbody>
           </table>
         `;
@@ -364,7 +540,10 @@
       }
     }
 
-    window.onload = () => loadHistory();
+    window.onload = () => {
+      loadHistory();
+      loadSummaryStats();
+    };
   </script>
 </body>
 </html>

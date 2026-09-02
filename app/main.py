@@ -5,10 +5,12 @@ Endpoints:
     GET    /                          → interactive web UI dashboard
     GET    /ui                        → interactive web UI dashboard
     GET    /health                    → liveness check
-    POST   /uploads                   → upload rack photo, start AI analysis
-    POST   /uploads/url               → provide rack photo URL, start AI analysis
+    POST   /analyze                   → SINGLE-CALL direct analysis (file upload) with token cost
+    POST   /analyze/url               → SINGLE-CALL direct analysis (image URL) with token cost
+    POST   /uploads                   → async upload rack photo, start AI analysis
+    POST   /uploads/url               → async upload rack photo URL, start AI analysis
     GET    /uploads                   → list all analysis results with filtering & pagination
-    GET    /uploads/summary           → aggregate analysis metrics & top products
+    GET    /uploads/summary           → aggregate analysis metrics, token stats & top products
     GET    /uploads/{upload_id}       → get analysis result by ID
     GET    /uploads/{upload_id}/result→ poll for analysis result
     DELETE /uploads/{upload_id}       → delete upload record & file
@@ -42,12 +44,14 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.database import Base, engine, get_db
+from app.database import Base, engine, get_db, init_db
 from app.models import ProcessingStatus, RackUpload
 from app.schemas import (
     AnalysisSummaryResponse,
     DeleteResponse,
+    DirectAnalyzeResponse,
     HealthResponse,
+    TokenUsage,
     TopProductItem,
     UploadListResponse,
     UploadResponse,
@@ -74,8 +78,8 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
-# Create all DB tables on startup (idempotent)
-Base.metadata.create_all(bind=engine)
+# Create all DB tables & migrate missing columns on startup (idempotent)
+init_db()
 
 # Ensure media directory exists
 _MEDIA_ROOT = Path("media")
@@ -85,10 +89,10 @@ Path(settings.storage_media_dir).mkdir(parents=True, exist_ok=True)
 app = FastAPI(
     title="PRAN-RFL Rack Recognition System",
     description=(
-        "AI-powered retail merchandising backend. "
-        "Upload a rack photo to get a structured list of detected PRAN-RFL products."
+        "AI-powered retail merchandising backend with token usage and cost analysis. "
+        "Upload a rack photo to get structured PRAN-RFL product detections, token metrics, and cost estimation."
     ),
-    version="1.0.0",
+    version="1.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -108,12 +112,48 @@ app.add_middleware(
 app.mount("/media", StaticFiles(directory="media"), name="media")
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _build_upload_result_response(row: RackUpload) -> UploadResultResponse:
+    """Helper to convert a DB RackUpload row into a typed UploadResultResponse."""
+    token_usage = None
+    if (
+        row.total_tokens is not None
+        or row.input_tokens is not None
+        or row.output_tokens is not None
+    ):
+        token_usage = TokenUsage(
+            input_tokens=row.input_tokens or 0,
+            output_tokens=row.output_tokens or 0,
+            total_tokens=row.total_tokens or 0,
+            estimated_cost_usd=row.estimated_cost_usd or 0.0,
+        )
+
+    return UploadResultResponse(
+        upload_id=row.id,
+        status=row.status,
+        shop_id=row.shop_id,
+        merchandiser_id=row.merchandiser_id,
+        image_url=row.image_url,
+        detected_products=row.detected_products,
+        input_tokens=row.input_tokens,
+        output_tokens=row.output_tokens,
+        total_tokens=row.total_tokens,
+        estimated_cost_usd=row.estimated_cost_usd,
+        token_usage=token_usage,
+        error_message=row.error_message,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
 # ── Background task ───────────────────────────────────────────────────────────
 
 
 def process_upload(upload_id: str, image_url: str) -> None:
     """
-    Background task: call Gemini via OpenRouter and write results to the DB.
+    Background task: call Gemini via OpenRouter and write results & token usage to the DB.
 
     This runs AFTER the HTTP 202 response has already been sent to the client.
     Uses its own DB session (not the request-scoped one, which is closed).
@@ -134,13 +174,25 @@ def process_upload(upload_id: str, image_url: str) -> None:
 
         # ── Call Gemini ───────────────────────────────────────────────────────
         try:
-            products = analyze_rack_image(image_url)
+            ai_result = analyze_rack_image(image_url)
+            products = ai_result.get("products", [])
+            usage = ai_result.get("token_usage", {})
+
             upload.detected_products = products
+            upload.input_tokens = usage.get("input_tokens", 0)
+            upload.output_tokens = usage.get("output_tokens", 0)
+            upload.total_tokens = usage.get("total_tokens", 0)
+            upload.estimated_cost_usd = usage.get("estimated_cost_usd", 0.0)
+            upload.ai_raw_response = ai_result.get("raw_text")
             upload.status = ProcessingStatus.COMPLETED
             logger.info(
-                "Upload %s: status → COMPLETED, %d products found",
+                "Upload %s: status → COMPLETED, %d products found, tokens: in=%d, out=%d, total=%d, cost=$%.6f",
                 upload_id,
                 len(products),
+                upload.input_tokens,
+                upload.output_tokens,
+                upload.total_tokens,
+                upload.estimated_cost_usd or 0.0,
             )
         except AIServiceError as exc:
             upload.status = ProcessingStatus.FAILED
@@ -198,12 +250,234 @@ def health_check() -> HealthResponse:
     return HealthResponse()
 
 
+# ── Direct Single-API Analysis (Synchronous 1-Call) ───────────────────────────
+
+
+@app.post(
+    "/analyze",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Analyze rack photo directly in one single API call (returns detections + token costs)",
+    tags=["Single API Analysis"],
+)
+@app.post(
+    "/uploads/analyze",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+async def analyze_image_direct(
+    file: UploadFile = File(..., description="Rack photo (JPEG, PNG, or WebP)"),
+    shop_id: str | None = Form(None, description="Shop identifier"),
+    merchandiser_id: str | None = Form(None, description="Merchandiser identifier"),
+    db: Session = Depends(get_db),
+) -> DirectAnalyzeResponse:
+    """
+    **Single API Call Endpoint**:
+    Accepts an uploaded image file, saves it, performs AI vision recognition immediately,
+    and returns detected products, input tokens, output tokens, total tokens, and estimated cost
+    in a single synchronous HTTP response without needing polling.
+    """
+    # ── Validate content type ─────────────────────────────────────────────────
+    content_type = (file.content_type or "").lower()
+    if content_type not in settings.allowed_image_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Unsupported file type: '{content_type}'. "
+                f"Allowed types: {', '.join(settings.allowed_image_types)}"
+            ),
+        )
+
+    # ── Read & validate file size ─────────────────────────────────────────────
+    image_bytes = await file.read()
+    if len(image_bytes) > settings.max_upload_size_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"File too large ({len(image_bytes) / 1024 / 1024:.1f} MB). "
+                f"Maximum allowed: {settings.max_upload_size_mb} MB."
+            ),
+        )
+
+    # ── Save to local storage ─────────────────────────────────────────────────
+    try:
+        image_url, image_key = save_image(
+            image_bytes=image_bytes,
+            content_type=content_type,
+            shop_id=shop_id,
+        )
+    except StorageError as exc:
+        logger.error("Storage error: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save the uploaded image. Please try again.",
+        )
+
+    # ── Create DB row ─────────────────────────────────────────────────────────
+    upload_id = str(uuid.uuid4())
+    db_row = RackUpload(
+        id=upload_id,
+        shop_id=shop_id,
+        merchandiser_id=merchandiser_id,
+        image_url=image_url,
+        image_key=image_key,
+        status=ProcessingStatus.PROCESSING,
+    )
+    db.add(db_row)
+    db.commit()
+
+    # ── Run AI detection synchronously ────────────────────────────────────────
+    try:
+        ai_res = analyze_rack_image(image_url)
+        products = ai_res.get("products", [])
+        usage = ai_res.get("token_usage", {})
+
+        db_row.detected_products = products
+        db_row.input_tokens = usage.get("input_tokens", 0)
+        db_row.output_tokens = usage.get("output_tokens", 0)
+        db_row.total_tokens = usage.get("total_tokens", 0)
+        db_row.estimated_cost_usd = usage.get("estimated_cost_usd", 0.0)
+        db_row.ai_raw_response = ai_res.get("raw_text")
+        db_row.status = ProcessingStatus.COMPLETED
+        db.commit()
+
+        token_usage_obj = TokenUsage(
+            input_tokens=db_row.input_tokens or 0,
+            output_tokens=db_row.output_tokens or 0,
+            total_tokens=db_row.total_tokens or 0,
+            estimated_cost_usd=db_row.estimated_cost_usd or 0.0,
+        )
+
+        return DirectAnalyzeResponse(
+            upload_id=db_row.id,
+            status=ProcessingStatus.COMPLETED,
+            shop_id=db_row.shop_id,
+            merchandiser_id=db_row.merchandiser_id,
+            image_url=db_row.image_url,
+            detected_products=products,
+            token_usage=token_usage_obj,
+            input_tokens=token_usage_obj.input_tokens,
+            output_tokens=token_usage_obj.output_tokens,
+            total_tokens=token_usage_obj.total_tokens,
+            estimated_cost_usd=token_usage_obj.estimated_cost_usd,
+            error_message=None,
+            created_at=db_row.created_at,
+        )
+    except AIServiceError as exc:
+        db_row.status = ProcessingStatus.FAILED
+        db_row.error_message = str(exc)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI Vision Analysis failed: {exc}",
+        )
+
+
+@app.post(
+    "/analyze/url",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Analyze rack image URL directly in one single API call (returns detections + token costs)",
+    tags=["Single API Analysis"],
+)
+async def analyze_image_url_direct(
+    payload: UploadUrlRequest,
+    db: Session = Depends(get_db),
+) -> DirectAnalyzeResponse:
+    """
+    **Single API Call Endpoint (URL)**:
+    Accepts an image URL, downloads and validates it, performs AI vision recognition immediately,
+    and returns detected products, input tokens, output tokens, total tokens, and estimated cost
+    in a single synchronous HTTP response.
+    """
+    try:
+        image_url, image_key = download_and_save_image(
+            url=payload.image_url,
+            shop_id=payload.shop_id,
+        )
+    except InvalidImageURLError as exc:
+        logger.warning("Invalid image URL '%s': %s", payload.image_url, exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    except StorageError as exc:
+        logger.error("Storage error processing URL '%s': %s", payload.image_url, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save the image from the provided URL.",
+        )
+
+    # ── Create DB row ─────────────────────────────────────────────────────────
+    upload_id = str(uuid.uuid4())
+    db_row = RackUpload(
+        id=upload_id,
+        shop_id=payload.shop_id,
+        merchandiser_id=payload.merchandiser_id,
+        image_url=image_url,
+        image_key=image_key,
+        status=ProcessingStatus.PROCESSING,
+    )
+    db.add(db_row)
+    db.commit()
+
+    # ── Run AI detection synchronously ────────────────────────────────────────
+    try:
+        ai_res = analyze_rack_image(image_url)
+        products = ai_res.get("products", [])
+        usage = ai_res.get("token_usage", {})
+
+        db_row.detected_products = products
+        db_row.input_tokens = usage.get("input_tokens", 0)
+        db_row.output_tokens = usage.get("output_tokens", 0)
+        db_row.total_tokens = usage.get("total_tokens", 0)
+        db_row.estimated_cost_usd = usage.get("estimated_cost_usd", 0.0)
+        db_row.ai_raw_response = ai_res.get("raw_text")
+        db_row.status = ProcessingStatus.COMPLETED
+        db.commit()
+
+        token_usage_obj = TokenUsage(
+            input_tokens=db_row.input_tokens or 0,
+            output_tokens=db_row.output_tokens or 0,
+            total_tokens=db_row.total_tokens or 0,
+            estimated_cost_usd=db_row.estimated_cost_usd or 0.0,
+        )
+
+        return DirectAnalyzeResponse(
+            upload_id=db_row.id,
+            status=ProcessingStatus.COMPLETED,
+            shop_id=db_row.shop_id,
+            merchandiser_id=db_row.merchandiser_id,
+            image_url=db_row.image_url,
+            detected_products=products,
+            token_usage=token_usage_obj,
+            input_tokens=token_usage_obj.input_tokens,
+            output_tokens=token_usage_obj.output_tokens,
+            total_tokens=token_usage_obj.total_tokens,
+            estimated_cost_usd=token_usage_obj.estimated_cost_usd,
+            error_message=None,
+            created_at=db_row.created_at,
+        )
+    except AIServiceError as exc:
+        db_row.status = ProcessingStatus.FAILED
+        db_row.error_message = str(exc)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI Vision Analysis failed: {exc}",
+        )
+
+
+# ── Asynchronous Endpoints ───────────────────────────────────────────────────
+
+
 @app.post(
     "/uploads",
     response_model=UploadResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Upload a rack photo and start AI analysis",
-    tags=["Uploads"],
+    summary="Upload a rack photo and start async AI analysis",
+    tags=["Async Uploads"],
 )
 async def create_upload(
     background_tasks: BackgroundTasks,
@@ -282,14 +556,8 @@ async def create_upload(
     "/uploads/url",
     response_model=UploadResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Submit a rack photo URL and start AI analysis",
-    tags=["Uploads"],
-)
-@app.post(
-    "/analyze/url",
-    response_model=UploadResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-    include_in_schema=False,
+    summary="Submit a rack photo URL and start async AI analysis",
+    tags=["Async Uploads"],
 )
 async def create_upload_from_url(
     payload: UploadUrlRequest,
@@ -353,7 +621,7 @@ async def create_upload_from_url(
     "/uploads",
     response_model=UploadListResponse,
     summary="List all uploads and analysis results",
-    tags=["Uploads"],
+    tags=["Uploads & History"],
 )
 @app.get(
     "/analysis",
@@ -375,7 +643,7 @@ def list_uploads(
     db: Session = Depends(get_db),
 ) -> UploadListResponse:
     """
-    Fetch paginated list of all rack photo uploads and their analysis results.
+    Fetch paginated list of all rack photo uploads, detected products, and token usage metrics.
     Supports filtering by status, shop ID, merchandiser ID, and generic search.
     """
     query = db.query(RackUpload)
@@ -403,20 +671,7 @@ def list_uploads(
     total = query.count()
     rows = query.order_by(RackUpload.created_at.desc()).offset(offset).limit(limit).all()
 
-    items = [
-        UploadResultResponse(
-            upload_id=row.id,
-            status=row.status,
-            shop_id=row.shop_id,
-            merchandiser_id=row.merchandiser_id,
-            image_url=row.image_url,
-            detected_products=row.detected_products,
-            error_message=row.error_message,
-            created_at=row.created_at,
-            updated_at=row.updated_at,
-        )
-        for row in rows
-    ]
+    items = [_build_upload_result_response(row) for row in rows]
 
     return UploadListResponse(
         total=total,
@@ -429,7 +684,7 @@ def list_uploads(
 @app.get(
     "/uploads/summary",
     response_model=AnalysisSummaryResponse,
-    summary="Get aggregated summary metrics of all rack analyses",
+    summary="Get aggregated summary metrics, token totals, and top products",
     tags=["Analytics"],
 )
 @app.get(
@@ -439,8 +694,8 @@ def list_uploads(
 )
 def get_analysis_summary(db: Session = Depends(get_db)) -> AnalysisSummaryResponse:
     """
-    Returns high-level statistics across all scanned racks, including success rate,
-    total products counted, unique products detected, and top detected items.
+    Returns high-level statistics across all scanned racks, including total input tokens,
+    output tokens, total tokens, total USD cost, average tokens per image, and top detected items.
     """
     total_scans = db.query(RackUpload).count()
     completed_scans = db.query(RackUpload).filter(RackUpload.status == ProcessingStatus.COMPLETED).count()
@@ -448,9 +703,9 @@ def get_analysis_summary(db: Session = Depends(get_db)) -> AnalysisSummaryRespon
     pending_scans = db.query(RackUpload).filter(RackUpload.status == ProcessingStatus.PENDING).count()
     failed_scans = db.query(RackUpload).filter(RackUpload.status == ProcessingStatus.FAILED).count()
 
-    # Aggregate detected products
+    # Aggregate completed rows for detection and token statistics
     completed_rows = (
-        db.query(RackUpload.detected_products)
+        db.query(RackUpload)
         .filter(RackUpload.status == ProcessingStatus.COMPLETED)
         .all()
     )
@@ -459,7 +714,18 @@ def get_analysis_summary(db: Session = Depends(get_db)) -> AnalysisSummaryRespon
     product_appearances: dict[str, int] = defaultdict(int)
     total_products_detected = 0
 
-    for (products_json,) in completed_rows:
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_tokens = 0
+    total_cost_usd = 0.0
+
+    for row in completed_rows:
+        total_input_tokens += row.input_tokens or 0
+        total_output_tokens += row.output_tokens or 0
+        total_tokens += row.total_tokens or 0
+        total_cost_usd += row.estimated_cost_usd or 0.0
+
+        products_json = row.detected_products
         if not isinstance(products_json, list):
             continue
         seen_in_scan: set[str] = set()
@@ -486,21 +752,15 @@ def get_analysis_summary(db: Session = Depends(get_db)) -> AnalysisSummaryRespon
         for name, qty in sorted(product_totals.items(), key=lambda x: x[1], reverse=True)[:10]
     ]
 
+    avg_tokens_per_scan = (
+        round(total_tokens / completed_scans, 2) if completed_scans > 0 else 0.0
+    )
+    avg_cost_per_scan_usd = (
+        round(total_cost_usd / completed_scans, 6) if completed_scans > 0 else 0.0
+    )
+
     recent_rows = db.query(RackUpload).order_by(RackUpload.created_at.desc()).limit(5).all()
-    recent_uploads = [
-        UploadResultResponse(
-            upload_id=row.id,
-            status=row.status,
-            shop_id=row.shop_id,
-            merchandiser_id=row.merchandiser_id,
-            image_url=row.image_url,
-            detected_products=row.detected_products,
-            error_message=row.error_message,
-            created_at=row.created_at,
-            updated_at=row.updated_at,
-        )
-        for row in recent_rows
-    ]
+    recent_uploads = [_build_upload_result_response(row) for row in recent_rows]
 
     return AnalysisSummaryResponse(
         total_scans=total_scans,
@@ -510,6 +770,12 @@ def get_analysis_summary(db: Session = Depends(get_db)) -> AnalysisSummaryRespon
         failed_scans=failed_scans,
         total_products_detected=total_products_detected,
         unique_products_count=len(product_totals),
+        total_input_tokens=total_input_tokens,
+        total_output_tokens=total_output_tokens,
+        total_tokens=total_tokens,
+        total_estimated_cost_usd=round(total_cost_usd, 6),
+        avg_tokens_per_scan=avg_tokens_per_scan,
+        avg_cost_per_scan_usd=avg_cost_per_scan_usd,
         top_products=top_products,
         recent_uploads=recent_uploads,
     )
@@ -518,21 +784,21 @@ def get_analysis_summary(db: Session = Depends(get_db)) -> AnalysisSummaryRespon
 @app.get(
     "/uploads/{upload_id}",
     response_model=UploadResultResponse,
-    summary="Get analysis result for an upload by ID",
-    tags=["Uploads"],
+    summary="Get analysis result & token metrics for an upload by ID",
+    tags=["Uploads & History"],
 )
 @app.get(
     "/uploads/{upload_id}/result",
     response_model=UploadResultResponse,
     summary="Get analysis result for an upload (polling endpoint)",
-    tags=["Uploads"],
+    tags=["Uploads & History"],
 )
 def get_upload_result(
     upload_id: str,
     db: Session = Depends(get_db),
 ) -> UploadResultResponse:
     """
-    Fetch the current status and AI result for a given upload ID.
+    Fetch the current status, AI product detections, and token usage metrics for a given upload ID.
     Poll this endpoint until `status` is `COMPLETED` or `FAILED`.
     """
     row = db.query(RackUpload).filter(RackUpload.id == upload_id).first()
@@ -542,24 +808,14 @@ def get_upload_result(
             detail=f"Upload '{upload_id}' not found.",
         )
 
-    return UploadResultResponse(
-        upload_id=row.id,
-        status=row.status,
-        shop_id=row.shop_id,
-        merchandiser_id=row.merchandiser_id,
-        image_url=row.image_url,
-        detected_products=row.detected_products,
-        error_message=row.error_message,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-    )
+    return _build_upload_result_response(row)
 
 
 @app.delete(
     "/uploads/{upload_id}",
     response_model=DeleteResponse,
     summary="Delete an upload record and its image",
-    tags=["Uploads"],
+    tags=["Uploads & History"],
 )
 def delete_upload(
     upload_id: str,

@@ -37,7 +37,7 @@ services:
     environment:
       # Override DATABASE_URL to point to the Postgres service above
       DATABASE_URL: postgresql://postgres:postgres@db:5432/pran_rfl
-      STORAGE_BASE_URL: http://localhost:8000
+      STORAGE_BASE_URL: /
     depends_on:
       db:
         condition: service_healthy

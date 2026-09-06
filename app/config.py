@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # ── Local Storage ─────────────────────────────────────────────────────────
     # Base URL used to construct public image_url (e.g. http://localhost:8000)
-    storage_base_url: str = "http://localhost:8000"
+    storage_base_url: str = ""
     # Directory where uploaded images are written (relative to cwd)
     storage_media_dir: str = "media/uploads"
 

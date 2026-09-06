@@ -2,18 +2,18 @@
 app/main.py — FastAPI application entry point.
 
 Endpoints:
-    GET    /                          → interactive web UI dashboard
-    GET    /ui                        → interactive web UI dashboard
-    GET    /health                    → liveness check
-    POST   /analyze                   → SINGLE-CALL direct analysis (file upload) with token cost
-    POST   /analyze/url               → SINGLE-CALL direct analysis (image URL) with token cost
-    POST   /uploads                   → async upload rack photo, start AI analysis
-    POST   /uploads/url               → async upload rack photo URL, start AI analysis
-    GET    /uploads                   → list all analysis results with filtering & pagination
-    GET    /uploads/summary           → aggregate analysis metrics, token stats & top products
-    GET    /uploads/{upload_id}       → get analysis result by ID
+    GET    /                        → interactive web UI dashboard
+    GET    /ui                      → interactive web UI dashboard
+    GET    /health                  → liveness check
+    POST   /analyze                 → SINGLE-CALL direct analysis (file upload) with token cost
+    POST   /analyze/url             → SINGLE-CALL direct analysis (image URL) with token cost
+    POST   /uploads                 → async upload rack photo, start AI analysis
+    POST   /uploads/url             → async upload rack photo URL, start AI analysis
+    GET    /uploads                 → list all analysis results with filtering & pagination
+    GET    /uploads/summary         → aggregate analysis metrics, token stats & top products
+    GET    /uploads/{upload_id}     → get analysis result by ID
     GET    /uploads/{upload_id}/result→ poll for analysis result
-    DELETE /uploads/{upload_id}       → delete upload record & file
+    DELETE /uploads/{upload_id}     → delete upload record & file
 
 Images are served as static files at /media/...
 """
@@ -25,6 +25,7 @@ import os
 import uuid
 from pathlib import Path
 
+import httpx
 from fastapi import (
     BackgroundTasks,
     Depends,
@@ -34,6 +35,7 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     UploadFile,
     status,
 )
@@ -44,7 +46,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.database import Base, engine, get_db, init_db
+from app.database import Base, SessionLocal, engine, get_db, init_db
 from app.models import ProcessingStatus, RackUpload
 from app.schemas import (
     AnalysisSummaryResponse,
@@ -158,8 +160,6 @@ def process_upload(upload_id: str, image_url: str) -> None:
     This runs AFTER the HTTP 202 response has already been sent to the client.
     Uses its own DB session (not the request-scoped one, which is closed).
     """
-    from app.database import SessionLocal  # local import to avoid circular refs at module level
-
     db = SessionLocal()
     try:
         upload = db.query(RackUpload).filter(RackUpload.id == upload_id).first()
@@ -202,7 +202,6 @@ def process_upload(upload_id: str, image_url: str) -> None:
         db.commit()
 
     except Exception as exc:
-        # Catch-all so an unexpected crash doesn't silently leave PROCESSING forever
         logger.exception("process_upload: unexpected error for upload %s: %s", upload_id, exc)
         try:
             upload = db.query(RackUpload).filter(RackUpload.id == upload_id).first()
@@ -216,15 +215,9 @@ def process_upload(upload_id: str, image_url: str) -> None:
         db.close()
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
+# ── System & UI Endpoints ─────────────────────────────────────────────────────
 
 
-@app.get(
-    "/",
-    response_class=HTMLResponse,
-    summary="Web UI tester & dashboard",
-    include_in_schema=False,
-)
 @app.get(
     "/ui",
     response_class=HTMLResponse,
@@ -850,3 +843,30 @@ def delete_upload(
         upload_id=upload_id,
         message=f"Upload '{upload_id}' and associated media deleted successfully.",
     )
+
+
+# ── Frontend Reverse Proxy (Must remain at the very bottom of the file) ───────
+
+
+@app.get("/{file_path:path}", include_in_schema=False)
+async def proxy_frontend_fallback(file_path: str):
+    """
+    Catch-all route to proxy remaining GET requests to an external service (e.g. Next.js / Vite on port 3000).
+    Placed at the bottom so it only handles paths that do not match existing API routes.
+    """
+    target_url = f"http://localhost:3000/{file_path}"
+    async with httpx.AsyncClient() as client:
+        try:
+            external_res = await client.get(target_url)
+            incoming_content_type = external_res.headers.get("content-type", "application/octet-stream")
+            return Response(
+                content=external_res.content,
+                media_type=incoming_content_type,
+                status_code=external_res.status_code,
+            )
+        except httpx.RequestError as exc:
+            logger.error("Proxy connection failed to target %s: %s", target_url, exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to connect to frontend server at http://localhost:3000. Error: {exc}",
+            )

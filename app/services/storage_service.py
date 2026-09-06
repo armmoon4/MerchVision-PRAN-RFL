@@ -80,7 +80,7 @@ def save_image(
 
     # Build the public URL
     base = settings.storage_base_url.rstrip("/")
-    image_url = f"{base}/media/{image_key}"
+    image_url = f"/media/{image_key}"
 
     return image_url, image_key
 

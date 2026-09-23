@@ -20,17 +20,32 @@ class Settings(BaseSettings):
     # ── Database ──────────────────────────────────────────────────────────────
     database_url: str = "sqlite:///./pran_rfl.db"
 
-    # ── Gemini ────────────────────────────────────────────────────────────────
+    # ── AI Provider ───────────────────────────────────────────────────────────
+    # Options: "openrouter" (default) or "gemini"
+    ai_provider: str = "openrouter"
+
+    # ── OpenRouter ────────────────────────────────────────────────────────────
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "google/gemini-3.7-flash"
+    openrouter_timeout_seconds: int = 45
+
+    # ── Google Gemini Direct ──────────────────────────────────────────────────
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-3.6-flash"
+    gemini_model: str = "gemini-3.7-flash"
     gemini_timeout_seconds: int = 30
     gemini_thinking_budget: int = 1024  # Capped reasoning budget for cost efficiency
+    gemini_thinking_level: str = "medium"  # low, medium, or high (minimal not supported in 3.7)
     max_image_dimension: int = 1600  # Optimal resolution (Lanczos) for low vision input tokens
 
-    # ── Token Pricing (USD per 1M tokens) ——————————————————————————
-    # Default rates based on Gemini 3.6 Flash: $0.10/1M prompt, $0.40/1M completion
-    token_cost_input_per_million: float = 0.10
-    token_cost_output_per_million: float = 0.40
+    # ── Token Limits (Gemini 3.7 Flash) ───────────────────────────────────────
+    max_input_tokens: int = 1_048_576
+    max_output_tokens: int = 65_536
+
+    # ── Token Pricing (USD per 1M tokens) ─────────────────────────────────────
+    # OpenRouter listed rates for google/gemini-3.7-flash: $0.75/1M input, $3.75/1M output
+    token_cost_input_per_million: float = 0.75
+    token_cost_output_per_million: float = 3.75
 
     # ── Local Storage ─────────────────────────────────────────────────────────
     # Base URL used to construct public image_url (e.g. http://localhost:8000)

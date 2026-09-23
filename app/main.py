@@ -77,6 +77,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+from app.routers.token_router import router as token_router
+
 # ── App bootstrap ─────────────────────────────────────────────────────────────
 
 settings = get_settings()
@@ -92,10 +94,10 @@ Path(settings.storage_media_dir).mkdir(parents=True, exist_ok=True)
 app = FastAPI(
     title="PRAN-RFL Rack Recognition System",
     description=(
-        "AI-powered retail merchandising backend with token usage and cost analysis. "
+        "AI-powered retail merchandising backend with Gemini 3.7 Flash and Token Router API. "
         "Upload a rack photo to get structured PRAN-RFL product detections, token metrics, and cost estimation."
     ),
-    version="1.1.0",
+    version="1.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -109,6 +111,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Token Router API ──────────────────────────────────────────────────────────
+
+app.include_router(token_router)
+app.include_router(token_router, prefix="/api", include_in_schema=False)
+app.include_router(token_router, prefix="/api/v1", include_in_schema=False)
 
 # ── Static files (served uploaded images) ────────────────────────────────────
 

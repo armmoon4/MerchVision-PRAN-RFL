@@ -947,6 +947,205 @@
           ]
         }
       ]
+    },
+    {
+      "name": "5. Token Router & Model Metering API",
+      "description": "Endpoints to query Gemini 3.7 Flash model specs, token boundaries, live pricing rates, estimate token usage, live count tokens, and route payloads.",
+      "item": [
+        {
+          "name": "Get Model Specs & Capabilities",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tokens/models",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tokens",
+                "models"
+              ]
+            },
+            "description": "Returns full metadata and capabilities for the active Gemini 3.7 Flash model including 1M input / 65k output limits."
+          }
+        },
+        {
+          "name": "Get Token Pricing Rates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tokens/pricing",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tokens",
+                "pricing"
+              ]
+            },
+            "description": "Returns current token pricing rates per 1M and 1K tokens."
+          }
+        },
+        {
+          "name": "Chat with google/gemini-3.7-flash (OpenRouter)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\"role\": \"system\", \"content\": \"You are a retail shelf specialist.\"},\n    {\"role\": \"user\", \"content\": \"Explain how shelf inventory scanning works.\"}\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tokens/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tokens",
+                "chat"
+              ]
+            },
+            "description": "Direct text chat completion with google/gemini-3.7-flash through OpenRouter."
+          }
+        },
+        {
+          "name": "Get Global Token Consumption Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tokens/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tokens",
+                "summary"
+              ]
+            },
+            "description": "Returns total tokens consumed, total USD spent, and scan averages across all historical requests."
+          }
+        },
+        {
+          "name": "Estimate Token Usage & Cost",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image_width\": 1920,\n  \"image_height\": 1080,\n  \"thinking_budget\": 1024\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tokens/estimate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tokens",
+                "estimate"
+              ]
+            },
+            "description": "Pre-calculates estimated vision tokens, system tokens, thinking tokens, and USD cost before making an inference call."
+          }
+        },
+        {
+          "name": "Live Count Tokens",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Identify all PRAN-RFL products on this shelf.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tokens/count",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tokens",
+                "count"
+              ]
+            },
+            "description": "Counts exact tokens for text or image payloads using the Gemini SDK token counter."
+          }
+        },
+        {
+          "name": "Route & Validate Payload",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Shelf recognition task\",\n  \"priority\": \"standard\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tokens/route",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tokens",
+                "route"
+              ]
+            },
+            "description": "Token-aware router that analyzes payload size, verifies context window limits, and advises execution path."
+          }
+        }
+      ]
     }
   ]
 }

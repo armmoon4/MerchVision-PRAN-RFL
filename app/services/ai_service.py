@@ -43,6 +43,7 @@ socket.getaddrinfo = _ipv4_getaddrinfo
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
+from openai import OpenAI, OpenAIError
 import httpx
 
 from app.config import get_settings
@@ -196,18 +197,209 @@ def _resolve_image_bytes(image_input: str | bytes) -> tuple[bytes, str]:
 # ── Main function ─────────────────────────────────────────────────────────────
 
 
+def _call_openrouter(
+    image_bytes: bytes,
+    mime_type: str,
+    prompt: str = "Identify all PRAN products visible in this image. Return the raw JSON array only.",
+) -> tuple[str, dict[str, Any]]:
+    """
+    Call OpenRouter (https://openrouter.ai/api/v1) with google/gemini-3.7-flash using OpenAI SDK.
+    """
+    settings = get_settings()
+    api_key = settings.openrouter_api_key or os.getenv("OPENROUTER_API_KEY", "")
+    if not api_key or "YOUR_OPENROUTER" in api_key:
+        raise AIServiceError("OPENROUTER_API_KEY is not set. Add it to your .env file.")
+
+    base64_img = base64.b64encode(image_bytes).decode("utf-8")
+    data_url = f"data:{mime_type};base64,{base64_img}"
+
+    client = OpenAI(
+        base_url=settings.openrouter_base_url or "https://openrouter.ai/api/v1",
+        api_key=api_key,
+        timeout=float(getattr(settings, "openrouter_timeout_seconds", 45) or 45),
+    )
+
+    model_name = settings.openrouter_model or "google/gemini-3.7-flash"
+    logger.info("Calling OpenRouter with model: %s (base_url: %s)", model_name, settings.openrouter_base_url)
+
+    max_retries = 3
+    retry_delay = 3.0
+    last_exc: Exception | None = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": data_url
+                                }
+                            }
+                        ]
+                    }
+                ],
+                temperature=0.2,
+            )
+            raw_text = response.choices[0].message.content or ""
+            usage = response.usage
+            prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0) if usage else 0
+            output_tokens = int(getattr(usage, "completion_tokens", 0) or 0) if usage else 0
+            total_tokens = int(getattr(usage, "total_tokens", 0) or 0) if usage else (prompt_tokens + output_tokens)
+
+            cost = calculate_token_cost(prompt_tokens, output_tokens)
+
+            logger.info(
+                "OpenRouter Token usage: in=%d, out=%d, total=%d, cost=$%.6f",
+                prompt_tokens, output_tokens, total_tokens, cost,
+            )
+
+            return raw_text, {
+                "input_tokens": prompt_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
+                "estimated_cost_usd": cost,
+            }
+        except OpenAIError as exc:
+            logger.warning("OpenRouter API error on attempt %d/%d: %s", attempt, max_retries, exc)
+            last_exc = exc
+            if attempt < max_retries:
+                time.sleep(retry_delay)
+                retry_delay *= 2
+                continue
+            raise AIServiceError(f"OpenRouter API error: {exc}") from exc
+        except Exception as exc:
+            raise AIServiceError(f"Unexpected error calling OpenRouter: {exc}") from exc
+    raise AIServiceError(f"OpenRouter call failed after {max_retries} attempts: {last_exc}")
+
+
+def _call_gemini_direct(
+    image_bytes: bytes,
+    mime_type: str,
+) -> tuple[str, dict[str, Any]]:
+    """
+    Call Google Gemini Direct using google-genai SDK.
+    """
+    settings = get_settings()
+    if not settings.gemini_api_key or "YOUR_GEMINI" in settings.gemini_api_key:
+        raise AIServiceError("GEMINI_API_KEY is not set. Add it to your .env file.")
+
+    image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+
+    thinking_config = None
+    thinking_budget = getattr(settings, "gemini_thinking_budget", 1024)
+    thinking_level = getattr(settings, "gemini_thinking_level", "medium")
+    if thinking_budget is not None and thinking_budget >= 0:
+        thinking_config = types.ThinkingConfig(thinking_budget=thinking_budget)
+    elif thinking_level in ("low", "medium", "high"):
+        thinking_config = types.ThinkingConfig(thinking_level=thinking_level)
+
+    client = genai.Client(api_key=settings.gemini_api_key)
+    model_name: str = settings.gemini_model
+    logger.info("Calling Gemini direct model: %s (thinking_budget=%s)", model_name, thinking_budget)
+
+    max_retries = 3
+    retry_delay = 5.0
+    last_exc: Exception | None = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[
+                    image_part,
+                    "Identify all PRAN products visible in this image. Return the raw JSON array only.",
+                ],
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    temperature=1,
+                    response_mime_type="application/json",
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+                    thinking_config=thinking_config,
+                ),
+            )
+            raw_text: str = response.text or ""
+
+            usage_data = getattr(response, "usage_metadata", None)
+            prompt_tokens = int(getattr(usage_data, "prompt_token_count", 0) or 0) if usage_data else 0
+            candidates_tokens = int(getattr(usage_data, "candidates_token_count", 0) or 0) if usage_data else 0
+            thoughts_tokens = int(getattr(usage_data, "thoughts_token_count", 0) or 0) if usage_data else 0
+            total_reported = int(getattr(usage_data, "total_token_count", 0) or 0) if usage_data else 0
+
+            if thoughts_tokens > 0:
+                output_tokens = candidates_tokens + thoughts_tokens
+            elif total_reported > (prompt_tokens + candidates_tokens):
+                output_tokens = total_reported - prompt_tokens
+            else:
+                output_tokens = candidates_tokens
+
+            total_tokens = total_reported if total_reported > 0 else (prompt_tokens + output_tokens)
+            estimated_cost_usd = calculate_token_cost(prompt_tokens, output_tokens)
+
+            return raw_text, {
+                "input_tokens": prompt_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
+                "estimated_cost_usd": estimated_cost_usd,
+            }
+        except APIError as exc:
+            if exc.code in (429, 503) and attempt < max_retries:
+                match = re.search(r"retry in ([0-9]+(?:\.[0-9]+)?)s", str(exc.message or ""))
+                delay = float(match.group(1)) + 1.5 if match else retry_delay
+                logger.warning("Gemini API %d on attempt %d/%d — retrying in %.1fs: %s", exc.code, attempt, max_retries, delay, exc.message)
+                time.sleep(delay)
+                retry_delay *= 2
+                last_exc = exc
+                continue
+            raise AIServiceError(f"Gemini API error {exc.code}: {exc.message}") from exc
+        except Exception as exc:
+            raise AIServiceError(f"Unexpected error calling Gemini: {exc}") from exc
+
+    raise AIServiceError(f"Gemini API request failed after {max_retries} attempts: {last_exc}")
+
+
+def openrouter_chat_completion(
+    messages: list[dict[str, Any]],
+    model: str | None = None,
+    stream: bool = False,
+) -> Any:
+    """
+    OpenRouter chat completion helper using openai Python client.
+    Target endpoint: https://openrouter.ai/api/v1/chat/completions
+    Default model: google/gemini-3.7-flash
+    """
+    settings = get_settings()
+    api_key = settings.openrouter_api_key or os.getenv("OPENROUTER_API_KEY", "")
+    if not api_key:
+        raise AIServiceError("OPENROUTER_API_KEY is not set.")
+
+    client = OpenAI(
+        base_url=settings.openrouter_base_url or "https://openrouter.ai/api/v1",
+        api_key=api_key,
+    )
+    return client.chat.completions.create(
+        model=model or settings.openrouter_model or "google/gemini-3.7-flash",
+        messages=messages,
+        stream=stream,
+    )
+
+
+# ── Main function ─────────────────────────────────────────────────────────────
+
+
 def analyze_rack_image(image_input: str | bytes) -> dict[str, Any]:
     """
-    Analyze rack photo using the industry-standard download-then-delete pattern:
+    Analyze rack photo using OpenRouter (google/gemini-3.7-flash) or Google Gemini Direct:
 
-      1. Download / decode image → optimized bytes (memory buffer, not stored yet)
-      2. Write bytes to a secure OS temp file  (prefix: merchvision_)
-      3. Call Gemini AI with the image bytes
-      4. DELETE temp file unconditionally in the finally block
-      5. Parse and return structured product list + token usage
-
-    The temp file exists only during the Gemini call and is guaranteed to be
-    deleted even if an exception is raised — zero files left on disk.
+      1. Download / decode image → optimized bytes (memory buffer, zero disk storage)
+      2. Call OpenRouter / Gemini with image and shelf recognition prompt
+      3. Parse and return structured product list + token usage + USD cost
 
     Args:
         image_input: S3 presigned URL, HTTP URL, Base64 string, Data URI, or raw bytes.
@@ -217,127 +409,34 @@ def analyze_rack_image(image_input: str | bytes) -> dict[str, Any]:
             - "products": list of {"product_name", "quantity_visible"}
             - "token_usage": {"input_tokens", "output_tokens", "total_tokens", "estimated_cost_usd"}
             - "raw_text": raw completion text from model
-
-    Raises:
-        AIServiceError: on network timeout, API error, invalid JSON, or non-array response.
     """
     settings = get_settings()
-
-    if not settings.gemini_api_key:
-        raise AIServiceError("GEMINI_API_KEY is not set. Add it to your .env file.")
 
     # ── Step 1: Resolve image → optimized bytes ────────────────────────────────
     image_bytes, mime_type = _resolve_image_bytes(image_input)
 
-    # ── Step 2 & 3: Write temp file → call Gemini → delete (finally) ──────────
-    suffix = ".jpg" if mime_type == "image/jpeg" else (".png" if mime_type == "image/png" else ".webp")
-    tmp_path: str | None = None
+    # ── Step 2: Route call to OpenRouter or Gemini Direct ─────────────────────
+    provider = (getattr(settings, "ai_provider", "openrouter") or "openrouter").lower()
+    has_openrouter_key = bool(settings.openrouter_api_key and "YOUR_OPENROUTER" not in settings.openrouter_api_key)
+    has_gemini_key = bool(settings.gemini_api_key and "YOUR_GEMINI" not in settings.gemini_api_key)
 
-    try:
-        with tempfile.NamedTemporaryFile(
-            suffix=suffix,
-            delete=False,       # We manage deletion ourselves in finally
-            prefix="merchvision_",
-        ) as tmp_file:
-            tmp_path = tmp_file.name
-            tmp_file.write(image_bytes)
-            tmp_file.flush()
+    raw_text: str = ""
+    token_usage: dict[str, Any] = {}
 
-        logger.info("Temp image written: %s (%d bytes, %s)", tmp_path, len(image_bytes), mime_type)
-
-        # Build Gemini Part from bytes (from_bytes avoids Windows file-handle locking)
-        image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
-
-        client = genai.Client(api_key=settings.gemini_api_key)
-        model_name: str = settings.gemini_model
-        logger.info("Calling Gemini model: %s", model_name)
-
-        max_retries = 3
-        retry_delay = 5.0
-        last_exc: Exception | None = None
-
-        for attempt in range(1, max_retries + 1):
-            try:
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=[
-                        image_part,
-                        "Identify all PRAN products visible in this image. Return the raw JSON array only.",
-                    ],
-                    config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_PROMPT,
-                        temperature=1,
-                        response_mime_type="application/json",
-                        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-                    ),
-                )
-                logger.info("Successfully got response from model: %s", model_name)
-                break
-            except APIError as exc:
-                if exc.code in (429, 503) and attempt < max_retries:
-                    match = re.search(r"retry in ([0-9]+(?:\.[0-9]+)?)s", str(exc.message or ""))
-                    delay = float(match.group(1)) + 1.5 if match else retry_delay
-                    logger.warning(
-                        "Gemini API %d on attempt %d/%d — retrying in %.1fs: %s",
-                        exc.code, attempt, max_retries, delay, exc.message,
-                    )
-                    time.sleep(delay)
-                    retry_delay *= 2
-                    last_exc = exc
-                    continue
-                raise AIServiceError(f"Gemini API error {exc.code}: {exc.message}") from exc
-            except Exception as exc:
-                raise AIServiceError(f"Unexpected error calling Gemini: {exc}") from exc
-        else:
-            raise AIServiceError(
-                f"Gemini API request failed after {max_retries} attempts. "
-                "Please try again in a moment."
-            ) from last_exc
-
-    finally:
-        # ── Step 4: ALWAYS delete temp file ───────────────────────────────────
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.unlink(tmp_path)
-                logger.info("Temp image deleted: %s", tmp_path)
-            except OSError as exc:
-                logger.warning("Failed to delete temp file %s: %s", tmp_path, exc)
-
-    # ── Extract token usage & calculate cost ──────────────────────────────────
-    usage_data = getattr(response, "usage_metadata", None)
-    prompt_tokens = int(getattr(usage_data, "prompt_token_count", 0) or 0) if usage_data else 0
-    candidates_tokens = int(getattr(usage_data, "candidates_token_count", 0) or 0) if usage_data else 0
-    thoughts_tokens = int(getattr(usage_data, "thoughts_token_count", 0) or 0) if usage_data else 0
-    total_reported = int(getattr(usage_data, "total_token_count", 0) or 0) if usage_data else 0
-
-    if thoughts_tokens > 0:
-        output_tokens = candidates_tokens + thoughts_tokens
-    elif total_reported > (prompt_tokens + candidates_tokens):
-        output_tokens = total_reported - prompt_tokens
+    if provider == "openrouter" and has_openrouter_key:
+        raw_text, token_usage = _call_openrouter(image_bytes, mime_type)
+    elif provider == "gemini" and has_gemini_key:
+        raw_text, token_usage = _call_gemini_direct(image_bytes, mime_type)
+    elif has_openrouter_key:
+        raw_text, token_usage = _call_openrouter(image_bytes, mime_type)
+    elif has_gemini_key:
+        raw_text, token_usage = _call_gemini_direct(image_bytes, mime_type)
     else:
-        output_tokens = candidates_tokens
-
-    total_tokens = total_reported if total_reported > 0 else (prompt_tokens + output_tokens)
-
-    prompt_cost = (prompt_tokens / 1_000_000.0) * float(settings.token_cost_input_per_million)
-    output_cost = (output_tokens / 1_000_000.0) * float(settings.token_cost_output_per_million)
-    estimated_cost_usd = round(prompt_cost + output_cost, 6)
-
-    logger.info(
-        "Token usage: in=%d, out=%d (candidates=%d, thoughts=%d), total=%d, cost=$%.6f",
-        prompt_tokens, output_tokens, candidates_tokens, thoughts_tokens, total_tokens, estimated_cost_usd,
-    )
-
-    token_usage = {
-        "input_tokens": prompt_tokens,
-        "output_tokens": output_tokens,
-        "total_tokens": total_tokens,
-        "estimated_cost_usd": estimated_cost_usd,
-    }
+        # If no key is set yet, give clear guidance
+        raise AIServiceError("OPENROUTER_API_KEY (or GEMINI_API_KEY) is not set. Add your API key to .env file.")
 
     # ── Parse model output ─────────────────────────────────────────────────────
-    raw_text: str = response.text or ""
-    raw_text_stripped = raw_text.strip()
+    raw_text_stripped = (raw_text or "").strip()
 
     fence_match = _FENCE_PATTERN.search(raw_text_stripped)
     json_text = fence_match.group(1).strip() if fence_match else raw_text_stripped
@@ -376,3 +475,157 @@ def analyze_rack_image(image_input: str | bytes) -> dict[str, Any]:
         "token_usage": token_usage,
         "raw_text": raw_text,
     }
+
+
+# ── Token Router Helpers ──────────────────────────────────────────────────────
+
+
+def calculate_token_cost(
+    prompt_tokens: int,
+    output_tokens: int,
+    input_rate: float | None = None,
+    output_rate: float | None = None,
+) -> float:
+    """Calculate USD cost given token counts and configured rates per 1M tokens."""
+    settings = get_settings()
+    in_rate = input_rate if input_rate is not None else float(settings.token_cost_input_per_million)
+    out_rate = output_rate if output_rate is not None else float(settings.token_cost_output_per_million)
+    p_cost = (prompt_tokens / 1_000_000.0) * in_rate
+    o_cost = (output_tokens / 1_000_000.0) * out_rate
+    return round(p_cost + o_cost, 6)
+
+
+def estimate_tokens(
+    image_input: str | bytes | None = None,
+    image_width: int | None = None,
+    image_height: int | None = None,
+    custom_prompt: str | None = None,
+    thinking_budget: int | None = None,
+) -> dict[str, Any]:
+    """
+    Estimate token consumption and USD cost for Gemini 3.7 Flash before calling the API.
+    
+    Calculates:
+      - Vision tokens (based on patch tiles after Lanczos downscaling to max 1600px).
+      - System instruction tokens (~120 tokens).
+      - Custom/user prompt tokens (~20-100 tokens).
+      - Expected output tokens (shelf JSON ~100-350 tokens).
+      - Thinking tokens (budget configured, e.g. 1024).
+    """
+    settings = get_settings()
+    max_dim = int(getattr(settings, "max_image_dimension", 1600) or 1600)
+
+    # 1. Determine image dimensions
+    w, h = 1600, 1200  # standard default photo dimension
+    dim_str = "1600x1200 (estimated)"
+
+    if image_width and image_height and image_width > 0 and image_height > 0:
+        w, h = image_width, image_height
+        dim_str = f"{w}x{h}"
+    elif image_input:
+        try:
+            raw_bytes, _ = _resolve_image_bytes(image_input)
+            with Image.open(io.BytesIO(raw_bytes)) as im:
+                w, h = im.size
+                dim_str = f"{w}x{h} (measured)"
+        except Exception:
+            pass
+
+    # Lanczos downscale calculation
+    if max(w, h) > max_dim:
+        scale = max_dim / float(max(w, h))
+        w = int(w * scale)
+        h = int(h * scale)
+        dim_str += f" -> downscaled to {w}x{h}"
+
+    # Gemini 3.7 Flash Vision token formula:
+    # 258 tokens base + 258 tokens per 768x768 tile
+    tiles_x = max(1, (w + 767) // 768)
+    tiles_y = max(1, (h + 767) // 768)
+    vision_tokens = 258 + (tiles_x * tiles_y * 258)
+
+    # System prompt ~ 125 tokens
+    system_tokens = 125
+
+    # User prompt tokens (~1 token per 4 characters)
+    user_prompt = custom_prompt or "Identify all PRAN products visible in this image. Return the raw JSON array only."
+    prompt_tokens = max(15, len(user_prompt) // 4)
+
+    total_prompt_tokens = vision_tokens + system_tokens + prompt_tokens
+
+    # Thinking & output estimate
+    active_budget = thinking_budget if thinking_budget is not None else int(getattr(settings, "gemini_thinking_budget", 1024) or 1024)
+    expected_output_tokens = 200
+    estimated_total_output = expected_output_tokens + (active_budget if active_budget > 0 else 0)
+
+    total_tokens = total_prompt_tokens + estimated_total_output
+    estimated_cost = calculate_token_cost(total_prompt_tokens, estimated_total_output)
+
+    return {
+        "model": settings.gemini_model,
+        "estimated_vision_tokens": vision_tokens,
+        "estimated_system_tokens": system_tokens,
+        "estimated_prompt_tokens": total_prompt_tokens,
+        "estimated_output_tokens": expected_output_tokens,
+        "estimated_thinking_tokens": active_budget,
+        "estimated_total_tokens": total_tokens,
+        "estimated_cost_usd": estimated_cost,
+        "dimensions_analyzed": dim_str,
+        "optimization_applied": f"Lanczos downscaling (max {max_dim}px)",
+    }
+
+
+def count_tokens_direct(
+    text: str | None = None,
+    image_input: str | bytes | None = None,
+) -> dict[str, Any]:
+    """
+    Count input tokens against Gemini 3.7 Flash using google-genai client or fallback calculator.
+    """
+    settings = get_settings()
+    model_name = settings.gemini_model
+    max_input_limit = getattr(settings, "max_input_tokens", 1_048_576)
+
+    contents: list[Any] = []
+    if text:
+        contents.append(text)
+    if image_input:
+        try:
+            image_bytes, mime_type = _resolve_image_bytes(image_input)
+            contents.append(types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
+        except Exception as exc:
+            logger.warning("Could not resolve image for count_tokens: %s", exc)
+
+    if not contents:
+        contents = [SYSTEM_PROMPT]
+
+    # Attempt live count with genai client
+    if settings.gemini_api_key:
+        try:
+            client = genai.Client(api_key=settings.gemini_api_key)
+            result = client.models.count_tokens(
+                model=model_name,
+                contents=contents,
+            )
+            total_tokens = int(getattr(result, "total_tokens", 0) or 0)
+            return {
+                "model": model_name,
+                "total_tokens": total_tokens,
+                "input_token_limit": max_input_limit,
+                "is_within_limit": total_tokens <= max_input_limit,
+                "remaining_tokens_available": max(0, max_input_limit - total_tokens),
+            }
+        except Exception as exc:
+            logger.warning("Live count_tokens API call failed (%s), falling back to offline estimator", exc)
+
+    # Fallback estimation
+    estimated = estimate_tokens(image_input=image_input, custom_prompt=text)
+    total_tokens = estimated["estimated_prompt_tokens"]
+    return {
+        "model": model_name,
+        "total_tokens": total_tokens,
+        "input_token_limit": max_input_limit,
+        "is_within_limit": total_tokens <= max_input_limit,
+        "remaining_tokens_available": max(0, max_input_limit - total_tokens),
+    }
+

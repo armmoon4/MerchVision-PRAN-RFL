@@ -1,6 +1,7 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 google-genai>=2.24.0
+openai>=1.50.0
 python-dotenv==1.0.1
 sqlalchemy==2.0.35
 pydantic-settings==2.5.2
@@ -9,3 +10,4 @@ aiofiles==24.1.0
 psycopg2-binary==2.9.10
 httpx
 pillow>=10.0.0
+

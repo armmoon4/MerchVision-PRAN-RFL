@@ -75,6 +75,27 @@
       background: #34d399;
       box-shadow: 0 0 8px #34d399;
     }
+    .badge-model {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .badge-model::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #38bdf8;
+      box-shadow: 0 0 8px #38bdf8;
+    }
     .links a {
       color: var(--primary);
       text-decoration: none;
@@ -302,8 +323,9 @@
 <body>
   <div class="container">
     <header>
-      <h1>PRAN-RFL MerchVision <span class="badge-zerodisk">Zero-Disk In-Memory</span></h1>
+      <h1>PRAN-RFL MerchVision <span class="badge-zerodisk">Zero-Disk</span> <span class="badge-model" id="modelBadge">Gemini 3.7 Flash</span></h1>
       <div class="links">
+        <a href="/tokens/models" target="_blank">Token Router</a>
         <a href="/docs" target="_blank">Swagger API</a>
         <a href="/redoc" target="_blank">ReDoc</a>
       </div>

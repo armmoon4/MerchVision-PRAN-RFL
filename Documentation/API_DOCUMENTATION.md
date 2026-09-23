@@ -231,6 +231,206 @@ Returns aggregate metrics across all scanned racks, including total input tokens
 
 ---
 
+---
+
+### 3.4. OpenRouter & Token Router API (`/tokens`)
+
+The Token Router API manages token quotas, model capability queries, pre-inference token estimation, live token counting, and payload routing through **OpenRouter** (`https://openrouter.ai/api/v1`) using the model ID `google/gemini-3.7-flash`.
+
+#### `GET /tokens/models`
+Returns model specifications, token boundaries, thinking capabilities, and feature support for **google/gemini-3.7-flash** on OpenRouter.
+
+**Response `200 OK`:**
+```json
+{
+  "provider": "openrouter",
+  "model_code": "google/gemini-3.7-flash",
+  "openrouter_endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "version": "Stable: gemini-3.7-flash (OpenRouter: google/gemini-3.7-flash)",
+  "latest_update": "August 2026",
+  "input_token_limit": 1048576,
+  "output_token_limit": 65536,
+  "supported_inputs": ["Text", "Image", "Video", "Audio", "PDF"],
+  "supported_outputs": ["Text"],
+  "capabilities": {
+    "audio_generation": false,
+    "caching": true,
+    "code_execution": true,
+    "computer_use": "Supported (Preview)",
+    "file_search": true,
+    "function_calling": true,
+    "grounding_with_google_maps": true,
+    "image_generation": false,
+    "live_api": false,
+    "search_grounding": true,
+    "structured_outputs": true,
+    "thinking": "Supported (low, medium, high)",
+    "url_context": true,
+    "batch_api": true,
+    "flex_inference": true,
+    "priority_inference": true
+  },
+  "active_thinking_budget": 1024,
+  "active_thinking_level": "medium",
+  "pricing_input_per_million": 0.75,
+  "pricing_output_per_million": 3.75
+}
+```
+
+---
+
+#### `GET /tokens/pricing`
+Returns active token pricing rates per 1,000,000 tokens and 1,000 tokens (OpenRouter rates: $0.75/1M input, $3.75/1M output).
+
+**Response `200 OK`:**
+```json
+{
+  "provider": "openrouter",
+  "model": "google/gemini-3.7-flash",
+  "currency": "USD",
+  "input_cost_per_million": 0.75,
+  "output_cost_per_million": 3.75,
+  "input_cost_per_1k": 0.00075,
+  "output_cost_per_1k": 0.00375,
+  "formula": "cost = (input_tokens / 1,000,000 * input_rate) + (output_tokens / 1,000,000 * output_rate)"
+}
+```
+
+---
+
+#### `POST /tokens/chat`
+Execute direct chat completions with `google/gemini-3.7-flash` via OpenRouter.
+
+**Request Body:**
+```json
+{
+  "messages": [
+    {"role": "system", "content": "You are a helpful software engineering assistant."},
+    {"role": "user", "content": "Explain Oracle database indexing in simple terms."}
+  ]
+}
+```
+
+**Response `200 OK`:**
+```json
+{
+  "provider": "openrouter",
+  "model": "google/gemini-3.7-flash",
+  "content": "An Oracle database index works like the index at the back of a book...",
+  "token_usage": {
+    "input_tokens": 28,
+    "output_tokens": 142,
+    "total_tokens": 170,
+    "estimated_cost_usd": 0.0005535
+  },
+  "status": "success"
+}
+```
+
+---
+
+#### `GET /tokens/summary` (or `/tokens/stats`)
+Aggregates total tokens consumed, overall USD cost, and per-scan averages across all historical requests.
+
+**Response `200 OK`:**
+```json
+{
+  "total_scans": 12,
+  "completed_scans": 12,
+  "total_input_tokens": 15360,
+  "total_output_tokens": 1420,
+  "total_tokens": 16780,
+  "total_estimated_cost_usd": 0.002104,
+  "avg_tokens_per_scan": 1398.33,
+  "avg_cost_per_scan_usd": 0.000175,
+  "pricing_rates": { ... }
+}
+```
+
+---
+
+#### `POST /tokens/estimate`
+Pre-calculates estimated Gemini vision tokens, system instruction tokens, expected output tokens, and USD cost prior to making a vision call.
+
+**Request Body:**
+```json
+{
+  "image_width": 1920,
+  "image_height": 1080,
+  "thinking_budget": 1024
+}
+```
+
+**Response `200 OK`:**
+```json
+{
+  "model": "gemini-3.7-flash",
+  "estimated_vision_tokens": 1290,
+  "estimated_system_tokens": 125,
+  "estimated_prompt_tokens": 1435,
+  "estimated_output_tokens": 200,
+  "estimated_thinking_tokens": 1024,
+  "estimated_total_tokens": 2659,
+  "estimated_cost_usd": 0.000633,
+  "dimensions_analyzed": "1920x1080 -> downscaled to 1600x900",
+  "optimization_applied": "Lanczos downscaling (max 1600px)"
+}
+```
+
+---
+
+#### `POST /tokens/count`
+Counts exact tokens against Gemini 3.7 Flash limits using the Google GenAI SDK token counter.
+
+**Request Body:**
+```json
+{
+  "text": "Identify PRAN juices and quantify visible units."
+}
+```
+
+**Response `200 OK`:**
+```json
+{
+  "model": "gemini-3.7-flash",
+  "total_tokens": 10,
+  "input_token_limit": 1048576,
+  "is_within_limit": true,
+  "remaining_tokens_available": 1048566
+}
+```
+
+---
+
+#### `POST /tokens/route`
+Token-aware router that analyzes input size, checks context boundaries (1,048,576 tokens), and advises optimal routing mode (synchronous, async queue, or batch).
+
+**Request Body:**
+```json
+{
+  "prompt": "Analyze shelf rack photo",
+  "priority": "standard"
+}
+```
+
+**Response `200 OK`:**
+```json
+{
+  "model": "gemini-3.7-flash",
+  "route": "synchronous_direct",
+  "estimated_input_tokens": 135,
+  "configured_thinking_budget": 1024,
+  "configured_thinking_level": "medium",
+  "max_input_limit": 1048576,
+  "max_output_limit": 65536,
+  "is_payload_valid": true,
+  "recommended_batch_mode": false,
+  "message": "Standard payload: routed to immediate synchronous zero-disk vision analysis."
+}
+```
+
+---
+
 ## 4. Code Examples (Python & cURL)
 
 ### Example 1 — Analyze S3 / Pure Base64 Payload via Python:
@@ -249,7 +449,19 @@ print(f"Tokens: In={data['input_tokens']}, Out={data['output_tokens']}, Total={d
 print(f"Cost: ${data['estimated_cost_usd']:.6f}")
 ```
 
-### Example 2 — Analyze via cURL (JSON Base64 / S3 URL):
+### Example 2 — Token Estimation via Python:
+```python
+import requests
+
+res = requests.post("http://localhost:8000/tokens/estimate", json={
+    "image_width": 2400,
+    "image_height": 1800,
+    "thinking_budget": 1024,
+})
+print("Estimated Token Usage:", res.json())
+```
+
+### Example 3 — Analyze via cURL (JSON Base64 / S3 URL):
 ```bash
 curl -X POST http://localhost:8000/analyze \
   -H "Content-Type: application/json" \
@@ -257,3 +469,27 @@ curl -X POST http://localhost:8000/analyze \
     "image_url": "https://my-bucket.s3.amazonaws.com/racks/shelf_01.jpg"
   }'
 ```
+
+### Example 4 — Direct OpenRouter with OpenAI Python SDK:
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.environ.get("OPENROUTER_API_KEY", "your-openrouter-api-key"),
+)
+
+response = client.chat.completions.create(
+    model="google/gemini-3.7-flash",
+    messages=[
+        {
+            "role": "user",
+            "content": "Explain retail shelf SKU recognition."
+        }
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+

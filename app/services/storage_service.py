@@ -141,7 +141,6 @@ def download_image_to_memory(url: str) -> tuple[bytes, str]:
 def save_image(
     image_bytes: bytes,
     content_type: str,
-    shop_id: str | None = None,
 ) -> tuple[str, str]:
     """
     Zero-disk stub: returns an in-memory reference identifier without writing to local disk.
@@ -151,7 +150,6 @@ def save_image(
 
 def download_and_save_image(
     url: str,
-    shop_id: str | None = None,
 ) -> tuple[str, str]:
     """
     Zero-disk validation: validates the remote S3/HTTP URL and returns (url, "")
@@ -160,3 +158,4 @@ def download_and_save_image(
     # Validate in-memory to ensure URL is reachable and points to a valid image
     download_image_to_memory(url)
     return url, ""
+

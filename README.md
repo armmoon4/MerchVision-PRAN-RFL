@@ -148,8 +148,6 @@ Analyzes an S3 URL, HTTP image URL, or Base64 string in **one synchronous call**
 {
   "upload_id": "b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d",
   "status": "COMPLETED",
-  "shop_id": null,
-  "merchandiser_id": null,
   "image_url": "https://s3.amazonaws.com/bucket/image.jpg",
   "detected_products": [
     {

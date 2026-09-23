@@ -41,12 +41,6 @@ class RackUpload(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
 
-    # ── Client-supplied identifiers ───────────────────────────────────────────
-    shop_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    merchandiser_id: Mapped[str | None] = mapped_column(
-        String(255), nullable=True, index=True
-    )
-
     # ── Storage / Reference ───────────────────────────────────────────────────
     image_url: Mapped[str | None] = mapped_column(String(2048), nullable=True, default="")
     image_key: Mapped[str | None] = mapped_column(String(1024), nullable=True, default="")
@@ -80,12 +74,6 @@ class RackUpload(Base):
         nullable=False,
         default=_now_utc,
         onupdate=_now_utc,
-    )
-
-    # ── Composite indexes (useful for future dashboard queries) ───────────────
-    __table_args__ = (
-        Index("ix_rack_uploads_shop_status", "shop_id", "status"),
-        Index("ix_rack_uploads_merchandiser_status", "merchandiser_id", "status"),
     )
 
     def __repr__(self) -> str:

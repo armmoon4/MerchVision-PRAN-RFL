@@ -94,8 +94,6 @@ Analyzes a rack image from an **S3 URL, HTTP/HTTPS URL, or Base64 string** direc
 {
   "upload_id": "f0051207-7e9f-4f5d-a8a1-8b1fed212103",
   "status": "COMPLETED",
-  "shop_id": null,
-  "merchandiser_id": null,
   "image_url": "https://my-bucket.s3.amazonaws.com/racks/shelf_01.jpg",
   "detected_products": [
     {
@@ -137,8 +135,6 @@ Uploads and streams a binary image file directly in RAM for instant 1-call analy
 
 **Form Parameters:**
 - `file`: Binary file (`image/jpeg`, `image/png`, `image/webp`).
-- `shop_id`: String (optional).
-- `merchandiser_id`: String (optional).
 
 ---
 
@@ -172,8 +168,6 @@ Retrieves the status, detected products, and token analysis for a specific uploa
 {
   "upload_id": "f0051207-7e9f-4f5d-a8a1-8b1fed212103",
   "status": "COMPLETED",
-  "shop_id": null,
-  "merchandiser_id": null,
   "image_url": "base64_in_memory",
   "detected_products": [
     {

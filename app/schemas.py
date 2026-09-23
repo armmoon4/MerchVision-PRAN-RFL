@@ -52,8 +52,6 @@ class UploadUrlRequest(BaseModel):
 
     image_url: Optional[str] = None
     image: Optional[str] = None
-    shop_id: Optional[str] = None
-    merchandiser_id: Optional[str] = None
 
 
 # ── Response models ───────────────────────────────────────────────────────────
@@ -78,8 +76,6 @@ class UploadResultResponse(BaseModel):
 
     upload_id: str
     status: ProcessingStatus
-    shop_id: Optional[str] = None
-    merchandiser_id: Optional[str] = None
     image_url: Optional[str] = None
     detected_products: Optional[List[DetectedProduct]] = None
     input_tokens: Optional[int] = None
@@ -99,8 +95,6 @@ class DirectAnalyzeResponse(BaseModel):
 
     upload_id: str
     status: ProcessingStatus
-    shop_id: Optional[str] = None
-    merchandiser_id: Optional[str] = None
     image_url: Optional[str] = None
     detected_products: List[DetectedProduct]
     token_usage: TokenUsage

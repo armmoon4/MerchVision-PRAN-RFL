@@ -144,8 +144,6 @@ def _build_upload_result_response(row: RackUpload) -> UploadResultResponse:
     return UploadResultResponse(
         upload_id=row.id,
         status=row.status,
-        shop_id=row.shop_id,
-        merchandiser_id=row.merchandiser_id,
         image_url=row.image_url,
         detected_products=row.detected_products,
         input_tokens=row.input_tokens,
@@ -333,8 +331,6 @@ async def analyze_image_direct(
     upload_id = str(uuid.uuid4())
     db_row = RackUpload(
         id=upload_id,
-        shop_id=None,
-        merchandiser_id=None,
         image_url=image_ref,
         image_key="",
         status=ProcessingStatus.PROCESSING,
@@ -367,8 +363,6 @@ async def analyze_image_direct(
         return DirectAnalyzeResponse(
             upload_id=db_row.id,
             status=ProcessingStatus.COMPLETED,
-            shop_id=db_row.shop_id,
-            merchandiser_id=db_row.merchandiser_id,
             image_url=db_row.image_url,
             detected_products=products,
             token_usage=token_usage_obj,
@@ -404,8 +398,6 @@ async def analyze_image_direct(
 )
 async def analyze_file_direct(
     file: UploadFile = File(..., description="Rack photo (JPEG, PNG, or WebP)"),
-    shop_id: str | None = Form(None, description="Shop identifier"),
-    merchandiser_id: str | None = Form(None, description="Merchandiser identifier"),
     db: Session = Depends(get_db),
 ) -> DirectAnalyzeResponse:
     """
@@ -435,8 +427,6 @@ async def analyze_file_direct(
     upload_id = str(uuid.uuid4())
     db_row = RackUpload(
         id=upload_id,
-        shop_id=shop_id,
-        merchandiser_id=merchandiser_id,
         image_url="direct_file_upload_in_memory",
         image_key="",
         status=ProcessingStatus.PROCESSING,
@@ -468,8 +458,6 @@ async def analyze_file_direct(
         return DirectAnalyzeResponse(
             upload_id=db_row.id,
             status=ProcessingStatus.COMPLETED,
-            shop_id=db_row.shop_id,
-            merchandiser_id=db_row.merchandiser_id,
             image_url=db_row.image_url,
             detected_products=products,
             token_usage=token_usage_obj,
@@ -534,8 +522,6 @@ async def analyze_image_url_direct(
 async def create_upload(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="Rack photo (JPEG, PNG, or WebP)"),
-    shop_id: str | None = Form(None, description="Shop identifier"),
-    merchandiser_id: str | None = Form(None, description="Merchandiser identifier"),
     db: Session = Depends(get_db),
 ) -> UploadResponse:
     """
@@ -565,8 +551,6 @@ async def create_upload(
     upload_id = str(uuid.uuid4())
     db_row = RackUpload(
         id=upload_id,
-        shop_id=shop_id,
-        merchandiser_id=merchandiser_id,
         image_url="async_upload_in_memory",
         image_key="",
         status=ProcessingStatus.PENDING,
@@ -618,8 +602,6 @@ async def create_upload_from_url(
     upload_id = str(uuid.uuid4())
     db_row = RackUpload(
         id=upload_id,
-        shop_id=payload.shop_id,
-        merchandiser_id=payload.merchandiser_id,
         image_url=image_ref,
         image_key="",
         status=ProcessingStatus.PENDING,
@@ -670,34 +652,24 @@ async def create_upload_from_url(
 )
 def list_uploads(
     status: ProcessingStatus | None = Query(None, description="Filter by processing status"),
-    shop_id: str | None = Query(None, description="Filter by shop ID (case-insensitive substring)"),
-    merchandiser_id: str | None = Query(None, description="Filter by merchandiser ID (case-insensitive substring)"),
-    search: str | None = Query(None, description="Search across shop ID, merchandiser ID, or error message"),
+    search: str | None = Query(None, description="Search across upload ID or error message"),
     limit: int = Query(50, ge=1, le=100, description="Max number of items to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     db: Session = Depends(get_db),
 ) -> UploadListResponse:
     """
     Fetch paginated list of all rack photo uploads, detected products, and token usage metrics.
-    Supports filtering by status, shop ID, merchandiser ID, and generic search.
+    Supports filtering by status and search.
     """
     query = db.query(RackUpload)
 
     if status:
         query = query.filter(RackUpload.status == status)
 
-    if shop_id and shop_id.strip():
-        query = query.filter(RackUpload.shop_id.ilike(f"%{shop_id.strip()}%"))
-
-    if merchandiser_id and merchandiser_id.strip():
-        query = query.filter(RackUpload.merchandiser_id.ilike(f"%{merchandiser_id.strip()}%"))
-
     if search and search.strip():
         term = f"%{search.strip()}%"
         query = query.filter(
             or_(
-                RackUpload.shop_id.ilike(term),
-                RackUpload.merchandiser_id.ilike(term),
                 RackUpload.id.ilike(term),
                 RackUpload.error_message.ilike(term),
             )

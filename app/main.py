@@ -5,16 +5,19 @@ Endpoints:
     GET    /                        → interactive web UI dashboard
     GET    /ui                      → interactive web UI dashboard
     GET    /health                  → liveness check
-    POST   /analyze                 → SINGLE-CALL direct analysis (file upload) with token cost
-    POST   /analyze/url             → SINGLE-CALL direct analysis (image URL) with token cost
-    POST   /uploads                 → async upload rack photo, start AI analysis
-    POST   /uploads/url             → async upload rack photo URL, start AI analysis
+    POST   /analyze                 → SINGLE-CALL: send image_url (S3 URL or Base64), get instant result
+    POST   /analyze/url             → alias for /analyze
+    POST   /analyze/file            → SINGLE-CALL: upload image file, get instant result
+    POST   /uploads                 → async upload rack photo file, start AI analysis
+    POST   /uploads/url             → async submit S3 URL/Base64, start AI analysis
     GET    /uploads                 → list all analysis results with filtering & pagination
     GET    /uploads/summary         → aggregate analysis metrics, token stats & top products
     GET    /uploads/{upload_id}     → get analysis result by ID
     GET    /uploads/{upload_id}/result→ poll for analysis result
-    DELETE /uploads/{upload_id}     → delete upload record & file
+    DELETE /uploads/{upload_id}     → delete upload record
 
+Image processing uses the download-then-delete pattern:
+  image is written to a secure temp file, analyzed by Gemini, then IMMEDIATELY deleted.
 Images are served as static files at /media/...
 """
 from __future__ import annotations
@@ -42,6 +45,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -50,6 +54,8 @@ from app.database import Base, SessionLocal, engine, get_db, init_db
 from app.models import ProcessingStatus, RackUpload
 from app.schemas import (
     AnalysisSummaryResponse,
+    AnalyzeImageRequest,
+    AnalyzeRequest,
     DeleteResponse,
     DirectAnalyzeResponse,
     HealthResponse,
@@ -61,12 +67,7 @@ from app.schemas import (
     UploadUrlRequest,
 )
 from app.services.ai_service import AIServiceError, analyze_rack_image
-from app.services.storage_service import (
-    InvalidImageURLError,
-    StorageError,
-    download_and_save_image,
-    save_image,
-)
+# storage_service retained for legacy compatibility (unused in analyze flow)
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -153,12 +154,10 @@ def _build_upload_result_response(row: RackUpload) -> UploadResultResponse:
 # ── Background task ───────────────────────────────────────────────────────────
 
 
-def process_upload(upload_id: str, image_url: str) -> None:
+def process_upload(upload_id: str, image_input: str | bytes, image_ref: str = "") -> None:
     """
-    Background task: call Gemini via OpenRouter and write results & token usage to the DB.
-
-    This runs AFTER the HTTP 202 response has already been sent to the client.
-    Uses its own DB session (not the request-scoped one, which is closed).
+    Background task: download image to a temp file, call Gemini, write results to DB,
+    then delete the temp file immediately (download-then-delete pattern).
     """
     db = SessionLocal()
     try:
@@ -172,9 +171,9 @@ def process_upload(upload_id: str, image_url: str) -> None:
         db.commit()
         logger.info("Upload %s: status → PROCESSING", upload_id)
 
-        # ── Call Gemini ───────────────────────────────────────────────────────
+        # ── Call Gemini In-Memory ──────────────────────────────────────────────
         try:
-            ai_result = analyze_rack_image(image_url)
+            ai_result = analyze_rack_image(image_input)
             products = ai_result.get("products", [])
             usage = ai_result.get("token_usage", {})
 
@@ -219,6 +218,12 @@ def process_upload(upload_id: str, image_url: str) -> None:
 
 
 @app.get(
+    "/",
+    response_class=HTMLResponse,
+    summary="Root redirect to Web UI",
+    include_in_schema=False,
+)
+@app.get(
     "/ui",
     response_class=HTMLResponse,
     summary="Web UI tester & dashboard",
@@ -238,20 +243,31 @@ def get_ui():
     summary="Liveness check",
     tags=["System"],
 )
+@app.get(
+    "/api/health",
+    response_model=HealthResponse,
+    include_in_schema=False,
+)
 def health_check() -> HealthResponse:
     """Returns `{"status": "ok"}` when the server is running."""
     return HealthResponse()
 
 
-# ── Direct Single-API Analysis (Synchronous 1-Call) ───────────────────────────
+# ── Direct Single-API Analysis (Synchronous 1-Call, Zero Disk Storage) ────────
 
 
 @app.post(
     "/analyze",
     response_model=DirectAnalyzeResponse,
     status_code=status.HTTP_200_OK,
-    summary="Analyze rack photo directly in one single API call (returns detections + token costs)",
+    summary="Analyze rack photo — send image_url (S3 URL or Base64), get result immediately",
     tags=["Single API Analysis"],
+)
+@app.post(
+    "/api/analyze",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
 )
 @app.post(
     "/uploads/analyze",
@@ -259,19 +275,135 @@ def health_check() -> HealthResponse:
     status_code=status.HTTP_200_OK,
     include_in_schema=False,
 )
+@app.post(
+    "/api/uploads/analyze",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
 async def analyze_image_direct(
+    payload: AnalyzeRequest,
+    db: Session = Depends(get_db),
+) -> DirectAnalyzeResponse:
+    """
+    **Single-Call Rack Analysis** (download-then-delete pattern):
+
+    - Send a JSON body with `image_url` containing an **S3 presigned URL**, **remote HTTP/HTTPS URL**, or a **Base64 image string**.
+    - The server downloads the image to a secure temp file, runs Gemini AI analysis,
+      **deletes the temp file immediately** after analysis, and returns the result.
+    - No image is ever permanently stored on the server disk.
+
+    **Request body:**
+    ```json
+    {
+      "image_url": "https://s3.amazonaws.com/bucket/image.jpg"
+    }
+    ```
+    Or with Base64:
+    ```json
+    {
+      "image_url": "/9j/4AAQSkZJRgAB..."
+    }
+    ```
+
+    **Response:** detected products, token usage, and estimated cost.
+    """
+    image_input = payload.image_url or payload.image
+    if not image_input or not image_input.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="image_url is required. Provide an S3/HTTP URL or Base64 image string in 'image_url'.",
+        )
+
+    image_ref = (
+        image_input
+        if (image_input.startswith(("http://", "https://", "s3://")) and len(image_input) < 2000)
+        else "base64_upload"
+    )
+
+    # ── Create DB record for analytics / history ───────────────────────────────
+    upload_id = str(uuid.uuid4())
+    db_row = RackUpload(
+        id=upload_id,
+        shop_id=None,
+        merchandiser_id=None,
+        image_url=image_ref,
+        image_key="",
+        status=ProcessingStatus.PROCESSING,
+    )
+    db.add(db_row)
+    db.commit()
+
+    # ── Download → temp file → Gemini → delete → result ───────────────────────
+    try:
+        ai_res = await run_in_threadpool(analyze_rack_image, image_input)
+        products = ai_res.get("products", [])
+        usage = ai_res.get("token_usage", {})
+
+        db_row.detected_products = products
+        db_row.input_tokens = usage.get("input_tokens", 0)
+        db_row.output_tokens = usage.get("output_tokens", 0)
+        db_row.total_tokens = usage.get("total_tokens", 0)
+        db_row.estimated_cost_usd = usage.get("estimated_cost_usd", 0.0)
+        db_row.ai_raw_response = ai_res.get("raw_text")
+        db_row.status = ProcessingStatus.COMPLETED
+        db.commit()
+
+        token_usage_obj = TokenUsage(
+            input_tokens=db_row.input_tokens or 0,
+            output_tokens=db_row.output_tokens or 0,
+            total_tokens=db_row.total_tokens or 0,
+            estimated_cost_usd=db_row.estimated_cost_usd or 0.0,
+        )
+
+        return DirectAnalyzeResponse(
+            upload_id=db_row.id,
+            status=ProcessingStatus.COMPLETED,
+            shop_id=db_row.shop_id,
+            merchandiser_id=db_row.merchandiser_id,
+            image_url=db_row.image_url,
+            detected_products=products,
+            token_usage=token_usage_obj,
+            input_tokens=token_usage_obj.input_tokens,
+            output_tokens=token_usage_obj.output_tokens,
+            total_tokens=token_usage_obj.total_tokens,
+            estimated_cost_usd=token_usage_obj.estimated_cost_usd,
+            error_message=None,
+            created_at=db_row.created_at,
+        )
+    except AIServiceError as exc:
+        db_row.status = ProcessingStatus.FAILED
+        db_row.error_message = str(exc)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI Vision Analysis failed: {exc}",
+        )
+
+
+@app.post(
+    "/analyze/file",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Analyze uploaded image file directly in-memory (zero disk storage)",
+    tags=["Single API Analysis"],
+)
+@app.post(
+    "/analyze/upload",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+async def analyze_file_direct(
     file: UploadFile = File(..., description="Rack photo (JPEG, PNG, or WebP)"),
     shop_id: str | None = Form(None, description="Shop identifier"),
     merchandiser_id: str | None = Form(None, description="Merchandiser identifier"),
     db: Session = Depends(get_db),
 ) -> DirectAnalyzeResponse:
     """
-    **Single API Call Endpoint**:
-    Accepts an uploaded image file, saves it, performs AI vision recognition immediately,
-    and returns detected products, input tokens, output tokens, total tokens, and estimated cost
-    in a single synchronous HTTP response without needing polling.
+    Accepts an uploaded image file, processes it purely in-memory (no saving to disk),
+    and returns detected products, token metrics, and estimated USD cost.
     """
-    # ── Validate content type ─────────────────────────────────────────────────
     content_type = (file.content_type or "").lower()
     if content_type not in settings.allowed_image_types:
         raise HTTPException(
@@ -282,7 +414,6 @@ async def analyze_image_direct(
             ),
         )
 
-    # ── Read & validate file size ─────────────────────────────────────────────
     image_bytes = await file.read()
     if len(image_bytes) > settings.max_upload_size_bytes:
         raise HTTPException(
@@ -293,36 +424,20 @@ async def analyze_image_direct(
             ),
         )
 
-    # ── Save to local storage ─────────────────────────────────────────────────
-    try:
-        image_url, image_key = save_image(
-            image_bytes=image_bytes,
-            content_type=content_type,
-            shop_id=shop_id,
-        )
-    except StorageError as exc:
-        logger.error("Storage error: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to save the uploaded image. Please try again.",
-        )
-
-    # ── Create DB row ─────────────────────────────────────────────────────────
     upload_id = str(uuid.uuid4())
     db_row = RackUpload(
         id=upload_id,
         shop_id=shop_id,
         merchandiser_id=merchandiser_id,
-        image_url=image_url,
-        image_key=image_key,
+        image_url="direct_file_upload_in_memory",
+        image_key="",
         status=ProcessingStatus.PROCESSING,
     )
     db.add(db_row)
     db.commit()
 
-    # ── Run AI detection synchronously ────────────────────────────────────────
     try:
-        ai_res = analyze_rack_image(image_url)
+        ai_res = await run_in_threadpool(analyze_rack_image, image_bytes)
         products = ai_res.get("products", [])
         usage = ai_res.get("token_usage", {})
 
@@ -371,106 +486,42 @@ async def analyze_image_direct(
     "/analyze/url",
     response_model=DirectAnalyzeResponse,
     status_code=status.HTTP_200_OK,
-    summary="Analyze rack image URL directly in one single API call (returns detections + token costs)",
+    summary="Alias for /analyze — send image_url (S3 URL or Base64), get result immediately",
     tags=["Single API Analysis"],
 )
+@app.post(
+    "/api/analyze/url",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
 async def analyze_image_url_direct(
-    payload: UploadUrlRequest,
+    payload: AnalyzeRequest,
     db: Session = Depends(get_db),
 ) -> DirectAnalyzeResponse:
     """
-    **Single API Call Endpoint (URL)**:
-    Accepts an image URL, downloads and validates it, performs AI vision recognition immediately,
-    and returns detected products, input tokens, output tokens, total tokens, and estimated cost
-    in a single synchronous HTTP response.
+    Alias for POST /analyze.
+    Accepts an S3 URL, HTTP/HTTPS URL, or Base64 string.
+    Downloads image to temp file, runs Gemini AI analysis, deletes temp file, returns result.
     """
-    try:
-        image_url, image_key = download_and_save_image(
-            url=payload.image_url,
-            shop_id=payload.shop_id,
-        )
-    except InvalidImageURLError as exc:
-        logger.warning("Invalid image URL '%s': %s", payload.image_url, exc)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        )
-    except StorageError as exc:
-        logger.error("Storage error processing URL '%s': %s", payload.image_url, exc)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to save the image from the provided URL.",
-        )
-
-    # ── Create DB row ─────────────────────────────────────────────────────────
-    upload_id = str(uuid.uuid4())
-    db_row = RackUpload(
-        id=upload_id,
-        shop_id=payload.shop_id,
-        merchandiser_id=payload.merchandiser_id,
-        image_url=image_url,
-        image_key=image_key,
-        status=ProcessingStatus.PROCESSING,
-    )
-    db.add(db_row)
-    db.commit()
-
-    # ── Run AI detection synchronously ────────────────────────────────────────
-    try:
-        ai_res = analyze_rack_image(image_url)
-        products = ai_res.get("products", [])
-        usage = ai_res.get("token_usage", {})
-
-        db_row.detected_products = products
-        db_row.input_tokens = usage.get("input_tokens", 0)
-        db_row.output_tokens = usage.get("output_tokens", 0)
-        db_row.total_tokens = usage.get("total_tokens", 0)
-        db_row.estimated_cost_usd = usage.get("estimated_cost_usd", 0.0)
-        db_row.ai_raw_response = ai_res.get("raw_text")
-        db_row.status = ProcessingStatus.COMPLETED
-        db.commit()
-
-        token_usage_obj = TokenUsage(
-            input_tokens=db_row.input_tokens or 0,
-            output_tokens=db_row.output_tokens or 0,
-            total_tokens=db_row.total_tokens or 0,
-            estimated_cost_usd=db_row.estimated_cost_usd or 0.0,
-        )
-
-        return DirectAnalyzeResponse(
-            upload_id=db_row.id,
-            status=ProcessingStatus.COMPLETED,
-            shop_id=db_row.shop_id,
-            merchandiser_id=db_row.merchandiser_id,
-            image_url=db_row.image_url,
-            detected_products=products,
-            token_usage=token_usage_obj,
-            input_tokens=token_usage_obj.input_tokens,
-            output_tokens=token_usage_obj.output_tokens,
-            total_tokens=token_usage_obj.total_tokens,
-            estimated_cost_usd=token_usage_obj.estimated_cost_usd,
-            error_message=None,
-            created_at=db_row.created_at,
-        )
-    except AIServiceError as exc:
-        db_row.status = ProcessingStatus.FAILED
-        db_row.error_message = str(exc)
-        db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI Vision Analysis failed: {exc}",
-        )
+    return await analyze_image_direct(payload=payload, db=db)
 
 
-# ── Asynchronous Endpoints ───────────────────────────────────────────────────
+# ── Asynchronous Endpoints (Zero Disk Storage) ────────────────────────────────
 
 
 @app.post(
     "/uploads",
     response_model=UploadResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Upload a rack photo and start async AI analysis",
+    summary="Submit a rack photo file and start async AI analysis in-memory",
     tags=["Async Uploads"],
+)
+@app.post(
+    "/api/uploads",
+    response_model=UploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
 )
 async def create_upload(
     background_tasks: BackgroundTasks,
@@ -480,10 +531,9 @@ async def create_upload(
     db: Session = Depends(get_db),
 ) -> UploadResponse:
     """
-    Accept a rack photo, save it locally, create a DB row with status=PENDING,
-    return 202 immediately, then run AI analysis in the background.
+    Accept a rack photo file, read into memory, create DB row with status=PENDING,
+    return 202 immediately, then run AI analysis in the background without writing to disk.
     """
-    # ── Validate content type ─────────────────────────────────────────────────
     content_type = (file.content_type or "").lower()
     if content_type not in settings.allowed_image_types:
         raise HTTPException(
@@ -494,7 +544,6 @@ async def create_upload(
             ),
         )
 
-    # ── Read & validate file size ─────────────────────────────────────────────
     image_bytes = await file.read()
     if len(image_bytes) > settings.max_upload_size_bytes:
         raise HTTPException(
@@ -505,43 +554,25 @@ async def create_upload(
             ),
         )
 
-    # ── Save to local storage ─────────────────────────────────────────────────
-    try:
-        image_url, image_key = save_image(
-            image_bytes=image_bytes,
-            content_type=content_type,
-            shop_id=shop_id,
-        )
-    except StorageError as exc:
-        logger.error("Storage error: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to save the uploaded image. Please try again.",
-        )
-
-    # ── Create DB row ─────────────────────────────────────────────────────────
     upload_id = str(uuid.uuid4())
     db_row = RackUpload(
         id=upload_id,
         shop_id=shop_id,
         merchandiser_id=merchandiser_id,
-        image_url=image_url,
-        image_key=image_key,
+        image_url="async_upload_in_memory",
+        image_key="",
         status=ProcessingStatus.PENDING,
     )
     db.add(db_row)
     db.commit()
-    logger.info(
-        "Upload %s created (shop=%s, merchandiser=%s)", upload_id, shop_id, merchandiser_id
-    )
 
-    # ── Schedule background analysis ──────────────────────────────────────────
-    background_tasks.add_task(process_upload, upload_id, image_url)
+    # ── Schedule background analysis with in-memory bytes ──────────────────────
+    background_tasks.add_task(process_upload, upload_id, image_bytes)
 
     return UploadResponse(
         upload_id=upload_id,
         status=ProcessingStatus.PENDING,
-        message="Image received. Processing started.",
+        message="Image received in-memory. Processing started.",
     )
 
 
@@ -549,8 +580,14 @@ async def create_upload(
     "/uploads/url",
     response_model=UploadResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Submit a rack photo URL and start async AI analysis",
+    summary="Submit a rack photo S3 URL/Base64 and start async AI analysis in-memory",
     tags=["Async Uploads"],
+)
+@app.post(
+    "/api/uploads/url",
+    response_model=UploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
 )
 async def create_upload_from_url(
     payload: UploadUrlRequest,
@@ -558,55 +595,37 @@ async def create_upload_from_url(
     db: Session = Depends(get_db),
 ) -> UploadResponse:
     """
-    Accept a publicly accessible rack photo image URL, download and validate the image,
-    save it locally, create a DB record with status=PENDING, return 202 immediately,
-    and trigger AI analysis in the background.
+    Accept an S3 URL, HTTP image URL, or Base64 string, create DB record with status=PENDING,
+    return 202 immediately, and trigger in-memory AI analysis in the background without disk writes.
     """
-    # ── Download and save image from URL ──────────────────────────────────────
-    try:
-        image_url, image_key = download_and_save_image(
-            url=payload.image_url,
-            shop_id=payload.shop_id,
-        )
-    except InvalidImageURLError as exc:
-        logger.warning("Invalid image URL '%s': %s", payload.image_url, exc)
+    image_input = payload.image_url or payload.image
+    if not image_input or not image_input.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        )
-    except StorageError as exc:
-        logger.error("Storage error processing URL '%s': %s", payload.image_url, exc)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to save the image from the provided URL.",
+            detail="Image input is required. Provide an S3/HTTP image URL or Base64 string in 'image_url'.",
         )
 
-    # ── Create DB row ─────────────────────────────────────────────────────────
+    image_ref = image_input if (image_input.startswith(("http://", "https://", "s3://")) and len(image_input) < 2000) else "base64_in_memory"
+
     upload_id = str(uuid.uuid4())
     db_row = RackUpload(
         id=upload_id,
         shop_id=payload.shop_id,
         merchandiser_id=payload.merchandiser_id,
-        image_url=image_url,
-        image_key=image_key,
+        image_url=image_ref,
+        image_key="",
         status=ProcessingStatus.PENDING,
     )
     db.add(db_row)
     db.commit()
-    logger.info(
-        "Upload %s created from URL (shop=%s, merchandiser=%s)",
-        upload_id,
-        payload.shop_id,
-        payload.merchandiser_id,
-    )
 
     # ── Schedule background analysis ──────────────────────────────────────────
-    background_tasks.add_task(process_upload, upload_id, image_url)
+    background_tasks.add_task(process_upload, upload_id, image_input)
 
     return UploadResponse(
         upload_id=upload_id,
         status=ProcessingStatus.PENDING,
-        message="Image URL received. Processing started.",
+        message="Image input received. Processing started.",
     )
 
 
@@ -617,12 +636,27 @@ async def create_upload_from_url(
     tags=["Uploads & History"],
 )
 @app.get(
+    "/api/uploads",
+    response_model=UploadListResponse,
+    include_in_schema=False,
+)
+@app.get(
     "/analysis",
     response_model=UploadListResponse,
     include_in_schema=False,
 )
 @app.get(
+    "/api/analysis",
+    response_model=UploadListResponse,
+    include_in_schema=False,
+)
+@app.get(
     "/results",
+    response_model=UploadListResponse,
+    include_in_schema=False,
+)
+@app.get(
+    "/api/results",
     response_model=UploadListResponse,
     include_in_schema=False,
 )
@@ -681,7 +715,17 @@ def list_uploads(
     tags=["Analytics"],
 )
 @app.get(
+    "/api/uploads/summary",
+    response_model=AnalysisSummaryResponse,
+    include_in_schema=False,
+)
+@app.get(
     "/analysis/summary",
+    response_model=AnalysisSummaryResponse,
+    include_in_schema=False,
+)
+@app.get(
+    "/api/analysis/summary",
     response_model=AnalysisSummaryResponse,
     include_in_schema=False,
 )
@@ -781,10 +825,20 @@ def get_analysis_summary(db: Session = Depends(get_db)) -> AnalysisSummaryRespon
     tags=["Uploads & History"],
 )
 @app.get(
+    "/api/uploads/{upload_id}",
+    response_model=UploadResultResponse,
+    include_in_schema=False,
+)
+@app.get(
     "/uploads/{upload_id}/result",
     response_model=UploadResultResponse,
     summary="Get analysis result for an upload (polling endpoint)",
     tags=["Uploads & History"],
+)
+@app.get(
+    "/api/uploads/{upload_id}/result",
+    response_model=UploadResultResponse,
+    include_in_schema=False,
 )
 def get_upload_result(
     upload_id: str,
@@ -809,6 +863,11 @@ def get_upload_result(
     response_model=DeleteResponse,
     summary="Delete an upload record and its image",
     tags=["Uploads & History"],
+)
+@app.delete(
+    "/api/uploads/{upload_id}",
+    response_model=DeleteResponse,
+    include_in_schema=False,
 )
 def delete_upload(
     upload_id: str,

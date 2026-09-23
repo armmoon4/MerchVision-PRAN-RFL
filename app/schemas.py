@@ -33,10 +33,25 @@ class TokenUsage(BaseModel):
 # ── Request models ────────────────────────────────────────────────────────────
 
 
-class UploadUrlRequest(BaseModel):
-    """Request payload for initiating rack analysis from an image URL."""
+class AnalyzeRequest(BaseModel):
+    """
+    Request payload for rack analysis.
+    Send an S3 presigned URL, HTTP/HTTPS URL, Data URI, or raw Base64 image string.
+    """
 
-    image_url: str
+    image_url: Optional[str] = None  # S3 presigned URL, HTTP/HTTPS URL, Data URI, or Base64 string
+    image: Optional[str] = None  # Backward-compatible alias for image_url
+
+
+# Backward compatibility alias
+AnalyzeImageRequest = AnalyzeRequest
+
+
+class UploadUrlRequest(BaseModel):
+    """Request payload for initiating async rack analysis from an image URL or S3 URL."""
+
+    image_url: Optional[str] = None
+    image: Optional[str] = None
     shop_id: Optional[str] = None
     merchandiser_id: Optional[str] = None
 
@@ -65,7 +80,7 @@ class UploadResultResponse(BaseModel):
     status: ProcessingStatus
     shop_id: Optional[str] = None
     merchandiser_id: Optional[str] = None
-    image_url: str
+    image_url: Optional[str] = None
     detected_products: Optional[List[DetectedProduct]] = None
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
@@ -86,7 +101,7 @@ class DirectAnalyzeResponse(BaseModel):
     status: ProcessingStatus
     shop_id: Optional[str] = None
     merchandiser_id: Optional[str] = None
-    image_url: str
+    image_url: Optional[str] = None
     detected_products: List[DetectedProduct]
     token_usage: TokenUsage
     input_tokens: int

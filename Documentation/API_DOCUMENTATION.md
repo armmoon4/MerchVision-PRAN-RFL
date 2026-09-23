@@ -1,12 +1,19 @@
 # Prism — PRAN-RFL Rack Recognition & Token Cost Analytics API Documentation
 
-Comprehensive API documentation for the **PRAN-RFL Rack Recognition System** backend service with integrated **Token Usage & Cost Analysis**.
+Comprehensive API documentation for the **PRAN-RFL Rack Recognition System** backend service with **Zero Local Disk Storage (100% In-Memory Vision Pipeline)** and integrated **Token Usage & Cost Analysis**.
 
 ---
 
 ## 1. Overview & Base URLs
 
-The Prism API processes shelf and rack photos taken by retail merchandisers, identifying PRAN-RFL product SKUs, calculating visible unit quantities, and measuring exact **input tokens**, **output tokens**, **total tokens**, and **estimated USD cost** using Google Gemini 3.7 Flash vision models.
+The Prism API processes shelf and rack photos provided as **S3 Presigned URLs**, **Remote HTTP/HTTPS URLs**, **Raw Base64 strings (e.g. `/9j/...`)**, or **Binary Streams**. 
+
+It identifies PRAN-RFL product SKUs, calculates visible unit quantities, and returns exact **input tokens**, **output tokens**, **total tokens**, and **estimated USD cost** using Google Gemini 3.7 Flash vision models.
+
+### Key Architectural Highlights:
+- **Zero Local Disk Footprint**: Images are processed directly in RAM (`io.BytesIO`) and streamed to Google Gemini without downloading, caching, or saving image files locally.
+- **Flexible Image Inputs**: Supports pure Base64 strings (e.g. `/9j/4AAQ...`), Data URIs (`data:image/jpeg;base64,...`), S3 URLs, and direct file uploads.
+- **In-Memory Optimization**: Resizes images in memory to optimize Gemini vision tile tokens before transmission.
 
 | Environment | Base URL | Notes |
 |---|---|---|
@@ -51,29 +58,35 @@ Liveness probe to verify server availability.
 
 ---
 
-### 3.2. Single-Call Direct Analysis (1 API Request)
+### 3.2. Single-Call Direct Analysis (1 API Request, Download-Then-Delete)
 
-#### `POST /analyze`
-Analyzes a rack image file directly in **one single API call** without requiring separate polling. Returns product detections and token usage immediately.
+#### `POST /analyze` (or `/analyze/url`)
+Analyzes a rack image from an **S3 URL, HTTP/HTTPS URL, or Base64 string** directly in **one single synchronous API call**. The server downloads the image to a secure temp file, runs Gemini AI vision recognition, deletes the temp file immediately, and returns the analysis results.
 
-- **URL:** `/analyze` (Alias: `/uploads/analyze`)
+- **URL:** `/analyze` (Aliases: `/api/analyze`, `/analyze/url`, `/uploads/analyze`)
 - **Method:** `POST`
-- **Content-Type:** `multipart/form-data`
+- **Content-Type:** `application/json`
 
-**Form Parameters:**
+**JSON Request Body Schema (`AnalyzeRequest`):**
 
-| Parameter | Type | Required | Description |
+| Field | Type | Required | Description |
 |---|---|---|---|
-| `file` | Binary File | **Yes** | Image file (`image/jpeg`, `image/png`, `image/webp`). Max size: 10 MB. |
-| `shop_id` | String | No | Shop identifier (e.g. `SHOP-Gulshan-102`). |
-| `merchandiser_id` | String | No | Merchandiser identifier (e.g. `MER-Rahim-45`). |
+| `image_url` | String | **Yes** | S3 presigned URL, HTTP/HTTPS URL, Data URI, or pure Base64 image string (e.g. `/9j/...`). |
 
-**Example Request (cURL):**
-```bash
-curl -X POST http://localhost:8000/analyze \
-  -F "file=@/path/to/rack_shelf.jpg" \
-  -F "shop_id=SHOP-102" \
-  -F "merchandiser_id=MER-45"
+*(Note: `image` is also supported as an alias for `image_url`)*
+
+**Example 1 — S3 Presigned URL Payload:**
+```json
+{
+  "image_url": "https://my-bucket.s3.amazonaws.com/racks/shelf_01.jpg"
+}
+```
+
+**Example 2 — Pure Base64 Payload:**
+```json
+{
+  "image_url": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxAQDx..."
+}
 ```
 
 **Response `200 OK`:**
@@ -81,9 +94,9 @@ curl -X POST http://localhost:8000/analyze \
 {
   "upload_id": "f0051207-7e9f-4f5d-a8a1-8b1fed212103",
   "status": "COMPLETED",
-  "shop_id": "SHOP-102",
-  "merchandiser_id": "MER-45",
-  "image_url": "http://localhost:8000/media/uploads/SHOP-102/ab62985150b840a480a575b828fb1c49.jpg",
+  "shop_id": null,
+  "merchandiser_id": null,
+  "image_url": "https://my-bucket.s3.amazonaws.com/racks/shelf_01.jpg",
   "detected_products": [
     {
       "product_name": "PRAN Mango Juice 250ml",
@@ -109,65 +122,40 @@ curl -X POST http://localhost:8000/analyze \
   "total_tokens": 1374,
   "estimated_cost_usd": 0.000166,
   "error_message": null,
-  "created_at": "2026-09-02T08:50:00Z"
+  "created_at": "2026-09-22T09:30:00Z"
 }
 ```
 
 ---
 
-#### `POST /analyze/url`
-Analyzes a rack image from a public URL in **one single API call**.
+#### `POST /analyze/file`
+Uploads and streams a binary image file directly in RAM for instant 1-call analysis (zero disk writes).
 
-- **URL:** `/analyze/url`
-- **Method:** `POST`
-- **Content-Type:** `application/json`
-
-**JSON Request Body:**
-```json
-{
-  "image_url": "https://example.com/rack_shelf.jpg",
-  "shop_id": "SHOP-102",
-  "merchandiser_id": "MER-45"
-}
-```
-
-**Response `200 OK`:** Same structure as `POST /analyze`.
-
----
-
-### 3.3. Asynchronous Rack Uploads & Polling
-
-#### `POST /uploads`
-Uploads a rack image and enqueues a background AI recognition job.
-
-- **URL:** `/uploads`
+- **URL:** `/analyze/file` (Alias: `/analyze/upload`)
 - **Method:** `POST`
 - **Content-Type:** `multipart/form-data`
 
-**Response `202 Accepted`:**
-```json
-{
-  "upload_id": "f0051207-7e9f-4f5d-a8a1-8b1fed212103",
-  "status": "PENDING",
-  "message": "Image received. Processing started."
-}
-```
+**Form Parameters:**
+- `file`: Binary file (`image/jpeg`, `image/png`, `image/webp`).
+- `shop_id`: String (optional).
+- `merchandiser_id`: String (optional).
 
 ---
 
-#### `POST /uploads/url`
-Submits an image URL and enqueues background processing.
+### 3.3. Asynchronous Rack Uploads & Polling (Zero Disk Storage)
 
-- **URL:** `/uploads/url`
+#### `POST /uploads` / `POST /uploads/url`
+Enqueues an in-memory background AI recognition task and returns HTTP 202 immediately.
+
+- **URL:** `/uploads/url` (JSON) or `/uploads` (Multipart File)
 - **Method:** `POST`
-- **Content-Type:** `application/json`
 
 **Response `202 Accepted`:**
 ```json
 {
   "upload_id": "f0051207-7e9f-4f5d-a8a1-8b1fed212103",
   "status": "PENDING",
-  "message": "Image URL received. Processing started."
+  "message": "Image input received. Processing started."
 }
 ```
 
@@ -184,9 +172,9 @@ Retrieves the status, detected products, and token analysis for a specific uploa
 {
   "upload_id": "f0051207-7e9f-4f5d-a8a1-8b1fed212103",
   "status": "COMPLETED",
-  "shop_id": "SHOP-102",
-  "merchandiser_id": "MER-45",
-  "image_url": "http://localhost:8000/media/uploads/SHOP-102/ab62985150b840a480a575b828fb1c49.jpg",
+  "shop_id": null,
+  "merchandiser_id": null,
+  "image_url": "base64_in_memory",
   "detected_products": [
     {
       "product_name": "PRAN Mango Juice 250ml",
@@ -204,24 +192,15 @@ Retrieves the status, detected products, and token analysis for a specific uploa
     "estimated_cost_usd": 0.000166
   },
   "error_message": null,
-  "created_at": "2026-09-02T08:50:00Z",
-  "updated_at": "2026-09-02T08:50:04Z"
+  "created_at": "2026-09-22T09:30:00Z",
+  "updated_at": "2026-09-22T09:30:03Z"
 }
 ```
 
 ---
 
-#### `GET /uploads` (Aliases: `GET /analysis`, `GET /results`)
-Returns a paginated list of analysis records with token metrics, search, and filtering.
-
-- **URL:** `/uploads`
-- **Method:** `GET`
-- **Query Parameters:** `status`, `shop_id`, `merchandiser_id`, `search`, `limit`, `offset`
-
----
-
 #### `GET /uploads/summary` (Alias: `GET /analysis/summary`)
-Returns aggregated summary statistics including **total input tokens**, **total output tokens**, **total tokens**, **total cost in USD**, and **average tokens per scan**.
+Returns aggregate metrics across all scanned racks, including total input tokens, output tokens, total tokens, total USD cost, and top detected items.
 
 **Response `200 OK`:**
 ```json
@@ -252,31 +231,29 @@ Returns aggregated summary statistics including **total input tokens**, **total 
 
 ---
 
-#### `DELETE /uploads/{upload_id}`
-Permanently deletes an upload record and removes its saved image from disk.
+## 4. Code Examples (Python & cURL)
 
----
-
-## 4. Single API Call Usage Example (Python & cURL)
-
-### cURL Single API:
-```bash
-curl -X POST http://localhost:8000/analyze \
-  -F "file=@shelf.jpg" \
-  -F "shop_id=SHOP-102"
-```
-
-### Python Single API:
+### Example 1 — Analyze S3 / Pure Base64 Payload via Python:
 ```python
 import requests
 
-res = requests.post(
-    "http://localhost:8000/analyze",
-    files={"file": open("shelf.jpg", "rb")},
-    data={"shop_id": "SHOP-102"}
-)
+payload = {
+    "image_url": "https://my-bucket.s3.amazonaws.com/racks/shelf_01.jpg"  # or Base64 string "/9j/..."
+}
+
+res = requests.post("http://localhost:8000/analyze", json=payload)
 data = res.json()
+
 print("Products:", data["detected_products"])
 print(f"Tokens: In={data['input_tokens']}, Out={data['output_tokens']}, Total={data['total_tokens']}")
 print(f"Cost: ${data['estimated_cost_usd']:.6f}")
+```
+
+### Example 2 — Analyze via cURL (JSON Base64 / S3 URL):
+```bash
+curl -X POST http://localhost:8000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_url": "https://my-bucket.s3.amazonaws.com/racks/shelf_01.jpg"
+  }'
 ```

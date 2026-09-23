@@ -20,14 +20,15 @@ class Settings(BaseSettings):
     # ── Database ──────────────────────────────────────────────────────────────
     database_url: str = "sqlite:///./pran_rfl.db"
 
-    # ── OpenRouter / Gemini ───────────────────────────────────────────────────
-    openrouter_api_key: str = ""
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = "google/gemini-3.7-flash"
-    openrouter_timeout_seconds: int = 30
+    # ── Gemini ────────────────────────────────────────────────────────────────
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.6-flash"
+    gemini_timeout_seconds: int = 30
+    gemini_thinking_budget: int = 1024  # Capped reasoning budget for cost efficiency
+    max_image_dimension: int = 1600  # Optimal resolution (Lanczos) for low vision input tokens
 
-    # ── Token Pricing (USD per 1M tokens) ─────────────────────────────────────
-    # Default rates based on Gemini 3.7 Flash: $0.10/1M prompt, $0.40/1M completion
+    # ── Token Pricing (USD per 1M tokens) ——————————————————————————
+    # Default rates based on Gemini 3.6 Flash: $0.10/1M prompt, $0.40/1M completion
     token_cost_input_per_million: float = 0.10
     token_cost_output_per_million: float = 0.40
 

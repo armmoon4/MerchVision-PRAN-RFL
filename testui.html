@@ -3,19 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PRAN-RFL MerchVision — AI Vision & Token Cost Analytics</title>
+  <title>PRAN-RFL MerchVision — Zero-Disk AI Vision & Token Cost Analytics</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-dark: #090d16;
-      --card-bg: rgba(30, 41, 59, 0.7);
-      --border-color: #334155;
+      --bg-dark: #07090e;
+      --card-bg: rgba(18, 24, 38, 0.75);
+      --border-color: rgba(51, 65, 85, 0.6);
+      --border-focus: #38bdf8;
       --primary: #38bdf8;
-      --primary-hover: #0ea5e9;
+      --primary-hover: #0284c7;
+      --primary-glow: rgba(56, 189, 248, 0.25);
       --accent: #f97316;
-      --token-in: #818cf8;
+      --token-in: #a5b4fc;
       --token-out: #34d399;
       --token-cost: #fbbf24;
       --text-main: #f8fafc;
@@ -23,16 +25,17 @@
       --success: #22c55e;
       --warning: #eab308;
       --danger: #ef4444;
+      --zerodisk-badge: #10b981;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: 'Inter', sans-serif;
-      background: radial-gradient(circle at top right, #1e1b4b, #090d16 65%);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: radial-gradient(circle at 10% 20%, #1e1b4b 0%, #090d16 50%, #030712 100%);
       color: var(--text-main);
       min-height: 100vh;
       padding: 24px;
     }
-    .container { max-width: 1240px; margin: 0 auto; }
+    .container { max-width: 1280px; margin: 0 auto; }
     header {
       display: flex;
       justify-content: space-between;
@@ -41,114 +44,181 @@
       border-bottom: 1px solid var(--border-color);
       margin-bottom: 24px;
     }
-    h1 { font-size: 24px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 10px; }
-    .badge {
-      background: linear-gradient(135deg, #f97316, #ea580c);
+    h1 {
+      font-size: 24px;
+      font-weight: 800;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      letter-spacing: -0.5px;
+    }
+    .badge-zerodisk {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
       font-size: 11px;
       text-transform: uppercase;
-      padding: 4px 8px;
+      padding: 4px 10px;
       border-radius: 9999px;
       font-weight: 700;
+      letter-spacing: 0.5px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .badge-zerodisk::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #34d399;
+      box-shadow: 0 0 8px #34d399;
     }
     .links a {
       color: var(--primary);
       text-decoration: none;
       font-size: 14px;
-      margin-left: 16px;
+      margin-left: 18px;
       font-weight: 600;
+      transition: color 0.2s;
     }
-    .links a:hover { text-decoration: underline; }
+    .links a:hover { color: #fff; text-decoration: underline; }
 
     /* Summary Stats Grid */
     .summary-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       gap: 16px;
       margin-bottom: 24px;
     }
     .stat-card {
       background: var(--card-bg);
-      backdrop-filter: blur(12px);
+      backdrop-filter: blur(16px);
       border: 1px solid var(--border-color);
-      border-radius: 10px;
-      padding: 16px;
-      text-align: center;
+      border-radius: 12px;
+      padding: 16px 18px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    .stat-card::after {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--primary), transparent);
+      opacity: 0.5;
     }
     .stat-val {
-      font-size: 22px;
+      font-size: 24px;
       font-weight: 800;
       font-family: 'JetBrains Mono', monospace;
       margin-top: 4px;
     }
     .stat-label {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--text-muted);
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.8px;
+      font-weight: 600;
     }
 
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-    @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+    .grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 24px; }
+    @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+
     .card {
       background: var(--card-bg);
-      backdrop-filter: blur(12px);
+      backdrop-filter: blur(16px);
       border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 20px;
+      border-radius: 14px;
+      padding: 22px;
       box-shadow: 0 10px 30px -5px rgba(0,0,0,0.5);
     }
-    .tabs { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 12px;
+      overflow-x: auto;
+    }
     .tab-btn {
       background: transparent;
-      border: none;
+      border: 1px solid transparent;
       color: var(--text-muted);
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
-      padding: 6px 12px;
-      border-radius: 6px;
-      transition: all 0.2s;
+      padding: 8px 14px;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+      white-space: nowrap;
     }
     .tab-btn.active {
-      background: rgba(56, 189, 248, 0.15);
+      background: rgba(56, 189, 248, 0.12);
+      border-color: rgba(56, 189, 248, 0.4);
       color: var(--primary);
     }
     .form-group { margin-bottom: 14px; }
-    label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px; }
-    input[type="text"], input[type="url"], input[type="file"] {
+    label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; }
+    input[type="text"], input[type="url"], textarea, input[type="file"] {
       width: 100%;
-      padding: 10px 12px;
+      padding: 10px 14px;
       background: #090d16;
       border: 1px solid var(--border-color);
-      border-radius: 6px;
+      border-radius: 8px;
       color: #fff;
-      font-size: 14px;
+      font-size: 13px;
+      font-family: inherit;
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
-    input:focus { outline: none; border-color: var(--primary); }
+    textarea {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      resize: vertical;
+      min-height: 95px;
+    }
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-glow);
+    }
     .api-mode-switch {
       display: flex;
       align-items: center;
       gap: 10px;
-      margin-bottom: 14px;
-      padding: 10px;
-      background: rgba(15, 23, 42, 0.6);
-      border-radius: 6px;
+      margin-bottom: 16px;
+      padding: 10px 14px;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
       font-size: 13px;
     }
-    .api-mode-switch input { cursor: pointer; }
+    .api-mode-switch input { cursor: pointer; accent-color: var(--primary); }
     button.submit-btn {
       width: 100%;
-      background: var(--primary);
-      color: #090d16;
+      background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
+      color: #07090e;
       font-weight: 700;
-      padding: 12px;
+      padding: 12px 18px;
       border: none;
-      border-radius: 6px;
+      border-radius: 8px;
       cursor: pointer;
       font-size: 14px;
-      transition: background 0.2s;
+      transition: transform 0.15s, opacity 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 14px rgba(56, 189, 248, 0.35);
     }
-    button.submit-btn:hover { background: var(--primary-hover); }
+    button.submit-btn:hover {
+      opacity: 0.95;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(56, 189, 248, 0.45);
+    }
+    button.submit-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
 
     /* Token cost chips */
     .token-breakdown {
@@ -157,66 +227,82 @@
       gap: 8px;
       margin: 14px 0;
       padding: 12px;
-      background: #090d16;
-      border-radius: 8px;
+      background: #080b12;
+      border-radius: 10px;
       border: 1px solid #1e293b;
     }
-    .token-chip {
-      text-align: center;
-    }
+    @media (max-width: 600px) { .token-breakdown { grid-template-columns: repeat(2, 1fr); } }
+    .token-chip { text-align: center; }
     .token-chip-title {
-      font-size: 11px;
+      font-size: 10px;
       color: var(--text-muted);
       text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
     }
     .token-chip-val {
       font-family: 'JetBrains Mono', monospace;
       font-weight: 700;
       font-size: 14px;
-      margin-top: 2px;
+      margin-top: 3px;
     }
 
     .status-badge {
       display: inline-block;
       padding: 4px 10px;
       border-radius: 9999px;
-      font-size: 12px;
-      font-weight: 600;
+      font-size: 11px;
+      font-weight: 700;
       text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
-    .status-PENDING { background: rgba(234, 179, 8, 0.2); color: var(--warning); }
-    .status-PROCESSING { background: rgba(56, 189, 248, 0.2); color: var(--primary); }
-    .status-COMPLETED { background: rgba(34, 197, 94, 0.2); color: var(--success); }
-    .status-FAILED { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
-    .product-list { list-style: none; margin-top: 12px; }
+    .status-PENDING { background: rgba(234, 179, 8, 0.2); color: var(--warning); border: 1px solid rgba(234, 179, 8, 0.3); }
+    .status-PROCESSING { background: rgba(56, 189, 248, 0.2); color: var(--primary); border: 1px solid rgba(56, 189, 248, 0.3); }
+    .status-COMPLETED { background: rgba(34, 197, 94, 0.2); color: var(--success); border: 1px solid rgba(34, 197, 94, 0.3); }
+    .status-FAILED { background: rgba(239, 68, 68, 0.2); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.3); }
+
+    .product-list { list-style: none; margin-top: 14px; max-height: 260px; overflow-y: auto; padding-right: 4px; }
     .product-item {
       display: flex;
       justify-content: space-between;
-      padding: 8px 12px;
+      align-items: center;
+      padding: 9px 14px;
       background: #090d16;
-      border-radius: 6px;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
       margin-bottom: 6px;
       font-size: 13px;
     }
-    .product-qty { font-weight: 700; color: var(--primary); }
+    .product-name { font-weight: 600; color: #f1f5f9; }
+    .product-qty {
+      font-weight: 700;
+      color: var(--primary);
+      background: rgba(56, 189, 248, 0.1);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+    }
     .image-preview {
       width: 100%;
-      max-height: 230px;
+      max-height: 210px;
       object-fit: cover;
       border-radius: 8px;
-      margin-top: 12px;
+      margin-top: 14px;
       border: 1px solid var(--border-color);
+      background: #000;
     }
     .history-card { margin-top: 24px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
-    th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--border-color); }
-    th { color: var(--text-muted); font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+    th, td { text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--border-color); }
+    th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>PRAN-RFL MerchVision <span class="badge">Token & Vision Analytics</span></h1>
+      <h1>PRAN-RFL MerchVision <span class="badge-zerodisk">Zero-Disk In-Memory</span></h1>
       <div class="links">
         <a href="/docs" target="_blank">Swagger API</a>
         <a href="/redoc" target="_blank">ReDoc</a>
@@ -251,30 +337,32 @@
       <!-- Upload Panel -->
       <div class="card">
         <div class="tabs">
-          <button class="tab-btn active" id="tabUrl" onclick="setMode('url')">Analyze via Image URL</button>
+          <button class="tab-btn active" id="tabBase64" onclick="setMode('base64')">S3 / Base64 String</button>
+          <button class="tab-btn" id="tabUrl" onclick="setMode('url')">S3 / Remote URL</button>
           <button class="tab-btn" id="tabFile" onclick="setMode('file')">Upload Image File</button>
         </div>
 
         <div class="api-mode-switch">
           <input type="checkbox" id="singleApiMode" checked>
           <label for="singleApiMode" style="margin:0; cursor:pointer; color:var(--text-main);">
-            <strong>Single-Call 1-API Direct Mode</strong> (immediate result with token cost, no polling)
+            <strong>Single-Call 1-API Direct Mode</strong> (immediate result with token cost, 0 disk writes)
           </label>
         </div>
 
+        <!-- Mode Base64 / S3 Raw String -->
+        <form id="base64Form" onsubmit="submitBase64(event)">
+          <div class="form-group">
+            <label for="imgBase64">Raw Base64 Image String (e.g. <code>/9j/4AAQ...</code>) or S3 URI</label>
+            <textarea id="imgBase64" placeholder="Paste pure base64 string (/9j/...), data:image/jpeg;base64,..., or s3://..." required></textarea>
+          </div>
+          <button type="submit" class="submit-btn" id="btnSubmitBase64">Analyze Base64 In-Memory</button>
+        </form>
+
         <!-- Mode URL -->
-        <form id="urlForm" onsubmit="submitUrl(event)">
+        <form id="urlForm" style="display:none;" onsubmit="submitUrl(event)">
           <div class="form-group">
-            <label for="imgUrl">Rack Image URL (HTTP/HTTPS)</label>
-            <input type="url" id="imgUrl" placeholder="https://example.com/rack.jpg" required>
-          </div>
-          <div class="form-group">
-            <label for="shopIdUrl">Shop ID (Optional)</label>
-            <input type="text" id="shopIdUrl" placeholder="SHOP-Gulshan-102">
-          </div>
-          <div class="form-group">
-            <label for="merchIdUrl">Merchandiser ID (Optional)</label>
-            <input type="text" id="merchIdUrl" placeholder="MER-Rahim-45">
+            <label for="imgUrl">S3 Presigned URL / Public Image URL</label>
+            <input type="url" id="imgUrl" placeholder="https://bucket.s3.amazonaws.com/rack.jpg" required>
           </div>
           <button type="submit" class="submit-btn" id="btnSubmitUrl">Start AI Analysis (URL)</button>
         </form>
@@ -282,26 +370,18 @@
         <!-- Mode File -->
         <form id="fileForm" style="display:none;" onsubmit="submitFile(event)">
           <div class="form-group">
-            <label for="imgFile">Rack Photo File (JPG, PNG, WebP)</label>
+            <label for="imgFile">Rack Photo File (JPG, PNG, WebP) — Streamed in RAM</label>
             <input type="file" id="imgFile" accept="image/jpeg,image/png,image/webp" required>
           </div>
-          <div class="form-group">
-            <label for="shopIdFile">Shop ID (Optional)</label>
-            <input type="text" id="shopIdFile" placeholder="SHOP-Gulshan-102">
-          </div>
-          <div class="form-group">
-            <label for="merchIdFile">Merchandiser ID (Optional)</label>
-            <input type="text" id="merchIdFile" placeholder="MER-Rahim-45">
-          </div>
-          <button type="submit" class="submit-btn" id="btnSubmitFile">Upload & Analyze File</button>
+          <button type="submit" class="submit-btn" id="btnSubmitFile">Stream File & Analyze (In-Memory)</button>
         </form>
       </div>
 
       <!-- Live Result Panel -->
       <div class="card" id="resultCard">
-        <h2 style="font-size: 16px; margin-bottom: 12px; color: var(--text-muted);">Current Analysis & Token Cost Result</h2>
+        <h2 style="font-size: 16px; margin-bottom: 12px; color: var(--text-muted); font-weight: 600;">Live Recognition & Token Analytics</h2>
         <div id="resultContent" style="color: var(--text-muted); font-size: 14px;">
-          Submit an image URL or file to see live AI detection and token cost breakdown here.
+          Submit an S3 image string, URL, or file to view in-memory AI detections and token cost metrics.
         </div>
       </div>
     </div>
@@ -309,10 +389,10 @@
     <!-- History Panel -->
     <div class="card history-card">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h2 style="font-size: 16px; color: var(--text-muted);">Recent Scan & Token History</h2>
-        <button onclick="loadHistory(); loadSummaryStats();" style="background:transparent; border:1px solid var(--border-color); color:var(--text-muted); padding:4px 8px; border-radius:4px; cursor:pointer;">Refresh</button>
+        <h2 style="font-size: 16px; color: var(--text-muted); font-weight: 600;">Recent Scan & Token History</h2>
+        <button onclick="loadHistory(); loadSummaryStats();" style="background:transparent; border:1px solid var(--border-color); color:var(--text-muted); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;">Refresh</button>
       </div>
-      <div id="historyTableContainer">Loading history...</div>
+      <div id="historyTableContainer" style="overflow-x:auto;">Loading history...</div>
     </div>
   </div>
 
@@ -320,27 +400,27 @@
     let pollInterval = null;
 
     function setMode(mode) {
+      document.getElementById('tabBase64').classList.toggle('active', mode === 'base64');
       document.getElementById('tabUrl').classList.toggle('active', mode === 'url');
       document.getElementById('tabFile').classList.toggle('active', mode === 'file');
+
+      document.getElementById('base64Form').style.display = mode === 'base64' ? 'block' : 'none';
       document.getElementById('urlForm').style.display = mode === 'url' ? 'block' : 'none';
       document.getElementById('fileForm').style.display = mode === 'file' ? 'block' : 'none';
     }
 
-    async function submitUrl(e) {
+    async function submitBase64(e) {
       e.preventDefault();
-      const btn = document.getElementById('btnSubmitUrl');
+      const btn = document.getElementById('btnSubmitBase64');
       const isSingleApi = document.getElementById('singleApiMode').checked;
       btn.disabled = true;
-      btn.innerText = isSingleApi ? 'Analyzing in 1 API Call...' : 'Submitting URL...';
+      btn.innerText = isSingleApi ? 'Analyzing in RAM...' : 'Enqueuing...';
 
-      const payload = {
-        image_url: document.getElementById('imgUrl').value.trim(),
-        shop_id: document.getElementById('shopIdUrl').value.trim() || null,
-        merchandiser_id: document.getElementById('merchIdUrl').value.trim() || null
-      };
+      const b64Val = document.getElementById('imgBase64').value.trim();
+      const payload = { image_url: b64Val };
 
       try {
-        const endpoint = isSingleApi ? '/analyze/url' : '/uploads/url';
+        const endpoint = isSingleApi ? '/analyze' : '/uploads/url';
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -350,11 +430,46 @@
         if (!res.ok) throw new Error(data.detail || 'Analysis failed');
 
         if (isSingleApi) {
-          renderResult(data);
+          renderResult(data, b64Val);
           loadHistory();
           loadSummaryStats();
         } else {
-          startPolling(data.upload_id);
+          startPolling(data.upload_id, b64Val);
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Analyze Base64 In-Memory';
+      }
+    }
+
+    async function submitUrl(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btnSubmitUrl');
+      const isSingleApi = document.getElementById('singleApiMode').checked;
+      btn.disabled = true;
+      btn.innerText = isSingleApi ? 'Analyzing in 1 API Call...' : 'Submitting URL...';
+
+      const urlVal = document.getElementById('imgUrl').value.trim();
+      const payload = { image_url: urlVal };
+
+      try {
+        const endpoint = isSingleApi ? '/analyze' : '/uploads/url';
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Analysis failed');
+
+        if (isSingleApi) {
+          renderResult(data, urlVal);
+          loadHistory();
+          loadSummaryStats();
+        } else {
+          startPolling(data.upload_id, urlVal);
         }
       } catch (err) {
         alert('Error: ' + err.message);
@@ -369,17 +484,18 @@
       const btn = document.getElementById('btnSubmitFile');
       const isSingleApi = document.getElementById('singleApiMode').checked;
       btn.disabled = true;
-      btn.innerText = isSingleApi ? 'Analyzing in 1 API Call...' : 'Uploading File...';
+      btn.innerText = isSingleApi ? 'Processing In-Memory...' : 'Uploading File...';
 
+      const fileInput = document.getElementById('imgFile');
+      const file = fileInput.files[0];
       const formData = new FormData();
-      formData.append('file', document.getElementById('imgFile').files[0]);
-      const shop = document.getElementById('shopIdFile').value.trim();
-      if (shop) formData.append('shop_id', shop);
-      const merch = document.getElementById('merchIdFile').value.trim();
-      if (merch) formData.append('merchandiser_id', merch);
+      formData.append('file', file);
+
+      // Create object URL for client-side preview
+      const localPreviewUrl = URL.createObjectURL(file);
 
       try {
-        const endpoint = isSingleApi ? '/analyze' : '/uploads';
+        const endpoint = isSingleApi ? '/analyze/file' : '/uploads';
         const res = await fetch(endpoint, {
           method: 'POST',
           body: formData
@@ -388,31 +504,31 @@
         if (!res.ok) throw new Error(data.detail || 'Analysis failed');
 
         if (isSingleApi) {
-          renderResult(data);
+          renderResult(data, localPreviewUrl);
           loadHistory();
           loadSummaryStats();
         } else {
-          startPolling(data.upload_id);
+          startPolling(data.upload_id, localPreviewUrl);
         }
       } catch (err) {
         alert('Error: ' + err.message);
       } finally {
         btn.disabled = false;
-        btn.innerText = 'Upload & Analyze File';
+        btn.innerText = 'Stream File & Analyze (In-Memory)';
       }
     }
 
-    function startPolling(uploadId) {
+    function startPolling(uploadId, previewUrl) {
       if (pollInterval) clearInterval(pollInterval);
-      pollResult(uploadId);
-      pollInterval = setInterval(() => pollResult(uploadId), 2000);
+      pollResult(uploadId, previewUrl);
+      pollInterval = setInterval(() => pollResult(uploadId, previewUrl), 2000);
     }
 
-    async function pollResult(uploadId) {
+    async function pollResult(uploadId, previewUrl) {
       try {
         const res = await fetch(`/uploads/${uploadId}`);
         const data = await res.json();
-        renderResult(data);
+        renderResult(data, previewUrl);
         if (data.status === 'COMPLETED' || data.status === 'FAILED') {
           clearInterval(pollInterval);
           loadHistory();
@@ -423,18 +539,18 @@
       }
     }
 
-    function renderResult(data) {
+    function renderResult(data, previewSrc) {
       const container = document.getElementById('resultContent');
       let productsHtml = '';
       if (data.detected_products && data.detected_products.length > 0) {
         productsHtml = '<ul class="product-list">' + data.detected_products.map(p => `
           <li class="product-item">
-            <span>${p.product_name}</span>
+            <span class="product-name">${p.product_name}</span>
             <span class="product-qty">Qty: ${p.quantity_visible ?? 'N/A'}</span>
           </li>
         `).join('') + '</ul>';
       } else if (data.status === 'COMPLETED') {
-        productsHtml = '<p style="color:var(--text-muted); margin-top:8px;">No PRAN-RFL products identified in this scan.</p>';
+        productsHtml = '<p style="color:var(--text-muted); margin-top:10px;">No PRAN-RFL products identified in this rack.</p>';
       }
 
       const inTok = data.input_tokens || (data.token_usage ? data.token_usage.input_tokens : 0) || 0;
@@ -463,16 +579,30 @@
         </div>
       ` : '';
 
+      // Determine preview src (base64, URL, or data URI)
+      let previewImgTag = '';
+      let displaySrc = previewSrc || data.image_url;
+      if (displaySrc && displaySrc.startsWith('/9j/')) {
+        displaySrc = 'data:image/jpeg;base64,' + displaySrc;
+      } else if (displaySrc && displaySrc.startsWith('iVBOR')) {
+        displaySrc = 'data:image/png;base64,' + displaySrc;
+      }
+
+      if (displaySrc && !displaySrc.includes('in_memory') && !displaySrc.startsWith('s3://')) {
+        previewImgTag = `<img src="${displaySrc}" class="image-preview" alt="Rack Preview" onerror="this.style.display='none'">`;
+      }
+
       container.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <strong>Upload ID:</strong> <span style="font-family:monospace; font-size:12px;">${data.upload_id}</span>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <div style="font-size:12px; color:var(--text-muted);">
+            ID: <span style="font-family:'JetBrains Mono', monospace; color:#fff;">${data.upload_id}</span>
+          </div>
           <span class="status-badge status-${data.status}">${data.status}</span>
         </div>
-        <div><strong>Shop:</strong> ${data.shop_id || 'Unassigned'} | <strong>Merchandiser:</strong> ${data.merchandiser_id || 'Unassigned'}</div>
-        ${data.error_message ? `<div style="color:var(--danger); margin-top:8px;">Error: ${data.error_message}</div>` : ''}
+        ${data.error_message ? `<div style="color:var(--danger); margin-top:8px; font-size:13px;">Error: ${data.error_message}</div>` : ''}
         ${tokenChipsHtml}
         ${productsHtml}
-        ${data.image_url ? `<img src="${data.image_url}" class="image-preview" alt="Rack Preview">` : ''}
+        ${previewImgTag}
       `;
     }
 
@@ -505,10 +635,9 @@
             <thead>
               <tr>
                 <th>Time</th>
-                <th>Shop ID</th>
                 <th>Status</th>
-                <th>Products Detected</th>
-                <th>Token Breakdown (In / Out / Total)</th>
+                <th>Products</th>
+                <th>Tokens (In / Out / Total)</th>
                 <th>Est. Cost ($)</th>
               </tr>
             </thead>
@@ -519,11 +648,10 @@
                 const totT = item.total_tokens || (inT + outT);
                 const cost = item.estimated_cost_usd ? '$' + Number(item.estimated_cost_usd).toFixed(6) : '-';
                 return `
-                <tr style="cursor:pointer;" onclick="startPolling('${item.upload_id}')">
+                <tr style="cursor:pointer;" onclick="pollResult('${item.upload_id}')">
                   <td>${new Date(item.created_at).toLocaleTimeString()}</td>
-                  <td>${item.shop_id || '-'}</td>
                   <td><span class="status-badge status-${item.status}">${item.status}</span></td>
-                  <td>${item.detected_products ? item.detected_products.length + ' items' : '-'}</td>
+                  <td>${item.detected_products ? item.detected_products.length + ' SKUs' : '-'}</td>
                   <td style="font-family:'JetBrains Mono', monospace; font-size:12px;">
                     ${totT > 0 ? `${inT} / ${outT} / <strong>${totT}</strong>` : '-'}
                   </td>

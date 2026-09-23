@@ -47,9 +47,9 @@ class RackUpload(Base):
         String(255), nullable=True, index=True
     )
 
-    # ── Storage ───────────────────────────────────────────────────────────────
-    image_url: Mapped[str] = mapped_column(String(2048), nullable=False)
-    image_key: Mapped[str] = mapped_column(String(1024), nullable=False)
+    # ── Storage / Reference ───────────────────────────────────────────────────
+    image_url: Mapped[str | None] = mapped_column(String(2048), nullable=True, default="")
+    image_key: Mapped[str | None] = mapped_column(String(1024), nullable=True, default="")
 
     # ── Processing state ──────────────────────────────────────────────────────
     status: Mapped[ProcessingStatus] = mapped_column(

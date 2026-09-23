@@ -1,97 +1,35 @@
 """
-app/services/storage_service.py — Local filesystem image storage.
+app/services/storage_service.py — In-memory image processing and validation (Zero Disk Footprint).
 
-Saves uploaded image bytes to  ./media/uploads/{shop_id}/{uuid}.{ext}
-and returns the (image_url, image_key) tuple that the caller persists in the DB.
-
-Swap this module for an S3 implementation later without touching any other code.
+Handles in-memory validation of S3/HTTP URLs, base64 strings, and binary streams
+without writing or persisting any files to local storage or disk.
 """
 import io
-import mimetypes
-import os
+import logging
 import urllib.error
 import urllib.parse
 import urllib.request
-import uuid
-from pathlib import Path
 
 from app.config import get_settings
 
+logger = logging.getLogger(__name__)
+
 
 class StorageError(Exception):
-    """Raised when saving the image to local storage fails."""
+    """Base exception for image processing and storage errors."""
 
 
 class InvalidImageURLError(StorageError):
     """Raised when downloading or validating an image from an external URL fails."""
 
 
-def _extension_from_content_type(content_type: str) -> str:
-    mapping = {
-        "image/jpeg": "jpg",
-        "image/png": "png",
-        "image/webp": "webp",
-    }
-    return mapping.get(content_type.lower(), "bin")
-
-
-def save_image(
-    image_bytes: bytes,
-    content_type: str,
-    shop_id: str | None = None,
-) -> tuple[str, str]:
-    """
-    Write *image_bytes* to local storage and return (image_url, image_key).
-
-    Args:
-        image_bytes:  Raw bytes of the uploaded image.
-        content_type: MIME type of the image (e.g. "image/jpeg").
-        shop_id:      Optional shop identifier used as a sub-directory.
-
-    Returns:
-        (image_url, image_key)
-        image_key  → relative path inside the media directory,
-                     e.g. "uploads/SHOP-102/3fa8…jpg"
-        image_url  → fully-qualified URL the client can use to view the image,
-                     e.g. "http://localhost:8000/media/uploads/SHOP-102/3fa8…jpg"
-
-    Raises:
-        StorageError: if the write fails for any reason.
-    """
-    settings = get_settings()
-
-    # Build sub-directory: uploads/{shop_id or 'unassigned'}
-    folder_name = shop_id.strip() if shop_id and shop_id.strip() else "unassigned"
-    ext = _extension_from_content_type(content_type)
-    filename = f"{uuid.uuid4().hex}.{ext}"
-
-    # image_key is the path relative to the media root (served by FastAPI)
-    image_key = f"uploads/{folder_name}/{filename}"
-
-    # Absolute path on disk
-    media_root = Path(settings.storage_media_dir).parent  # e.g. ./media
-    abs_path = media_root / image_key
-
-    try:
-        abs_path.parent.mkdir(parents=True, exist_ok=True)
-        abs_path.write_bytes(image_bytes)
-    except OSError as exc:
-        raise StorageError(f"Failed to write image to {abs_path}: {exc}") from exc
-
-    # Build the public URL
-    base = settings.storage_base_url.rstrip("/")
-    image_url = f"/media/{image_key}"
-
-    return image_url, image_key
-
-
-def _detect_image_content_type(data: bytes, header_content_type: str | None) -> str:
+def _detect_image_content_type(data: bytes, header_content_type: str | None = None) -> str:
     """
     Detect the MIME type using header content-type or binary magic bytes.
     """
     if header_content_type:
         clean_type = header_content_type.split(";")[0].strip().lower()
-        if clean_type in ("image/jpeg", "image/jpg", "image/png", "image/webp"):
+        if clean_type in ("image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"):
             return "image/jpeg" if clean_type == "image/jpg" else clean_type
 
     # Inspect magic bytes
@@ -101,29 +39,17 @@ def _detect_image_content_type(data: bytes, header_content_type: str | None) -> 
         return "image/png"
     if data.startswith(b"RIFF") and len(data) >= 12 and data[8:12] == b"WEBP":
         return "image/webp"
+    if data.startswith(b"GIF8"):
+        return "image/gif"
 
-    return header_content_type.split(";")[0].strip().lower() if header_content_type else "application/octet-stream"
+    return header_content_type.split(";")[0].strip().lower() if header_content_type else "image/jpeg"
 
 
-def download_and_save_image(
-    url: str,
-    shop_id: str | None = None,
-) -> tuple[str, str]:
+def download_image_to_memory(url: str) -> tuple[bytes, str]:
     """
-    Download an image from a public HTTP/HTTPS URL, validate it,
-    save it to local storage, and return (image_url, image_key).
-
-    Args:
-        url: Public HTTP/HTTPS URL of the image.
-        shop_id: Optional shop identifier for directory partitioning.
-
-    Returns:
-        (image_url, image_key)
-
-    Raises:
-        InvalidImageURLError: If the URL is invalid, unreachable, not a supported image,
-                             or exceeds the maximum file size.
-        StorageError: If saving the file locally fails.
+    Download an image from a public HTTP/HTTPS or S3 pre-signed URL directly into memory,
+    validate content type and size limits, and return (image_bytes, content_type).
+    Zero disk storage used.
     """
     settings = get_settings()
 
@@ -146,7 +72,7 @@ def download_and_save_image(
     }
 
     req = urllib.request.Request(url_str, headers=headers)
-    timeout = float(settings.openrouter_timeout_seconds)
+    timeout = float(settings.gemini_timeout_seconds)
 
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:
@@ -155,7 +81,6 @@ def download_and_save_image(
                     f"Failed to fetch image from URL. Server responded with HTTP status {response.status}."
                 )
 
-            # Check Content-Length header if available
             content_length = response.headers.get("Content-Length")
             if content_length and content_length.isdigit():
                 if int(content_length) > settings.max_upload_size_bytes:
@@ -164,7 +89,6 @@ def download_and_save_image(
                         f"Maximum allowed: {settings.max_upload_size_mb} MB."
                     )
 
-            # Read stream with size limit safeguard
             buffer = io.BytesIO()
             max_bytes = settings.max_upload_size_bytes
             while True:
@@ -178,7 +102,11 @@ def download_and_save_image(
                     )
 
             image_bytes = buffer.getvalue()
-            raw_content_type = response.headers.get_content_type() if hasattr(response.headers, "get_content_type") else response.headers.get("Content-Type")
+            raw_content_type = (
+                response.headers.get_content_type()
+                if hasattr(response.headers, "get_content_type")
+                else response.headers.get("Content-Type")
+            )
 
     except urllib.error.HTTPError as exc:
         raise InvalidImageURLError(
@@ -207,9 +135,28 @@ def download_and_save_image(
             f"Allowed types: {', '.join(settings.allowed_image_types)}"
         )
 
-    return save_image(
-        image_bytes=image_bytes,
-        content_type=content_type,
-        shop_id=shop_id,
-    )
+    return image_bytes, content_type
 
+
+def save_image(
+    image_bytes: bytes,
+    content_type: str,
+    shop_id: str | None = None,
+) -> tuple[str, str]:
+    """
+    Zero-disk stub: returns an in-memory reference identifier without writing to local disk.
+    """
+    return "", ""
+
+
+def download_and_save_image(
+    url: str,
+    shop_id: str | None = None,
+) -> tuple[str, str]:
+    """
+    Zero-disk validation: validates the remote S3/HTTP URL and returns (url, "")
+    without saving any file to local disk.
+    """
+    # Validate in-memory to ensure URL is reachable and points to a valid image
+    download_image_to_memory(url)
+    return url, ""

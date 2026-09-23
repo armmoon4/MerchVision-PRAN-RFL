@@ -1,42 +1,53 @@
-# MerchVision-PRAN-RFL
+# MerchVision-PRAN-RFL — Zero-Disk AI Vision & Token Cost Analytics
 
-> AI-powered retail merchandising backend — field merchandisers upload a photo of a product rack, Gemini 3.7 Flash identifies every PRAN-RFL product visible, and returns a structured list with quantities.
+> AI-powered retail merchandising backend — processes retail rack photos from **S3 bucket URLs, pure Base64 strings (e.g. `/9j/...`), or direct streams** completely **in-memory with zero local disk storage**. Google Gemini 3.7 Flash detects all PRAN-RFL product SKUs and measures exact token usage and estimated USD costs.
 >
-> 📖 **Full API Reference**: See [API_DOCUMENTATION.md](API_DOCUMENTATION.md) for detailed payload schemas, sequencing, and code examples.
+> 📖 **Full API Reference**: See [Documentation/API_DOCUMENTATION.md](Documentation/API_DOCUMENTATION.md) for detailed payload schemas, sequencing, and code examples.
 
 ---
 
 ## Table of Contents
 
-- [How It Works](#how-it-works)
+- [Zero-Disk Architecture & How It Works](#zero-disk-architecture--how-it-works)
 - [Prerequisites](#prerequisites)
 - [Quick Start — Local (No Docker)](#quick-start--local-no-docker)
 - [Quick Start — Docker](#quick-start--docker)
-- [Configuration Reference](#configuration-reference)
+- [Token Cost Calculation](#token-cost-calculation)
 - [API Reference](#api-reference)
-- [Dedicated API Docs (API_DOCUMENTATION.md)](API_DOCUMENTATION.md)
+- [Dedicated API Docs](Documentation/API_DOCUMENTATION.md)
 - [Project Structure](#project-structure)
-- [Switching Between SQLite and PostgreSQL](#switching-between-sqlite-and-postgresql)
 
 ---
 
-## How It Works
+## Zero-Disk Architecture & How It Works
+
+The system operates **100% in-memory**:
+- **Zero Local Disk Footprint**: Images are never saved, cached, or written to `./media` or the local file system.
+- **Input Versatility**: Accepts S3 presigned URLs, remote HTTP/HTTPS links, raw Base64 strings (e.g. `/9j/4AAQ...`), or direct binary streams.
+- **In-Memory Optimization**: Resizes and optimizes images in RAM (`io.BytesIO`) using Lanczos downscaling to minimize Gemini vision tokens before streaming to the Gemini API.
 
 ```
-Client → POST /uploads (image + shop_id + merchandiser_id)
-              │
-              ├─ Saves image to ./media/uploads/{shop_id}/
-              ├─ Creates DB row  (status = PENDING)
-              └─ Returns 202 immediately  ← upload_id
-
-Background Task (runs after response)
-              │
-              ├─ Sets status = PROCESSING
-              ├─ Calls Gemini 3.7 Flash via OpenRouter
-              └─ Sets status = COMPLETED (products list)
-                          or FAILED (error_message)
-
-Client → GET /uploads/{upload_id}/result   (poll until COMPLETED/FAILED)
+Client Payload (S3 URL / Base64 / Binary Stream)
+                     │
+                     ▼
+       ┌───────────────────────────────┐
+       │ In-Memory Ingestion & Memory  │
+       │ Resizing (0 Disk Persistence) │
+       └──────────────┬────────────────┘
+                      │
+                      ▼
+       ┌───────────────────────────────┐
+       │ Google Gemini 3.7 Flash API   │
+       │ (Part.from_bytes in RAM)      │
+       └──────────────┬────────────────┘
+                      │
+                      ▼
+       ┌───────────────────────────────┐
+       │ 1-Call Immediate Response     │
+       │ - Detected PRAN-RFL Products  │
+       │ - Token Breakdown (In/Out/Tot)│
+       │ - Estimated USD Cost          │
+       └───────────────────────────────┘
 ```
 
 ---
@@ -49,7 +60,7 @@ Client → GET /uploads/{upload_id}/result   (poll until COMPLETED/FAILED)
 |---|---|---|
 | Python | 3.13+ | `python --version` |
 | Pipenv | any | `pipenv --version` |
-| OpenRouter API Key | — | [openrouter.ai/keys](https://openrouter.ai/keys) |
+| Gemini API Key | — | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
 
 ### For Docker
 
@@ -57,18 +68,18 @@ Client → GET /uploads/{upload_id}/result   (poll until COMPLETED/FAILED)
 |---|---|---|
 | Docker Desktop | any | `docker --version` |
 | Docker Compose | v2+ | `docker compose version` |
-| OpenRouter API Key | — | [openrouter.ai/keys](https://openrouter.ai/keys) |
+| Gemini API Key | — | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
 
 ---
 
 ## Quick Start — Local (No Docker)
 
-Uses **SQLite** (zero setup) + local file storage. Perfect for development.
+Uses **SQLite** (zero setup) + pure in-memory vision processing.
 
 ### Step 1 — Clone and enter the project
 
 ```bash
-cd Prism
+cd MerchVision-PRAN-RFL
 ```
 
 ### Step 2 — Install dependencies
@@ -80,18 +91,15 @@ pipenv install
 ### Step 3 — Configure environment
 
 ```bash
-# Copy the template
 copy .env.example .env        # Windows
 cp .env.example .env          # Mac/Linux
 ```
 
-Open `.env` and **set your OpenRouter API key** (the only required change):
+Open `.env` and **set your Gemini API key**:
 
 ```env
-OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxx
+GEMINI_API_KEY=AIzaSyxxxxxxxxxxxxxxxxxxxxxxxx
 ```
-
-Everything else works out of the box with defaults.
 
 ### Step 4 — Start the server
 
@@ -99,392 +107,112 @@ Everything else works out of the box with defaults.
 pipenv run uvicorn app.main:app --reload
 ```
 
-You should see:
-
-```
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Application startup complete.
-```
-
-### Step 5 — Verify it's running
-
-```bash
-curl http://localhost:8000/health
-# → {"status":"ok"}
-```
-
-Open **http://localhost:8000/docs** in your browser for the interactive Swagger UI — you can upload images directly from there.
-
-> **What gets created automatically on first run:**
-> - `pran_rfl.db` — SQLite database file (all uploads and results)
-> - `media/` — directory where uploaded images are stored
+Open **http://localhost:8000** in your browser for the Web UI dashboard or **http://localhost:8000/docs** for Swagger API Docs.
 
 ---
 
-## Quick Start — Docker
+## Token Cost Calculation
 
-Uses **PostgreSQL 16** + local file storage mounted as a volume.
+Gemini token pricing is calculated dynamically based on configurable rates in `.env`:
 
-### Step 1 — Configure environment
+$$\text{Estimated Cost (USD)} = \left(\frac{\text{Input Tokens}}{1,000,000} \times \text{Rate}_{\text{input}}\right) + \left(\frac{\text{Output Tokens}}{1,000,000} \times \text{Rate}_{\text{output}}\right)$$
 
-```bash
-copy .env.example .env        # Windows
-cp .env.example .env          # Mac/Linux
-```
-
-Open `.env` and **set your OpenRouter API key**:
-
-```env
-OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-### Step 2 — Build and start
-
-```bash
-docker compose up --build
-```
-
-First run takes ~60 seconds to pull the Postgres image and build the Python image. Subsequent starts are instant.
-
-You should see both services start:
-
-```
-pran_rfl_db       | database system is ready to accept connections
-pran_rfl_backend  | INFO:     Application startup complete.
-```
-
-### Step 3 — Verify it's running
-
-```bash
-curl http://localhost:8000/health
-# → {"status":"ok"}
-```
-
-Open **http://localhost:8000/docs** for the Swagger UI.
-
-### Useful Docker commands
-
-```bash
-# Start in background (detached)
-docker compose up -d --build
-
-# View logs
-docker compose logs -f backend
-docker compose logs -f db
-
-# Stop everything
-docker compose down
-
-# Stop and wipe the database volume (full reset)
-docker compose down -v
-
-# Rebuild after code changes
-docker compose up --build
-```
-
-> **Uploaded images** are persisted in `./media/` on your host machine (mounted as a volume), so they survive container restarts.
-
----
-
-## Configuration Reference
-
-All settings live in `.env`. The file is read automatically on startup.
-
-| Variable | Default | Required | Description |
-|---|---|---|---|
-| `DATABASE_URL` | `sqlite:///./pran_rfl.db` | No | Postgres: `postgresql://user:pass@host:5432/db` |
-| `OPENROUTER_API_KEY` | — | **Yes** | Your OpenRouter key |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | No | OpenRouter endpoint |
-| `OPENROUTER_MODEL` | `google/gemini-3.7-flash` | No | Any vision model on OpenRouter |
-| `OPENROUTER_TIMEOUT_SECONDS` | `30` | No | Seconds before AI call times out |
-| `STORAGE_BASE_URL` | `http://localhost:8000` | No | Public URL prefix for image links |
-| `MAX_UPLOAD_SIZE_MB` | `10` | No | Max accepted image size |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,...` | No | Comma-separated allowed origins |
+- Default Input Rate: `$0.10` per 1M tokens
+- Default Output Rate: `$0.40` per 1M tokens
 
 ---
 
 ## API Reference
 
-### `GET /health`
+### 1. Direct 1-Call Analysis (Download-Then-Delete)
 
-Liveness check.
+#### `POST /analyze`
 
-```bash
-curl http://localhost:8000/health
-```
+Analyzes an S3 URL, HTTP image URL, or Base64 string in **one synchronous call**:
 
+**Request (`application/json`)**
 ```json
-{"status": "ok"}
+{
+  "image_url": "https://s3.amazonaws.com/bucket/image.jpg"
+}
+```
+*Or with Base64 string:*
+```json
+{
+  "image_url": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxAQ..."
+}
 ```
 
----
-
-### `POST /uploads`
-
-Upload a rack photo and start AI analysis. Returns **202** immediately.
-
-**Request** — `multipart/form-data`
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `file` | image file | ✅ | JPEG, PNG, or WebP — max 10 MB |
-| `shop_id` | string | No | Shop identifier |
-| `merchandiser_id` | string | No | Merchandiser identifier |
-
-```bash
-curl -X POST http://localhost:8000/uploads \
-  -F "file=@rack_photo.jpg" \
-  -F "shop_id=SHOP-102" \
-  -F "merchandiser_id=MER-45"
-```
-
-**Response 202**
-
+**Response `200 OK`**
 ```json
 {
   "upload_id": "b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d",
-  "status": "PENDING",
-  "message": "Image received. Processing started."
-}
-```
-
-**Errors**
-
-| Status | Cause |
-|---|---|
-| `400` | Wrong file type or file exceeds size limit |
-| `500` | Could not save the file to disk |
-
----
-
-### `POST /uploads/url`
-
-Provide a publicly accessible rack photo URL to start AI analysis. Returns **202** immediately.
-
-**Request** — `application/json`
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `image_url` | string | ✅ | HTTP or HTTPS URL to JPEG, PNG, or WebP image |
-| `shop_id` | string | No | Shop identifier |
-| `merchandiser_id` | string | No | Merchandiser identifier |
-
-```bash
-curl -X POST http://localhost:8000/uploads/url \
-  -H "Content-Type: application/json" \
-  -d '{
-    "image_url": "https://example.com/rack_photo.jpg",
-    "shop_id": "SHOP-102",
-    "merchandiser_id": "MER-45"
-  }'
-```
-
-**Response 202**
-
-```json
-{
-  "upload_id": "b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d",
-  "status": "PENDING",
-  "message": "Image URL received. Processing started."
-}
-```
-
-**Errors**
-
-| Status | Cause |
-|---|---|
-| `400` | Invalid URL, unreachable host, wrong file type, or file exceeds size limit |
-| `500` | Could not save downloaded image to disk |
-
----
-
-### `GET /uploads`
-
-List all rack upload analysis results with filtering and pagination.
-
-**Query Parameters**
-
-| Param | Type | Default | Description |
-|---|---|---|---|
-| `status` | string | `None` | Filter by `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED` |
-| `shop_id` | string | `None` | Filter by shop identifier (substring match) |
-| `merchandiser_id` | string | `None` | Filter by merchandiser identifier (substring match) |
-| `search` | string | `None` | Search query across shop ID, merchandiser, ID, errors |
-| `limit` | integer | `50` | Max number of items (1 to 100) |
-| `offset` | integer | `0` | Pagination offset |
-
-```bash
-curl "http://localhost:8000/uploads?status=COMPLETED&limit=10"
-```
-
-**Response 200**
-
-```json
-{
-  "total": 42,
-  "limit": 10,
-  "offset": 0,
-  "items": [
-    {
-      "upload_id": "b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d",
-      "status": "COMPLETED",
-      "shop_id": "SHOP-102",
-      "merchandiser_id": "MER-45",
-      "image_url": "http://localhost:8000/media/uploads/SHOP-102/abc123.jpg",
-      "detected_products": [
-        {"product_name": "PRAN Mango Juice 250ml", "quantity_visible": 6}
-      ],
-      "error_message": null,
-      "created_at": "2026-08-30T10:00:00Z",
-      "updated_at": "2026-08-30T10:00:07Z"
-    }
-  ]
-}
-```
-
----
-
-### `GET /uploads/summary`
-
-Aggregated analytics across all rack scans (total scans, success count, products detected count, and top detected items).
-
-```bash
-curl http://localhost:8000/uploads/summary
-```
-
-**Response 200**
-
-```json
-{
-  "total_scans": 25,
-  "completed_scans": 22,
-  "processing_scans": 1,
-  "pending_scans": 0,
-  "failed_scans": 2,
-  "total_products_detected": 142,
-  "unique_products_count": 18,
-  "top_products": [
+  "status": "COMPLETED",
+  "shop_id": null,
+  "merchandiser_id": null,
+  "image_url": "https://s3.amazonaws.com/bucket/image.jpg",
+  "detected_products": [
     {
       "product_name": "PRAN Mango Juice 250ml",
-      "total_quantity": 48,
-      "scan_appearances": 14
+      "quantity_visible": 6
+    },
+    {
+      "product_name": "PRAN Lassi 200ml",
+      "quantity_visible": 4
     }
   ],
-  "recent_uploads": [...]
-}
-```
-
----
-
-### `GET /uploads/{upload_id}` or `GET /uploads/{upload_id}/result`
-
-Fetch the current status and AI result for a specific upload. **Poll this until status is `COMPLETED` or `FAILED`.**
-
-```bash
-curl http://localhost:8000/uploads/b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d
-```
-
-**Response 200 — completed**
-
-```json
-{
-  "upload_id": "b3f1c2a4-...",
-  "status": "COMPLETED",
-  "shop_id": "SHOP-102",
-  "merchandiser_id": "MER-45",
-  "image_url": "http://localhost:8000/media/uploads/SHOP-102/abc123.jpg",
-  "detected_products": [
-    {"product_name": "PRAN Mango Juice 250ml", "quantity_visible": 6},
-    {"product_name": "RFL Water Bottle 1L",    "quantity_visible": 3}
-  ],
+  "token_usage": {
+    "input_tokens": 1280,
+    "output_tokens": 94,
+    "total_tokens": 1374,
+    "estimated_cost_usd": 0.000166
+  },
+  "input_tokens": 1280,
+  "output_tokens": 94,
+  "total_tokens": 1374,
+  "estimated_cost_usd": 0.000166,
   "error_message": null,
-  "created_at": "2026-08-30T10:00:00Z",
-  "updated_at": "2026-08-30T10:00:07Z"
+  "created_at": "2026-09-22T09:30:00Z"
 }
 ```
 
 ---
 
-### `DELETE /uploads/{upload_id}`
+#### `POST /analyze/file`
 
-Delete an upload record from the database and remove its stored image from disk.
-
-```bash
-curl -X DELETE http://localhost:8000/uploads/b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d
-```
-
-**Response 200**
-
-```json
-{
-  "upload_id": "b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d",
-  "message": "Upload 'b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d' and associated media deleted successfully."
-}
-```
+Accepts a binary image file (`multipart/form-data`) and streams it purely in RAM without writing to disk.
 
 ---
 
-### `GET /media/{path}`
+### 2. Analytics & Summaries
 
-Serves uploaded images as static files.
+#### `GET /uploads/summary`
 
-The `image_url` field in every result response already contains the full URL — just open it in the browser or `<img src={image_url} />` in your frontend.
+Returns aggregated stats: total scans, detected products, total input/output tokens, and cumulative USD cost.
 
----
+#### `GET /uploads`
 
-### Interactive Docs
-
-FastAPI auto-generates Swagger UI and ReDoc:
-
-| UI | URL |
-|---|---|
-| Swagger (interactive, try it) | http://localhost:8000/docs |
-| ReDoc (readable reference) | http://localhost:8000/redoc |
+Returns paginated history of scans and token metrics.
 
 ---
 
 ## Project Structure
 
 ```
-Prism/
-├── .env                        ← your secrets (never commit this)
-├── .env.example                ← safe template to commit
-├── Pipfile                     ← pipenv dependency spec
-├── requirements.txt            ← pip deps for Docker
-├── Dockerfile                  ← Python 3.13-slim image
-├── docker-compose.yml          ← backend + Postgres 16
-└── app/
-    ├── config.py               ← all settings (pydantic-settings)
-    ├── database.py             ← SQLAlchemy engine + session factory
-    ├── models.py               ← RackUpload ORM model + ProcessingStatus enum
-    ├── schemas.py              ← Pydantic API request/response models
-    ├── main.py                 ← FastAPI app: 3 endpoints + background task
-    └── services/
-        ├── storage_service.py  ← writes images to ./media/, returns URL
-        └── ai_service.py       ← calls Gemini via OpenRouter, parses JSON
+MerchVision-PRAN-RFL/
+├── app/
+│   ├── config.py             # Settings from .env via Pydantic
+│   ├── database.py           # SQLAlchemy session and engine
+│   ├── main.py               # FastAPI routes & Swagger setup
+│   ├── models.py             # Database ORM models
+│   ├── schemas.py            # Pydantic request/response models
+│   └── services/
+│       ├── ai_service.py     # In-memory Gemini vision & token analytics
+│       └── storage_service.py# In-memory streaming & validation (Zero Disk)
+├── Documentation/
+│   └── API_DOCUMENTATION.md  # Comprehensive API documentation
+├── testui.html               # Interactive Web UI dashboard
+├── requirements.txt
+├── Pipfile
+└── README.md
 ```
-
----
-
-## Switching Between SQLite and PostgreSQL
-
-### SQLite (local, default)
-
-```env
-DATABASE_URL=sqlite:///./pran_rfl.db
-```
-
-No extra setup. DB file is created automatically.
-
-### PostgreSQL (Docker or external)
-
-```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pran_rfl
-```
-
-When using `docker compose up`, this is set automatically — you don't need to change `.env` at all.
-
-Tables are created automatically on startup via `Base.metadata.create_all()`.
-
----
-

@@ -1,0 +1,952 @@
+{
+  "info": {
+    "_postman_id": "7b8f9e61-9c32-4d5e-a812-70b13d7890fa",
+    "name": "MerchVision - PRAN-RFL Rack Recognition & Token Analytics API",
+    "description": "Comprehensive Postman API Collection for the **PRAN-RFL Rack Recognition System** backend service.\n\n### Backend Host\n- **Target Host:** `http://172.17.4.199:8093`\n- **Health Check:** `http://172.17.4.199:8093/health`\n- **Swagger Docs:** `http://172.17.4.199:8093/docs`\n- **Web UI:** `http://172.17.4.199:8093/ui`\n\n### Core Features\n1. **Single-Call Direct Analysis:** Immediate AI analysis returning product counts, tokens, and cost in 1 request (`/analyze`, `/analyze/file`, `/analyze/url`).\n2. **Asynchronous Processing:** 202 Accepted upload queue + polling (`/uploads`, `/uploads/url`, `/uploads/{upload_id}`).\n3. **Analytics & Aggregations:** Summary token usage, total costs, top detected SKUs (`/uploads/summary`).\n4. **History & Management:** Search, pagination, filtering, and deletion of scans.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://172.17.4.199:8093",
+      "type": "string"
+    },
+    {
+      "key": "upload_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. System & Health",
+      "description": "Endpoints to check service health and access the web UI dashboard.",
+      "item": [
+        {
+          "name": "Health Check (Liveness)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Liveness check endpoint returning `{\"status\": \"ok\"}` when the service is running."
+          },
+          "response": [
+            {
+              "name": "200 OK - Healthy",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/health",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "health"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"ok\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Web Dashboard / UI",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ui",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui"
+              ]
+            },
+            "description": "Serves the interactive web UI dashboard for testing rack uploads, inspecting bounding/detection results, and viewing token analytics."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Single-Call Direct Analysis (Synchronous)",
+      "description": "Direct 1-call analysis endpoints that process the rack photo synchronously and return detected products, token usage, and cost estimation in a single response without polling.",
+      "item": [
+        {
+          "name": "Direct Analyze (JSON - S3 / Remote URL / Base64)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    if (json.upload_id) {",
+                  "        pm.collectionVariables.set('upload_id', json.upload_id);",
+                  "        console.log('Saved upload_id to collection variable:', json.upload_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analyze"
+              ]
+            },
+            "description": "Single-call analysis via JSON payload. Accepts an S3 presigned URL, HTTP/HTTPS image URL, or Base64 data string in `image_url`. Runs Gemini AI analysis and returns detected products and token usage immediately."
+          },
+          "response": [
+            {
+              "name": "200 OK - Direct Analysis Result (JSON URL)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/analyze",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "analyze"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"upload_id\": \"f0051207-7e9f-4f5d-a8a1-8b1fed212103\",\n  \"status\": \"COMPLETED\",\n  \"shop_id\": null,\n  \"merchandiser_id\": null,\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\",\n  \"detected_products\": [\n    {\n      \"product_name\": \"PRAN Mango Juice 250ml\",\n      \"quantity_visible\": 6\n    },\n    {\n      \"product_name\": \"PRAN Lassi 200ml\",\n      \"quantity_visible\": 4\n    },\n    {\n      \"product_name\": \"RFL Water Bottle 1L\",\n      \"quantity_visible\": 2\n    }\n  ],\n  \"token_usage\": {\n    \"input_tokens\": 1280,\n    \"output_tokens\": 94,\n    \"total_tokens\": 1374,\n    \"estimated_cost_usd\": 0.000166\n  },\n  \"input_tokens\": 1280,\n  \"output_tokens\": 94,\n  \"total_tokens\": 1374,\n  \"estimated_cost_usd\": 0.000166,\n  \"error_message\": null,\n  \"created_at\": \"2026-09-23T08:30:00Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Direct Analyze (File Upload - In-Memory)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    if (json.upload_id) {",
+                  "        pm.collectionVariables.set('upload_id', json.upload_id);",
+                  "        console.log('Saved upload_id to collection variable:', json.upload_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Rack photo (JPEG, PNG, or WebP - max 10MB)",
+                  "contentType": "image/jpeg"
+                },
+                {
+                  "key": "shop_id",
+                  "value": "SHOP-Dhanmondi-55",
+                  "type": "text",
+                  "description": "Optional shop identifier"
+                },
+                {
+                  "key": "merchandiser_id",
+                  "value": "MER-Karim-12",
+                  "type": "text",
+                  "description": "Optional merchandiser identifier"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/analyze/file",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analyze",
+                "file"
+              ]
+            },
+            "description": "Accepts an uploaded image file via multipart form-data, processes it purely in-memory (zero permanent disk storage), and synchronously returns detected products, token usage, and cost estimation."
+          },
+          "response": [
+            {
+              "name": "200 OK - Direct File Analysis Result",
+              "originalRequest": {
+                "method": "POST",
+                "url": {
+                  "raw": "{{baseUrl}}/analyze/file",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "analyze",
+                    "file"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"upload_id\": \"a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d\",\n  \"status\": \"COMPLETED\",\n  \"shop_id\": \"SHOP-Dhanmondi-55\",\n  \"merchandiser_id\": \"MER-Karim-12\",\n  \"image_url\": \"direct_file_upload_in_memory\",\n  \"detected_products\": [\n    {\n      \"product_name\": \"PRAN Mango Juice 250ml\",\n      \"quantity_visible\": 5\n    },\n    {\n      \"product_name\": \"PRAN Frooto 250ml\",\n      \"quantity_visible\": 3\n    }\n  ],\n  \"token_usage\": {\n    \"input_tokens\": 1150,\n    \"output_tokens\": 80,\n    \"total_tokens\": 1230,\n    \"estimated_cost_usd\": 0.000147\n  },\n  \"input_tokens\": 1150,\n  \"output_tokens\": 80,\n  \"total_tokens\": 1230,\n  \"estimated_cost_usd\": 0.000147,\n  \"error_message\": null,\n  \"created_at\": \"2026-09-23T08:31:00Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Direct Analyze (Alias: /analyze/url)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    if (json.upload_id) {",
+                  "        pm.collectionVariables.set('upload_id', json.upload_id);",
+                  "        console.log('Saved upload_id to collection variable:', json.upload_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/analyze/url",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analyze",
+                "url"
+              ]
+            },
+            "description": "Direct alias for `POST /analyze` using JSON payload."
+          },
+          "response": []
+        },
+        {
+          "name": "Direct Analyze (Alias: /uploads/analyze)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/uploads/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "uploads",
+                "analyze"
+              ]
+            },
+            "description": "Alternative alias route for `POST /analyze`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Asynchronous Uploads & Polling",
+      "description": "Asynchronous job pipeline where uploads return 202 Accepted immediately, AI analysis processes in the background, and results are queried/polled via `/uploads/{upload_id}`.",
+      "item": [
+        {
+          "name": "Async Upload - File",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 202) {",
+                  "    var json = pm.response.json();",
+                  "    if (json.upload_id) {",
+                  "        pm.collectionVariables.set('upload_id', json.upload_id);",
+                  "        console.log('Saved async upload_id to collection variable:', json.upload_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Rack photo file (JPEG, PNG, WebP)",
+                  "contentType": "image/jpeg"
+                },
+                {
+                  "key": "shop_id",
+                  "value": "SHOP-Uttara-204",
+                  "type": "text",
+                  "description": "Optional shop identifier"
+                },
+                {
+                  "key": "merchandiser_id",
+                  "value": "MER-Anis-07",
+                  "type": "text",
+                  "description": "Optional merchandiser identifier"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/uploads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "uploads"
+              ]
+            },
+            "description": "Uploads a rack image file and starts asynchronous AI recognition in-memory. Returns 202 Accepted with upload_id immediately."
+          },
+          "response": [
+            {
+              "name": "202 Accepted - Async Upload Created",
+              "originalRequest": {
+                "method": "POST",
+                "url": {
+                  "raw": "{{baseUrl}}/uploads",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "uploads"
+                  ]
+                }
+              },
+              "status": "Accepted",
+              "code": 202,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"upload_id\": \"b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d\",\n  \"status\": \"PENDING\",\n  \"message\": \"Image received in-memory. Processing started.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Async Upload - Image URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 202) {",
+                  "    var json = pm.response.json();",
+                  "    if (json.upload_id) {",
+                  "        pm.collectionVariables.set('upload_id', json.upload_id);",
+                  "        console.log('Saved async upload_id to collection variable:', json.upload_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\",\n  \"shop_id\": \"SHOP-Mirpur-301\",\n  \"merchandiser_id\": \"MER-Hasan-19\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/uploads/url",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "uploads",
+                "url"
+              ]
+            },
+            "description": "Accepts an S3 URL, HTTP image URL, or Base64 string and triggers async background AI analysis. Returns 202 Accepted immediately."
+          },
+          "response": [
+            {
+              "name": "202 Accepted - URL Upload Created",
+              "originalRequest": {
+                "method": "POST",
+                "url": {
+                  "raw": "{{baseUrl}}/uploads/url",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "uploads",
+                    "url"
+                  ]
+                }
+              },
+              "status": "Accepted",
+              "code": 202,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"upload_id\": \"a9c8e7d6-5432-1b0a-9f8e-7d6c5b4a3210\",\n  \"status\": \"PENDING\",\n  \"message\": \"Image input received. Processing started.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Upload Result by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/uploads/{{upload_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "uploads",
+                "{{upload_id}}"
+              ]
+            },
+            "description": "Retrieves the status, detected products, and token usage for an upload by its ID (`PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`)."
+          },
+          "response": [
+            {
+              "name": "200 OK - Analysis Completed",
+              "originalRequest": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/uploads/b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "uploads",
+                    "b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"upload_id\": \"b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d\",\n  \"status\": \"COMPLETED\",\n  \"shop_id\": \"SHOP-Uttara-204\",\n  \"merchandiser_id\": \"MER-Anis-07\",\n  \"image_url\": \"async_upload_in_memory\",\n  \"detected_products\": [\n    {\n      \"product_name\": \"PRAN Mango Juice 250ml\",\n      \"quantity_visible\": 8\n    },\n    {\n      \"product_name\": \"PRAN Potata Biscuits 100g\",\n      \"quantity_visible\": 12\n    }\n  ],\n  \"input_tokens\": 1240,\n  \"output_tokens\": 90,\n  \"total_tokens\": 1330,\n  \"estimated_cost_usd\": 0.00016,\n  \"token_usage\": {\n    \"input_tokens\": 1240,\n    \"output_tokens\": 90,\n    \"total_tokens\": 1330,\n    \"estimated_cost_usd\": 0.00016\n  },\n  \"error_message\": null,\n  \"created_at\": \"2026-09-23T08:30:00Z\",\n  \"updated_at\": \"2026-09-23T08:30:04Z\"\n}"
+            },
+            {
+              "name": "200 OK - Processing Status",
+              "originalRequest": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/uploads/b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "uploads",
+                    "b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"upload_id\": \"b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d\",\n  \"status\": \"PROCESSING\",\n  \"shop_id\": \"SHOP-Uttara-204\",\n  \"merchandiser_id\": \"MER-Anis-07\",\n  \"image_url\": \"async_upload_in_memory\",\n  \"detected_products\": null,\n  \"input_tokens\": null,\n  \"output_tokens\": null,\n  \"total_tokens\": null,\n  \"estimated_cost_usd\": null,\n  \"token_usage\": null,\n  \"error_message\": null,\n  \"created_at\": \"2026-09-23T08:30:00Z\",\n  \"updated_at\": \"2026-09-23T08:30:01Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Poll Upload Result (Alias: /uploads/{upload_id}/result)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/uploads/{{upload_id}}/result",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "uploads",
+                "{{upload_id}}",
+                "result"
+              ]
+            },
+            "description": "Polling endpoint alias for checking analysis outcome and token consumption metrics."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Analytics & Upload History",
+      "description": "Endpoints to search, filter, paginate scan histories, and fetch aggregate token usage / costs / product ranking metrics.",
+      "item": [
+        {
+          "name": "List Uploads / Results (With Filters & Pagination)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/uploads?limit=20&offset=0&status=&shop_id=&merchandiser_id=&search=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "uploads"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Max number of items to return (1-100, default: 50)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Pagination offset"
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "Filter by status: PENDING, PROCESSING, COMPLETED, FAILED"
+                },
+                {
+                  "key": "shop_id",
+                  "value": "",
+                  "description": "Filter by shop ID (case-insensitive substring)"
+                },
+                {
+                  "key": "merchandiser_id",
+                  "value": "",
+                  "description": "Filter by merchandiser ID (case-insensitive substring)"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Generic search across shop ID, merchandiser ID, upload ID, or error message"
+                }
+              ]
+            },
+            "description": "Returns a paginated list of all rack uploads with detection outputs and token metrics."
+          },
+          "response": [
+            {
+              "name": "200 OK - Upload List Response",
+              "originalRequest": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/uploads?limit=20&offset=0",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "uploads"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "0"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"total\": 1,\n  \"limit\": 20,\n  \"offset\": 0,\n  \"items\": [\n    {\n      \"upload_id\": \"b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d\",\n      \"status\": \"COMPLETED\",\n      \"shop_id\": \"SHOP-Uttara-204\",\n      \"merchandiser_id\": \"MER-Anis-07\",\n      \"image_url\": \"async_upload_in_memory\",\n      \"detected_products\": [\n        {\n          \"product_name\": \"PRAN Mango Juice 250ml\",\n          \"quantity_visible\": 8\n        }\n      ],\n      \"input_tokens\": 1240,\n      \"output_tokens\": 90,\n      \"total_tokens\": 1330,\n      \"estimated_cost_usd\": 0.00016,\n      \"token_usage\": {\n        \"input_tokens\": 1240,\n        \"output_tokens\": 90,\n        \"total_tokens\": 1330,\n        \"estimated_cost_usd\": 0.00016\n      },\n      \"error_message\": null,\n      \"created_at\": \"2026-09-23T08:30:00Z\",\n      \"updated_at\": \"2026-09-23T08:30:04Z\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "List Uploads (Alias: /analysis)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/analysis?limit=50&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analysis"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Alias route for `GET /uploads`."
+          },
+          "response": []
+        },
+        {
+          "name": "List Uploads (Alias: /results)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/results?limit=50&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "results"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Alias route for `GET /uploads`."
+          },
+          "response": []
+        },
+        {
+          "name": "Analytics Summary & Token Costs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/uploads/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "uploads",
+                "summary"
+              ]
+            },
+            "description": "Returns high-level statistics across all scanned racks, including total input tokens, output tokens, total tokens, total USD cost, average tokens per image, and top detected items."
+          },
+          "response": [
+            {
+              "name": "200 OK - Analytics Summary Response",
+              "originalRequest": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/uploads/summary",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "uploads",
+                    "summary"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"total_scans\": 48,\n  \"completed_scans\": 45,\n  \"processing_scans\": 1,\n  \"pending_scans\": 0,\n  \"failed_scans\": 2,\n  \"total_products_detected\": 312,\n  \"unique_products_count\": 24,\n  \"total_input_tokens\": 58400,\n  \"total_output_tokens\": 4230,\n  \"total_tokens\": 62630,\n  \"total_estimated_cost_usd\": 0.007532,\n  \"avg_tokens_per_scan\": 1391.78,\n  \"avg_cost_per_scan_usd\": 0.000167,\n  \"top_products\": [\n    {\n      \"product_name\": \"PRAN Mango Juice 250ml\",\n      \"total_quantity\": 84,\n      \"scan_appearances\": 28\n    },\n    {\n      \"product_name\": \"PRAN Potata Biscuits 100g\",\n      \"total_quantity\": 56,\n      \"scan_appearances\": 20\n    }\n  ],\n  \"recent_uploads\": []\n}"
+            }
+          ]
+        },
+        {
+          "name": "Analytics Summary (Alias: /analysis/summary)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/analysis/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analysis",
+                "summary"
+              ]
+            },
+            "description": "Alias route for `GET /uploads/summary`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Upload Management",
+      "description": "Endpoints to manage and delete scans and media files.",
+      "item": [
+        {
+          "name": "Delete Upload Record",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/uploads/{{upload_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "uploads",
+                "{{upload_id}}"
+              ]
+            },
+            "description": "Permanently deletes a rack upload record from the database and removes the stored image file from disk."
+          },
+          "response": [
+            {
+              "name": "200 OK - Deleted Successfully",
+              "originalRequest": {
+                "method": "DELETE",
+                "url": {
+                  "raw": "{{baseUrl}}/uploads/b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "uploads",
+                    "b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"upload_id\": \"b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d\",\n  \"message\": \"Upload 'b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d' and associated media deleted successfully.\"\n}"
+            },
+            {
+              "name": "404 Not Found",
+              "originalRequest": {
+                "method": "DELETE",
+                "url": {
+                  "raw": "{{baseUrl}}/uploads/invalid-id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "uploads",
+                    "invalid-id"
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"Upload 'invalid-id' not found.\"\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -56,6 +56,7 @@ from app.schemas import (
     AnalysisSummaryResponse,
     AnalyzeImageRequest,
     AnalyzeRequest,
+    CatalogueSuggestion,
     DeleteResponse,
     DirectAnalyzeResponse,
     HealthResponse,
@@ -67,6 +68,7 @@ from app.schemas import (
     UploadUrlRequest,
 )
 from app.services.ai_service import AIServiceError, analyze_rack_image
+from app.services.items_db_service import load_items_db
 # storage_service retained for legacy compatibility (unused in analyze flow)
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -85,6 +87,9 @@ settings = get_settings()
 
 # Create all DB tables & migrate missing columns on startup (idempotent)
 init_db()
+
+# Pre-load items catalogue into memory (1954 rows, ~1-2 ms, zero AI tokens)
+load_items_db()
 
 # Ensure media directory exists
 _MEDIA_ROOT = Path("media")
@@ -305,14 +310,20 @@ async def analyze_image_direct(
       "image_url": "https://s3.amazonaws.com/bucket/image.jpg"
     }
     ```
-    Or with Base64:
-    ```json
-    {
-      "image_url": "/9j/4AAQSkZJRgAB..."
-    }
-    ```
 
-    **Response:** detected products, token usage, and estimated cost.
+    **Response:** `detected_products` is a list of detected items.  Each item includes:
+
+    | Field | Description |
+    |---|---|
+    | `product_name` | AI-detected product name |
+    | `quantity_visible` | Number of units visible on the rack |
+    | `matched` | `true` if catalogue matches were found |
+    | `catalogue_suggestions` | **List** of up to 5 matching rows from `itemsdb.csv` |
+
+    Each `catalogue_suggestion` contains:
+    `sub_category_name`, `sub_category_code`, `category_name`, `category_code`, `item_name`, `item_code`.
+
+    > **Zero extra AI tokens** — catalogue lookup is done locally after the AI call.
     """
     image_input = payload.image_url or payload.image
     if not image_input or not image_input.strip():

@@ -3,19 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PRAN-RFL MerchVision — Zero-Disk AI Vision & Token Cost Analytics</title>
+  <title>PRAN-RFL MerchVision — AI Rack Recognition & Catalogue Lookup</title>
+  <meta name="description" content="AI-powered retail shelf auditor for PRAN-RFL products. Upload a rack photo to detect products and match them against the full items catalogue with sub-category, category and item codes.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg-dark: #07090e;
-      --card-bg: rgba(18, 24, 38, 0.75);
+      --card-bg: rgba(18, 24, 38, 0.8);
       --border-color: rgba(51, 65, 85, 0.6);
       --border-focus: #38bdf8;
       --primary: #38bdf8;
       --primary-hover: #0284c7;
-      --primary-glow: rgba(56, 189, 248, 0.25);
+      --primary-glow: rgba(56, 189, 248, 0.22);
       --accent: #f97316;
       --token-in: #a5b4fc;
       --token-out: #34d399;
@@ -25,7 +26,9 @@
       --success: #22c55e;
       --warning: #eab308;
       --danger: #ef4444;
-      --zerodisk-badge: #10b981;
+      --catalogue-bg: rgba(15, 23, 42, 0.9);
+      --suggestion-row: rgba(30, 41, 59, 0.6);
+      --matched-glow: rgba(34, 197, 94, 0.15);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -35,7 +38,9 @@
       min-height: 100vh;
       padding: 24px;
     }
-    .container { max-width: 1280px; margin: 0 auto; }
+    .container { max-width: 1320px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────────────────── */
     header {
       display: flex;
       justify-content: space-between;
@@ -43,109 +48,61 @@
       padding-bottom: 20px;
       border-bottom: 1px solid var(--border-color);
       margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 12px;
     }
     h1 {
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 800;
       color: #fff;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       letter-spacing: -0.5px;
+      flex-wrap: wrap;
     }
-    .badge-zerodisk {
-      background: rgba(16, 185, 129, 0.15);
-      color: #34d399;
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      font-size: 11px;
-      text-transform: uppercase;
-      padding: 4px 10px;
-      border-radius: 9999px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
+    .pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+      padding: 4px 10px; border-radius: 9999px; white-space: nowrap;
     }
-    .badge-zerodisk::before {
-      content: "";
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #34d399;
-      box-shadow: 0 0 8px #34d399;
-    }
-    .badge-model {
-      background: rgba(56, 189, 248, 0.15);
-      color: #38bdf8;
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      font-size: 11px;
-      padding: 4px 10px;
-      border-radius: 9999px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-    }
-    .badge-model::before {
-      content: "";
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #38bdf8;
-      box-shadow: 0 0 8px #38bdf8;
-    }
-    .links a {
-      color: var(--primary);
-      text-decoration: none;
-      font-size: 14px;
-      margin-left: 18px;
-      font-weight: 600;
-      transition: color 0.2s;
-    }
-    .links a:hover { color: #fff; text-decoration: underline; }
+    .pill-green  { background: rgba(16,185,129,.15); color: #34d399; border: 1px solid rgba(16,185,129,.3); }
+    .pill-blue   { background: rgba(56,189,248,.15); color: #38bdf8; border: 1px solid rgba(56,189,248,.3); }
+    .pill-purple { background: rgba(168,85,247,.15);  color: #c084fc; border: 1px solid rgba(168,85,247,.3); }
+    .pill::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; box-shadow:0 0 7px currentColor; }
 
-    /* Summary Stats Grid */
+    .links a {
+      color: var(--primary); text-decoration: none;
+      font-size: 13px; margin-left: 16px; font-weight: 600; transition: color .2s;
+    }
+    .links a:hover { color: #fff; }
+
+    /* ── Summary Stats ───────────────────────────────────────────────────────── */
     .summary-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 14px;
+      margin-bottom: 22px;
     }
     .stat-card {
       background: var(--card-bg);
       backdrop-filter: blur(16px);
       border: 1px solid var(--border-color);
       border-radius: 12px;
-      padding: 16px 18px;
-      position: relative;
-      overflow: hidden;
+      padding: 14px 18px;
+      position: relative; overflow: hidden;
       box-shadow: 0 4px 20px rgba(0,0,0,0.3);
     }
     .stat-card::after {
-      content: "";
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
+      content:""; position:absolute; top:0; left:0; right:0; height:2px;
       background: linear-gradient(90deg, transparent, var(--primary), transparent);
       opacity: 0.5;
     }
-    .stat-val {
-      font-size: 24px;
-      font-weight: 800;
-      font-family: 'JetBrains Mono', monospace;
-      margin-top: 4px;
-    }
-    .stat-label {
-      font-size: 11px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      font-weight: 600;
-    }
+    .stat-val { font-size: 22px; font-weight: 800; font-family: 'JetBrains Mono', monospace; margin-top: 4px; }
+    .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; font-weight: 600; }
 
-    .grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 24px; }
+    /* ── Main Grid ───────────────────────────────────────────────────────────── */
+    .grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 22px; }
     @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
 
     .card {
@@ -156,174 +113,187 @@
       padding: 22px;
       box-shadow: 0 10px 30px -5px rgba(0,0,0,0.5);
     }
+
+    /* ── Tabs ────────────────────────────────────────────────────────────────── */
     .tabs {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 18px;
-      border-bottom: 1px solid var(--border-color);
-      padding-bottom: 12px;
-      overflow-x: auto;
+      display: flex; gap: 8px; margin-bottom: 18px;
+      border-bottom: 1px solid var(--border-color); padding-bottom: 12px; overflow-x: auto;
     }
     .tab-btn {
-      background: transparent;
-      border: 1px solid transparent;
-      color: var(--text-muted);
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      padding: 8px 14px;
-      border-radius: 8px;
-      transition: all 0.2s ease;
-      white-space: nowrap;
+      background: transparent; border: 1px solid transparent;
+      color: var(--text-muted); font-size: 13px; font-weight: 600;
+      cursor: pointer; padding: 8px 14px; border-radius: 8px;
+      transition: all .2s; white-space: nowrap;
     }
     .tab-btn.active {
-      background: rgba(56, 189, 248, 0.12);
-      border-color: rgba(56, 189, 248, 0.4);
+      background: rgba(56,189,248,.12);
+      border-color: rgba(56,189,248,.4);
       color: var(--primary);
     }
+
+    /* ── Form ────────────────────────────────────────────────────────────────── */
     .form-group { margin-bottom: 14px; }
     label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; }
     input[type="text"], input[type="url"], textarea, input[type="file"] {
-      width: 100%;
-      padding: 10px 14px;
-      background: #090d16;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      color: #fff;
-      font-size: 13px;
-      font-family: inherit;
-      transition: border-color 0.2s, box-shadow 0.2s;
+      width: 100%; padding: 10px 14px;
+      background: #090d16; border: 1px solid var(--border-color);
+      border-radius: 8px; color: #fff; font-size: 13px; font-family: inherit;
+      transition: border-color .2s, box-shadow .2s;
     }
-    textarea {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
-      resize: vertical;
-      min-height: 95px;
-    }
-    input:focus, textarea:focus {
-      outline: none;
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px var(--primary-glow);
-    }
+    textarea { font-family: 'JetBrains Mono', monospace; font-size: 12px; resize: vertical; min-height: 90px; }
+    input:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+
     .api-mode-switch {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 16px;
-      padding: 10px 14px;
-      background: rgba(15, 23, 42, 0.7);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      font-size: 13px;
+      display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+      padding: 10px 14px; background: rgba(15,23,42,.7);
+      border: 1px solid var(--border-color); border-radius: 8px; font-size: 13px;
     }
     .api-mode-switch input { cursor: pointer; accent-color: var(--primary); }
+
     button.submit-btn {
       width: 100%;
       background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
-      color: #07090e;
-      font-weight: 700;
-      padding: 12px 18px;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 14px;
-      transition: transform 0.15s, opacity 0.2s, box-shadow 0.2s;
-      box-shadow: 0 4px 14px rgba(56, 189, 248, 0.35);
+      color: #07090e; font-weight: 700; padding: 12px 18px;
+      border: none; border-radius: 8px; cursor: pointer; font-size: 14px;
+      transition: transform .15s, opacity .2s, box-shadow .2s;
+      box-shadow: 0 4px 14px rgba(56,189,248,.35);
     }
-    button.submit-btn:hover {
-      opacity: 0.95;
-      transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(56, 189, 248, 0.45);
-    }
-    button.submit-btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none;
-    }
+    button.submit-btn:hover { opacity:.95; transform:translateY(-1px); box-shadow:0 6px 20px rgba(56,189,248,.45); }
+    button.submit-btn:disabled { opacity:.6; cursor:not-allowed; transform:none; }
 
-    /* Token cost chips */
+    /* ── Token chips ─────────────────────────────────────────────────────────── */
     .token-breakdown {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
-      margin: 14px 0;
-      padding: 12px;
-      background: #080b12;
-      border-radius: 10px;
-      border: 1px solid #1e293b;
+      display: grid; grid-template-columns: repeat(4,1fr); gap: 8px;
+      margin: 12px 0; padding: 12px;
+      background: #080b12; border-radius: 10px; border: 1px solid #1e293b;
     }
-    @media (max-width: 600px) { .token-breakdown { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width:600px) { .token-breakdown { grid-template-columns: repeat(2,1fr); } }
     .token-chip { text-align: center; }
-    .token-chip-title {
-      font-size: 10px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      font-weight: 600;
-    }
-    .token-chip-val {
-      font-family: 'JetBrains Mono', monospace;
-      font-weight: 700;
-      font-size: 14px;
-      margin-top: 3px;
-    }
+    .token-chip-title { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing:.5px; font-weight:600; }
+    .token-chip-val { font-family:'JetBrains Mono',monospace; font-weight:700; font-size:14px; margin-top:3px; }
 
+    /* ── Status badge ────────────────────────────────────────────────────────── */
     .status-badge {
-      display: inline-block;
-      padding: 4px 10px;
-      border-radius: 9999px;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      display: inline-block; padding: 4px 10px; border-radius: 9999px;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing:.5px;
     }
-    .status-PENDING { background: rgba(234, 179, 8, 0.2); color: var(--warning); border: 1px solid rgba(234, 179, 8, 0.3); }
-    .status-PROCESSING { background: rgba(56, 189, 248, 0.2); color: var(--primary); border: 1px solid rgba(56, 189, 248, 0.3); }
-    .status-COMPLETED { background: rgba(34, 197, 94, 0.2); color: var(--success); border: 1px solid rgba(34, 197, 94, 0.3); }
-    .status-FAILED { background: rgba(239, 68, 68, 0.2); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.3); }
+    .status-PENDING    { background:rgba(234,179,8,.2); color:var(--warning); border:1px solid rgba(234,179,8,.3); }
+    .status-PROCESSING { background:rgba(56,189,248,.2); color:var(--primary); border:1px solid rgba(56,189,248,.3); }
+    .status-COMPLETED  { background:rgba(34,197,94,.2); color:var(--success); border:1px solid rgba(34,197,94,.3); }
+    .status-FAILED     { background:rgba(239,68,68,.2); color:var(--danger);  border:1px solid rgba(239,68,68,.3); }
 
-    .product-list { list-style: none; margin-top: 14px; max-height: 260px; overflow-y: auto; padding-right: 4px; }
-    .product-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 9px 14px;
+    /* ── Product cards ───────────────────────────────────────────────────────── */
+    .product-list { list-style: none; margin-top: 12px; max-height: 520px; overflow-y: auto; padding-right: 2px; }
+    .product-list::-webkit-scrollbar { width: 5px; }
+    .product-list::-webkit-scrollbar-track { background: transparent; }
+    .product-list::-webkit-scrollbar-thumb { background: #334155; border-radius: 99px; }
+
+    .product-card {
       background: #090d16;
       border: 1px solid #1e293b;
-      border-radius: 8px;
-      margin-bottom: 6px;
-      font-size: 13px;
+      border-radius: 10px;
+      margin-bottom: 8px;
+      overflow: hidden;
+      transition: border-color .2s;
     }
-    .product-name { font-weight: 600; color: #f1f5f9; }
+    .product-card.matched-card { border-color: rgba(34,197,94,.25); }
+    .product-card-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 14px; cursor: pointer; user-select: none;
+      gap: 8px;
+    }
+    .product-card-header:hover { background: rgba(255,255,255,.03); }
+
+    .product-name { font-weight: 700; font-size: 13px; color: #f1f5f9; flex: 1; }
+    .product-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     .product-qty {
-      font-weight: 700;
-      color: var(--primary);
-      background: rgba(56, 189, 248, 0.1);
-      padding: 3px 8px;
-      border-radius: 6px;
+      font-weight: 700; color: var(--primary);
+      background: rgba(56,189,248,.1); padding: 3px 8px;
+      border-radius: 6px; font-size: 11px; font-family:'JetBrains Mono',monospace;
+    }
+    .match-count-badge {
+      font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 6px;
+      background: rgba(34,197,94,.12); color: #4ade80; border: 1px solid rgba(34,197,94,.25);
+      white-space: nowrap;
+    }
+    .no-match-badge {
+      font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 6px;
+      background: rgba(100,116,139,.12); color: #64748b; border: 1px solid rgba(100,116,139,.2);
+    }
+    .expand-icon { color: var(--text-muted); font-size: 12px; transition: transform .25s; }
+    .expand-icon.open { transform: rotate(180deg); }
+
+    /* ── Catalogue suggestions panel ─────────────────────────────────────────── */
+    .suggestions-panel {
+      display: none;
+      border-top: 1px solid #1e293b;
+      padding: 4px 0 8px;
+    }
+    .suggestions-panel.visible { display: block; }
+
+    .suggestions-header {
+      font-size: 10px; text-transform: uppercase; letter-spacing:.7px;
+      color: var(--text-muted); font-weight: 700;
+      padding: 8px 14px 6px;
+      display: grid;
+      grid-template-columns: 80px 1fr 140px 110px;
+      gap: 10px;
+    }
+    .suggestion-row {
+      display: grid;
+      grid-template-columns: 80px 1fr 140px 110px;
+      gap: 10px;
+      padding: 7px 14px;
       font-size: 12px;
+      border-radius: 0;
+      transition: background .15s;
+      align-items: center;
+    }
+    .suggestion-row:hover { background: rgba(255,255,255,.03); }
+    .suggestion-row:nth-child(even) { background: rgba(15,23,42,.5); }
+    .suggestion-row:nth-child(even):hover { background: rgba(255,255,255,.04); }
+
+    .s-code {
       font-family: 'JetBrains Mono', monospace;
+      font-weight: 700; font-size: 11px; color: var(--token-cost);
+      background: rgba(251,191,36,.08); padding: 2px 6px;
+      border-radius: 4px; text-align: center;
     }
+    .s-name { color: #e2e8f0; font-weight: 500; line-height: 1.4; }
+    .s-subcat { color: var(--primary); font-size: 11px; font-weight: 600; }
+    .s-cat { color: #a78bfa; font-size: 11px; font-weight: 600; }
+
+    @media (max-width: 640px) {
+      .suggestions-header, .suggestion-row {
+        grid-template-columns: 72px 1fr;
+      }
+      .s-subcat, .s-cat { display: none; }
+    }
+
+    /* ── Image preview ───────────────────────────────────────────────────────── */
     .image-preview {
-      width: 100%;
-      max-height: 210px;
-      object-fit: cover;
-      border-radius: 8px;
-      margin-top: 14px;
-      border: 1px solid var(--border-color);
-      background: #000;
+      width: 100%; max-height: 200px; object-fit: cover;
+      border-radius: 8px; margin-top: 14px;
+      border: 1px solid var(--border-color); background: #000;
     }
-    .history-card { margin-top: 24px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
-    th, td { text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--border-color); }
-    th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
-    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    /* ── History table ───────────────────────────────────────────────────────── */
+    .history-card { margin-top: 22px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+    th, td { text-align: left; padding: 11px 10px; border-bottom: 1px solid var(--border-color); }
+    th { color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing:.5px; }
+    tr:hover td { background: rgba(255,255,255,.02); }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>PRAN-RFL MerchVision <span class="badge-zerodisk">Zero-Disk</span> <span class="badge-model" id="modelBadge">Gemini 3.7 Flash</span></h1>
+      <h1>
+        PRAN-RFL MerchVision
+        <span class="pill pill-green">Zero-Disk</span>
+        <span class="pill pill-blue" id="modelBadge">Gemini 3.7 Flash</span>
+        <span class="pill pill-purple">ItemsDB Catalogue</span>
+      </h1>
       <div class="links">
         <a href="/tokens/models" target="_blank">Token Router</a>
         <a href="/docs" target="_blank">Swagger API</a>
@@ -331,7 +301,7 @@
       </div>
     </header>
 
-    <!-- Aggregated Token & Scan Statistics -->
+    <!-- Summary Stats -->
     <div class="summary-grid" id="summaryStats">
       <div class="stat-card">
         <div class="stat-label">Total Scans</div>
@@ -367,20 +337,20 @@
         <div class="api-mode-switch">
           <input type="checkbox" id="singleApiMode" checked>
           <label for="singleApiMode" style="margin:0; cursor:pointer; color:var(--text-main);">
-            <strong>Single-Call 1-API Direct Mode</strong> (immediate result with token cost, 0 disk writes)
+            <strong>Single-Call Direct Mode</strong> — immediate result, 0 disk writes, catalogue enrichment included
           </label>
         </div>
 
-        <!-- Mode Base64 / S3 Raw String -->
+        <!-- Base64 / S3 String -->
         <form id="base64Form" onsubmit="submitBase64(event)">
           <div class="form-group">
-            <label for="imgBase64">Raw Base64 Image String (e.g. <code>/9j/4AAQ...</code>) or S3 URI</label>
-            <textarea id="imgBase64" placeholder="Paste pure base64 string (/9j/...), data:image/jpeg;base64,..., or s3://..." required></textarea>
+            <label for="imgBase64">Raw Base64 Image String or S3 URI</label>
+            <textarea id="imgBase64" placeholder="Paste pure base64 (/9j/...), data:image/jpeg;base64,..., or s3://..." required></textarea>
           </div>
           <button type="submit" class="submit-btn" id="btnSubmitBase64">Analyze Base64 In-Memory</button>
         </form>
 
-        <!-- Mode URL -->
+        <!-- URL -->
         <form id="urlForm" style="display:none;" onsubmit="submitUrl(event)">
           <div class="form-group">
             <label for="imgUrl">S3 Presigned URL / Public Image URL</label>
@@ -389,21 +359,23 @@
           <button type="submit" class="submit-btn" id="btnSubmitUrl">Start AI Analysis (URL)</button>
         </form>
 
-        <!-- Mode File -->
+        <!-- File -->
         <form id="fileForm" style="display:none;" onsubmit="submitFile(event)">
           <div class="form-group">
             <label for="imgFile">Rack Photo File (JPG, PNG, WebP) — Streamed in RAM</label>
             <input type="file" id="imgFile" accept="image/jpeg,image/png,image/webp" required>
           </div>
-          <button type="submit" class="submit-btn" id="btnSubmitFile">Stream File & Analyze (In-Memory)</button>
+          <button type="submit" class="submit-btn" id="btnSubmitFile">Stream File &amp; Analyze (In-Memory)</button>
         </form>
       </div>
 
       <!-- Live Result Panel -->
       <div class="card" id="resultCard">
-        <h2 style="font-size: 16px; margin-bottom: 12px; color: var(--text-muted); font-weight: 600;">Live Recognition & Token Analytics</h2>
-        <div id="resultContent" style="color: var(--text-muted); font-size: 14px;">
-          Submit an S3 image string, URL, or file to view in-memory AI detections and token cost metrics.
+        <h2 style="font-size:15px; margin-bottom:12px; color:var(--text-muted); font-weight:700; letter-spacing:-0.3px;">
+          Live Recognition &amp; Catalogue Suggestions
+        </h2>
+        <div id="resultContent" style="color:var(--text-muted); font-size:14px; line-height:1.6;">
+          Submit an image to see AI-detected products and their matched catalogue entries (Sub Category, Category, Item Code).
         </div>
       </div>
     </div>
@@ -411,8 +383,12 @@
     <!-- History Panel -->
     <div class="card history-card">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h2 style="font-size: 16px; color: var(--text-muted); font-weight: 600;">Recent Scan & Token History</h2>
-        <button onclick="loadHistory(); loadSummaryStats();" style="background:transparent; border:1px solid var(--border-color); color:var(--text-muted); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;">Refresh</button>
+        <h2 style="font-size:15px; color:var(--text-muted); font-weight:700;">Recent Scan &amp; Token History</h2>
+        <button onclick="loadHistory(); loadSummaryStats();"
+          style="background:transparent; border:1px solid var(--border-color); color:var(--text-muted);
+                 padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;">
+          Refresh
+        </button>
       </div>
       <div id="historyTableContainer" style="overflow-x:auto;">Loading history...</div>
     </div>
@@ -421,125 +397,69 @@
   <script>
     let pollInterval = null;
 
+    // ── Tab switcher ──────────────────────────────────────────────────────────
     function setMode(mode) {
-      document.getElementById('tabBase64').classList.toggle('active', mode === 'base64');
-      document.getElementById('tabUrl').classList.toggle('active', mode === 'url');
-      document.getElementById('tabFile').classList.toggle('active', mode === 'file');
-
-      document.getElementById('base64Form').style.display = mode === 'base64' ? 'block' : 'none';
-      document.getElementById('urlForm').style.display = mode === 'url' ? 'block' : 'none';
-      document.getElementById('fileForm').style.display = mode === 'file' ? 'block' : 'none';
+      ['base64','url','file'].forEach(m => {
+        document.getElementById('tab' + m.charAt(0).toUpperCase() + m.slice(1)).classList.toggle('active', m === mode);
+        document.getElementById(m + 'Form').style.display = m === mode ? 'block' : 'none';
+      });
     }
 
+    // ── Submit handlers ───────────────────────────────────────────────────────
     async function submitBase64(e) {
       e.preventDefault();
       const btn = document.getElementById('btnSubmitBase64');
-      const isSingleApi = document.getElementById('singleApiMode').checked;
-      btn.disabled = true;
-      btn.innerText = isSingleApi ? 'Analyzing in RAM...' : 'Enqueuing...';
-
-      const b64Val = document.getElementById('imgBase64').value.trim();
-      const payload = { image_url: b64Val };
-
+      const isSingle = document.getElementById('singleApiMode').checked;
+      btn.disabled = true; btn.innerText = isSingle ? 'Analyzing in RAM…' : 'Enqueuing…';
+      const val = document.getElementById('imgBase64').value.trim();
       try {
-        const endpoint = isSingleApi ? '/analyze' : '/uploads/url';
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+        const endpoint = isSingle ? '/analyze' : '/uploads/url';
+        const res = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({image_url:val}) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Analysis failed');
-
-        if (isSingleApi) {
-          renderResult(data, b64Val);
-          loadHistory();
-          loadSummaryStats();
-        } else {
-          startPolling(data.upload_id, b64Val);
-        }
-      } catch (err) {
-        alert('Error: ' + err.message);
-      } finally {
-        btn.disabled = false;
-        btn.innerText = 'Analyze Base64 In-Memory';
-      }
+        if (isSingle) { renderResult(data, val); loadHistory(); loadSummaryStats(); }
+        else startPolling(data.upload_id, val);
+      } catch(err) { alert('Error: ' + err.message); }
+      finally { btn.disabled = false; btn.innerText = 'Analyze Base64 In-Memory'; }
     }
 
     async function submitUrl(e) {
       e.preventDefault();
       const btn = document.getElementById('btnSubmitUrl');
-      const isSingleApi = document.getElementById('singleApiMode').checked;
-      btn.disabled = true;
-      btn.innerText = isSingleApi ? 'Analyzing in 1 API Call...' : 'Submitting URL...';
-
-      const urlVal = document.getElementById('imgUrl').value.trim();
-      const payload = { image_url: urlVal };
-
+      const isSingle = document.getElementById('singleApiMode').checked;
+      btn.disabled = true; btn.innerText = isSingle ? 'Analyzing…' : 'Submitting…';
+      const val = document.getElementById('imgUrl').value.trim();
       try {
-        const endpoint = isSingleApi ? '/analyze' : '/uploads/url';
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+        const endpoint = isSingle ? '/analyze' : '/uploads/url';
+        const res = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({image_url:val}) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Analysis failed');
-
-        if (isSingleApi) {
-          renderResult(data, urlVal);
-          loadHistory();
-          loadSummaryStats();
-        } else {
-          startPolling(data.upload_id, urlVal);
-        }
-      } catch (err) {
-        alert('Error: ' + err.message);
-      } finally {
-        btn.disabled = false;
-        btn.innerText = 'Start AI Analysis (URL)';
-      }
+        if (isSingle) { renderResult(data, val); loadHistory(); loadSummaryStats(); }
+        else startPolling(data.upload_id, val);
+      } catch(err) { alert('Error: ' + err.message); }
+      finally { btn.disabled = false; btn.innerText = 'Start AI Analysis (URL)'; }
     }
 
     async function submitFile(e) {
       e.preventDefault();
       const btn = document.getElementById('btnSubmitFile');
-      const isSingleApi = document.getElementById('singleApiMode').checked;
-      btn.disabled = true;
-      btn.innerText = isSingleApi ? 'Processing In-Memory...' : 'Uploading File...';
-
-      const fileInput = document.getElementById('imgFile');
-      const file = fileInput.files[0];
-      const formData = new FormData();
-      formData.append('file', file);
-
-      // Create object URL for client-side preview
-      const localPreviewUrl = URL.createObjectURL(file);
-
+      const isSingle = document.getElementById('singleApiMode').checked;
+      btn.disabled = true; btn.innerText = isSingle ? 'Processing In-Memory…' : 'Uploading…';
+      const file = document.getElementById('imgFile').files[0];
+      const formData = new FormData(); formData.append('file', file);
+      const localPreview = URL.createObjectURL(file);
       try {
-        const endpoint = isSingleApi ? '/analyze/file' : '/uploads';
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          body: formData
-        });
+        const endpoint = isSingle ? '/analyze/file' : '/uploads';
+        const res = await fetch(endpoint, { method:'POST', body: formData });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Analysis failed');
-
-        if (isSingleApi) {
-          renderResult(data, localPreviewUrl);
-          loadHistory();
-          loadSummaryStats();
-        } else {
-          startPolling(data.upload_id, localPreviewUrl);
-        }
-      } catch (err) {
-        alert('Error: ' + err.message);
-      } finally {
-        btn.disabled = false;
-        btn.innerText = 'Stream File & Analyze (In-Memory)';
-      }
+        if (isSingle) { renderResult(data, localPreview); loadHistory(); loadSummaryStats(); }
+        else startPolling(data.upload_id, localPreview);
+      } catch(err) { alert('Error: ' + err.message); }
+      finally { btn.disabled = false; btn.innerText = 'Stream File & Analyze (In-Memory)'; }
     }
 
+    // ── Polling ───────────────────────────────────────────────────────────────
     function startPolling(uploadId, previewUrl) {
       if (pollInterval) clearInterval(pollInterval);
       pollResult(uploadId, previewUrl);
@@ -548,39 +468,37 @@
 
     async function pollResult(uploadId, previewUrl) {
       try {
-        const res = await fetch(`/uploads/${uploadId}`);
+        const res = await fetch('/uploads/' + uploadId);
         const data = await res.json();
         renderResult(data, previewUrl);
         if (data.status === 'COMPLETED' || data.status === 'FAILED') {
-          clearInterval(pollInterval);
-          loadHistory();
-          loadSummaryStats();
+          clearInterval(pollInterval); loadHistory(); loadSummaryStats();
         }
-      } catch (err) {
-        console.error(err);
-      }
+      } catch(err) { console.error(err); }
     }
 
+    // ── Toggle catalogue suggestions for a product card ───────────────────────
+    function toggleSuggestions(cardId) {
+      const panel = document.getElementById('panel-' + cardId);
+      const icon  = document.getElementById('icon-'  + cardId);
+      if (!panel) return;
+      const isOpen = panel.classList.contains('visible');
+      panel.classList.toggle('visible', !isOpen);
+      icon.classList.toggle('open', !isOpen);
+    }
+
+    // ── Render result panel ───────────────────────────────────────────────────
     function renderResult(data, previewSrc) {
       const container = document.getElementById('resultContent');
-      let productsHtml = '';
-      if (data.detected_products && data.detected_products.length > 0) {
-        productsHtml = '<ul class="product-list">' + data.detected_products.map(p => `
-          <li class="product-item">
-            <span class="product-name">${p.product_name}</span>
-            <span class="product-qty">Qty: ${p.quantity_visible ?? 'N/A'}</span>
-          </li>
-        `).join('') + '</ul>';
-      } else if (data.status === 'COMPLETED') {
-        productsHtml = '<p style="color:var(--text-muted); margin-top:10px;">No PRAN-RFL products identified in this rack.</p>';
-      }
 
-      const inTok = data.input_tokens || (data.token_usage ? data.token_usage.input_tokens : 0) || 0;
+      /* Token values */
+      const inTok  = data.input_tokens  || (data.token_usage ? data.token_usage.input_tokens  : 0) || 0;
       const outTok = data.output_tokens || (data.token_usage ? data.token_usage.output_tokens : 0) || 0;
-      const totTok = data.total_tokens || (data.token_usage ? data.token_usage.total_tokens : 0) || (inTok + outTok);
-      const cost = data.estimated_cost_usd !== undefined ? data.estimated_cost_usd : (data.token_usage ? data.token_usage.estimated_cost_usd : 0);
+      const totTok = data.total_tokens  || (data.token_usage ? data.token_usage.total_tokens  : 0) || (inTok + outTok);
+      const cost   = data.estimated_cost_usd !== undefined ? data.estimated_cost_usd : (data.token_usage ? data.token_usage.estimated_cost_usd : 0);
 
-      const tokenChipsHtml = data.status === 'COMPLETED' ? `
+      /* Token chips */
+      const tokenHtml = data.status === 'COMPLETED' ? `
         <div class="token-breakdown">
           <div class="token-chip">
             <div class="token-chip-title">Input Tokens</div>
@@ -596,53 +514,119 @@
           </div>
           <div class="token-chip">
             <div class="token-chip-title">Est. Cost</div>
-            <div class="token-chip-val" style="color:var(--token-cost);">$${Number(cost || 0).toFixed(6)}</div>
+            <div class="token-chip-val" style="color:var(--token-cost);">$${Number(cost||0).toFixed(6)}</div>
           </div>
-        </div>
-      ` : '';
+        </div>` : '';
 
-      // Determine preview src (base64, URL, or data URI)
-      let previewImgTag = '';
-      let displaySrc = previewSrc || data.image_url;
-      if (displaySrc && displaySrc.startsWith('/9j/')) {
-        displaySrc = 'data:image/jpeg;base64,' + displaySrc;
-      } else if (displaySrc && displaySrc.startsWith('iVBOR')) {
-        displaySrc = 'data:image/png;base64,' + displaySrc;
+      /* Products with catalogue suggestions */
+      let productsHtml = '';
+      const products = data.detected_products || [];
+      if (products.length > 0) {
+        const cards = products.map((p, idx) => {
+          const cardId = 'prod-' + idx;
+          const suggestions = p.catalogue_suggestions || [];
+          const matched = p.matched === true;
+          const hasSuggestions = suggestions.length > 0;
+
+          /* Suggestions rows */
+          let suggestionsBody = '';
+          if (hasSuggestions) {
+            const rows = suggestions.map(s => `
+              <div class="suggestion-row">
+                <span class="s-code">${escHtml(s.item_code)}</span>
+                <span class="s-name">${escHtml(s.item_name)}</span>
+                <span class="s-subcat">${escHtml(s.sub_category_name)}</span>
+                <span class="s-cat">${escHtml(s.category_name)}</span>
+              </div>`).join('');
+
+            suggestionsBody = `
+              <div class="suggestions-header">
+                <span>Item Code</span>
+                <span>Item Name</span>
+                <span>Sub-Category</span>
+                <span>Category</span>
+              </div>
+              ${rows}`;
+          }
+
+          const matchBadge = hasSuggestions
+            ? `<span class="match-count-badge">&#10003; ${suggestions.length} suggestion${suggestions.length > 1 ? 's' : ''}</span>`
+            : `<span class="no-match-badge">No match</span>`;
+
+          const expandBtn = hasSuggestions ? `<span class="expand-icon" id="icon-${cardId}">&#9660;</span>` : '';
+
+          return `
+            <li class="product-card ${matched ? 'matched-card' : ''}">
+              <div class="product-card-header" onclick="${hasSuggestions ? 'toggleSuggestions("' + cardId + '")' : ''}">
+                <span class="product-name">${escHtml(p.product_name)}</span>
+                <div class="product-meta">
+                  <span class="product-qty">Qty: ${p.quantity_visible ?? 'N/A'}</span>
+                  ${matchBadge}
+                  ${expandBtn}
+                </div>
+              </div>
+              ${hasSuggestions ? `
+                <div class="suggestions-panel" id="panel-${cardId}">
+                  ${suggestionsBody}
+                </div>` : ''}
+            </li>`;
+        }).join('');
+
+        const matchedCount = products.filter(p => p.matched).length;
+        productsHtml = `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; margin-top:10px;">
+            <span style="font-size:12px; color:var(--text-muted);">
+              <strong style="color:#f1f5f9;">${products.length}</strong> products detected &nbsp;·&nbsp;
+              <strong style="color:#4ade80;">${matchedCount}</strong> matched in catalogue
+            </span>
+            <span style="font-size:11px; color:var(--text-muted);">Click a row to expand suggestions ▼</span>
+          </div>
+          <ul class="product-list">${cards}</ul>`;
+      } else if (data.status === 'COMPLETED') {
+        productsHtml = '<p style="color:var(--text-muted); margin-top:10px;">No PRAN-RFL products identified in this rack.</p>';
       }
 
-      if (displaySrc && !displaySrc.includes('in_memory') && !displaySrc.startsWith('s3://')) {
-        previewImgTag = `<img src="${displaySrc}" class="image-preview" alt="Rack Preview" onerror="this.style.display='none'">`;
+      /* Image preview */
+      let imgTag = '';
+      let src = previewSrc || data.image_url || '';
+      if (src.startsWith('/9j/')) src = 'data:image/jpeg;base64,' + src;
+      else if (src.startsWith('iVBOR')) src = 'data:image/png;base64,' + src;
+      if (src && !src.includes('in_memory') && !src.startsWith('s3://')) {
+        imgTag = `<img src="${src}" class="image-preview" alt="Rack Preview" onerror="this.style.display='none'">`;
       }
 
       container.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
           <div style="font-size:12px; color:var(--text-muted);">
-            ID: <span style="font-family:'JetBrains Mono', monospace; color:#fff;">${data.upload_id}</span>
+            ID: <span style="font-family:'JetBrains Mono',monospace; color:#fff;">${data.upload_id}</span>
           </div>
           <span class="status-badge status-${data.status}">${data.status}</span>
         </div>
-        ${data.error_message ? `<div style="color:var(--danger); margin-top:8px; font-size:13px;">Error: ${data.error_message}</div>` : ''}
-        ${tokenChipsHtml}
+        ${data.error_message ? `<div style="color:var(--danger); margin-top:8px; font-size:13px;">Error: ${escHtml(data.error_message)}</div>` : ''}
+        ${tokenHtml}
         ${productsHtml}
-        ${previewImgTag}
-      `;
+        ${imgTag}`;
     }
 
+    function escHtml(str) {
+      return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ── Summary stats ─────────────────────────────────────────────────────────
     async function loadSummaryStats() {
       try {
         const res = await fetch('/uploads/summary');
         if (!res.ok) return;
-        const data = await res.json();
-        document.getElementById('statScans').innerText = data.total_scans;
-        document.getElementById('statInTokens').innerText = (data.total_input_tokens || 0).toLocaleString();
-        document.getElementById('statOutTokens').innerText = (data.total_output_tokens || 0).toLocaleString();
-        document.getElementById('statTotalTokens').innerText = (data.total_tokens || 0).toLocaleString();
-        document.getElementById('statCost').innerText = '$' + Number(data.total_estimated_cost_usd || 0).toFixed(5);
-      } catch (err) {
-        console.error('Failed to load summary stats:', err);
-      }
+        const d = await res.json();
+        document.getElementById('statScans').innerText = d.total_scans;
+        document.getElementById('statInTokens').innerText = (d.total_input_tokens || 0).toLocaleString();
+        document.getElementById('statOutTokens').innerText = (d.total_output_tokens || 0).toLocaleString();
+        document.getElementById('statTotalTokens').innerText = (d.total_tokens || 0).toLocaleString();
+        document.getElementById('statCost').innerText = '$' + Number(d.total_estimated_cost_usd || 0).toFixed(5);
+      } catch(err) { console.error('Summary stats failed:', err); }
     }
 
+    // ── History table ─────────────────────────────────────────────────────────
     async function loadHistory() {
       const container = document.getElementById('historyTableContainer');
       try {
@@ -659,41 +643,39 @@
                 <th>Time</th>
                 <th>Status</th>
                 <th>Products</th>
+                <th>Matched</th>
                 <th>Tokens (In / Out / Total)</th>
                 <th>Est. Cost ($)</th>
               </tr>
             </thead>
             <tbody>
               ${data.items.map(item => {
-                const inT = item.input_tokens || 0;
+                const inT  = item.input_tokens  || 0;
                 const outT = item.output_tokens || 0;
-                const totT = item.total_tokens || (inT + outT);
+                const totT = item.total_tokens  || (inT + outT);
                 const cost = item.estimated_cost_usd ? '$' + Number(item.estimated_cost_usd).toFixed(6) : '-';
+                const prods = item.detected_products || [];
+                const matchedCnt = prods.filter(p => p.matched).length;
                 return `
-                <tr style="cursor:pointer;" onclick="pollResult('${item.upload_id}')">
-                  <td>${new Date(item.created_at).toLocaleTimeString()}</td>
-                  <td><span class="status-badge status-${item.status}">${item.status}</span></td>
-                  <td>${item.detected_products ? item.detected_products.length + ' SKUs' : '-'}</td>
-                  <td style="font-family:'JetBrains Mono', monospace; font-size:12px;">
-                    ${totT > 0 ? `${inT} / ${outT} / <strong>${totT}</strong>` : '-'}
-                  </td>
-                  <td style="font-family:'JetBrains Mono', monospace; font-size:12px; color:var(--token-cost);">
-                    ${cost}
-                  </td>
-                </tr>
-              `;}).join('')}
+                  <tr style="cursor:pointer;" onclick="pollResult('${item.upload_id}')">
+                    <td>${new Date(item.created_at).toLocaleTimeString()}</td>
+                    <td><span class="status-badge status-${item.status}">${item.status}</span></td>
+                    <td>${prods.length > 0 ? prods.length + ' SKUs' : '-'}</td>
+                    <td style="color:#4ade80; font-weight:600;">${prods.length > 0 ? matchedCnt + '/' + prods.length : '-'}</td>
+                    <td style="font-family:'JetBrains Mono',monospace; font-size:12px;">
+                      ${totT > 0 ? inT + ' / ' + outT + ' / <strong>' + totT + '</strong>' : '-'}
+                    </td>
+                    <td style="font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--token-cost);">${cost}</td>
+                  </tr>`;
+              }).join('')}
             </tbody>
-          </table>
-        `;
-      } catch (err) {
+          </table>`;
+      } catch(err) {
         container.innerHTML = '<p style="color:var(--danger);">Failed to load history.</p>';
       }
     }
 
-    window.onload = () => {
-      loadHistory();
-      loadSummaryStats();
-    };
+    window.onload = () => { loadHistory(); loadSummaryStats(); };
   </script>
 </body>
 </html>

@@ -14,11 +14,26 @@ from app.models import ProcessingStatus
 # ── Sub-models ────────────────────────────────────────────────────────────────
 
 
+class CatalogueSuggestion(BaseModel):
+    """One matched catalogue row from itemsdb.csv for a detected product."""
+
+    sub_category_name: str = ""
+    sub_category_code: str = ""
+    category_name: str = ""
+    category_code: str = ""
+    item_name: str = ""    # exact Item Name from catalogue
+    item_code: str = ""    # exact Item Code from catalogue
+
+
 class DetectedProduct(BaseModel):
-    """A single product identified on the rack shelf."""
+    """A single product identified on the rack shelf with catalogue suggestions."""
 
     product_name: str
     quantity_visible: Optional[int] = None
+
+    # ── Catalogue enrichment (populated from itemsdb.csv lookup) ─────────────
+    catalogue_suggestions: Optional[List["CatalogueSuggestion"]] = None
+    matched: Optional[bool] = None  # True if ≥1 catalogue suggestion found
 
 
 class TokenUsage(BaseModel):

@@ -47,6 +47,7 @@ from openai import OpenAI, OpenAIError
 import httpx
 
 from app.config import get_settings
+from app.services.items_db_service import enrich_products, load_items_db
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -399,18 +400,24 @@ def analyze_rack_image(image_input: str | bytes) -> dict[str, Any]:
 
       1. Download / decode image → optimized bytes (memory buffer, zero disk storage)
       2. Call OpenRouter / Gemini with image and shelf recognition prompt
-      3. Parse and return structured product list + token usage + USD cost
+         (AI returns ONLY product_name + quantity — minimum tokens)
+      3. Parse AI output, deduplicate products
+      4. Enrich each product with catalogue metadata from itemsdb.csv (zero extra AI tokens)
+      5. Return structured product list + token usage + USD cost
 
     Args:
         image_input: S3 presigned URL, HTTP URL, Base64 string, Data URI, or raw bytes.
 
     Returns:
         Dict with keys:
-            - "products": list of {"product_name", "quantity_visible"}
+            - "products": list of enriched product dicts
             - "token_usage": {"input_tokens", "output_tokens", "total_tokens", "estimated_cost_usd"}
             - "raw_text": raw completion text from model
     """
     settings = get_settings()
+
+    # ── Step 0: Ensure catalogue is loaded (no-op after first call) ───────────
+    load_items_db()
 
     # ── Step 1: Resolve image → optimized bytes ────────────────────────────────
     image_bytes, mime_type = _resolve_image_bytes(image_input)
@@ -435,7 +442,7 @@ def analyze_rack_image(image_input: str | bytes) -> dict[str, Any]:
         # If no key is set yet, give clear guidance
         raise AIServiceError("OPENROUTER_API_KEY (or GEMINI_API_KEY) is not set. Add your API key to .env file.")
 
-    # ── Parse model output ─────────────────────────────────────────────────────
+    # ── Step 3: Parse model output ─────────────────────────────────────────────
     raw_text_stripped = (raw_text or "").strip()
 
     fence_match = _FENCE_PATTERN.search(raw_text_stripped)
@@ -456,6 +463,7 @@ def analyze_rack_image(image_input: str | bytes) -> dict[str, Any]:
             qty = int(qty_raw) if qty_raw.isdigit() else None
             parsed_items.append({"product_name": p_name, "quantity_visible": qty})
 
+    # ── Step 4: Deduplicate by product name ────────────────────────────────────
     deduped: dict[str, dict[str, Any]] = {}
     for item in parsed_items:
         name = str(item.get("product_name", "Unknown Product")).strip()
@@ -470,8 +478,17 @@ def analyze_rack_image(image_input: str | bytes) -> dict[str, Any]:
         else:
             deduped[name_key] = {"product_name": name, "quantity_visible": qty_int}
 
+    # ── Step 5: Enrich with itemsdb.csv catalogue (local, zero AI tokens) ─────
+    raw_products = list(deduped.values())
+    enriched_products = enrich_products(raw_products)
+    logger.info(
+        "Catalogue enrichment: %d/%d products matched in itemsdb.csv",
+        sum(1 for p in enriched_products if p.get("matched")),
+        len(enriched_products),
+    )
+
     return {
-        "products": list(deduped.values()),
+        "products": enriched_products,
         "token_usage": token_usage,
         "raw_text": raw_text,
     }

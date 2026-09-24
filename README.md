@@ -1,8 +1,8 @@
-# MerchVision-PRAN-RFL — Zero-Disk AI Vision & Token Cost Analytics
+# MerchVision-PRAN-RFL
 
 > AI-powered retail merchandising backend — processes retail rack photos from **S3 bucket URLs, pure Base64 strings (e.g. `/9j/...`), or direct streams** completely **in-memory with zero local disk storage**. Google Gemini 3.7 Flash detects all PRAN-RFL product SKUs and measures exact token usage and estimated USD costs.
 >
-> 📖 **Full API Reference**: See [Documentation/API_DOCUMENTATION.md](Documentation/API_DOCUMENTATION.md) for detailed payload schemas, sequencing, and code examples.
+>  **Full API Reference**: See [Documentation/API_DOCUMENTATION.md](Documentation/API_DOCUMENTATION.md) for detailed payload schemas, sequencing, and code examples.
 
 ---
 

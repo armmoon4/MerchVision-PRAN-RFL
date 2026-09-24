@@ -107,35 +107,53 @@ def _tokenise(text: str) -> List[str]:
     return [t for t in re.split(r"[^a-z0-9]+", text.lower()) if len(t) >= 2]
 
 
-def _score(ai_tokens: List[str], item_tokens: List[str]) -> int:
-    """Count how many AI query tokens appear in the item name tokens."""
-    item_set = set(item_tokens)
-    return sum(1 for t in ai_tokens if t in item_set)
-
-
-def search_item(product_name: str, top_k: int = 1) -> List[CatalogueRow]:
+def _score_by_name(query_tokens: List[str], item_name: str) -> int:
     """
-    Search the catalogue for the best matching item(s) for an AI-detected name.
+    Score a catalogue row's Item Name against the AI-detected product name.
+    Scoring is done ONLY against Item Name — not codes, subcategories, or categories.
+    """
+    item_name_lower = item_name.strip().lower()
+    item_tokens = set(_tokenise(item_name_lower))
+
+    score = 0
+    for q in query_tokens:
+        if q in item_tokens:
+            # Exact token match in item name
+            score += 10
+        elif any(q in it for it in item_tokens if len(it) >= 3):
+            # Partial match (e.g., "pran" inside "pranfrooto")
+            score += 4
+    return score
+
+
+def search_item(product_name: str, top_k: int = 5) -> List[CatalogueRow]:
+    """
+    Search the catalogue for relevant items matching an AI-detected product name.
 
     Strategy:
-      1. Tokenise query and each Item Name.
-      2. Score = number of matching tokens (case-insensitive).
-      3. Return top_k results with score > 0, sorted by score desc.
+      1. Tokenise the AI-detected product name.
+      2. Score each catalogue row by matching tokens ONLY against Item Name.
+      3. Return top_k results with score > 0, sorted best-match first.
 
     Returns an empty list if no match found or catalogue not loaded.
     """
     if not _catalogue:
         return []
 
-    query_tokens = _tokenise(product_name)
+    clean_query = (product_name or "").strip()
+    if not clean_query:
+        return []
+
+    query_tokens = _tokenise(clean_query)
     if not query_tokens:
         return []
 
     scored: List[tuple[int, CatalogueRow]] = []
     for row in _catalogue:
-        item_tokens = _tokenise(row.get("Item Name", ""))
-        s = _score(query_tokens, item_tokens)
-        if s > 0:
+        item_name = row.get("Item Name", "")
+        s = _score_by_name(query_tokens, item_name)
+        # Require at least 2 matching tokens to avoid noisy low-quality results
+        if s >= 20:
             scored.append((s, row))
 
     # Sort descending by score, then stable by Item Name for determinism
@@ -149,6 +167,37 @@ def enrich_product(product_name: str, top_k: int = 5) -> List[CatalogueRow]:
     Returns an empty list if no match found.
     """
     return search_item(product_name, top_k=top_k)
+
+
+def search_catalogue(query: str, limit: int = 20) -> List[Dict[str, str]]:
+    """
+    Public lookup for searching items catalogue with keyword, item code, subcategory, or category.
+    """
+    matches = search_item(query, top_k=limit)
+    return [
+        {
+            "sub_category_name": m.get("Sub Category Name", ""),
+            "sub_category_code": m.get("Sub Category Code", ""),
+            "category_name": m.get("Category Name", ""),
+            "category_code": m.get("Category Code", ""),
+            "item_name": m.get("Item Name", ""),
+            "item_code": m.get("Item Code", ""),
+        }
+        for m in matches
+    ]
+
+
+def get_catalogue_stats() -> Dict[str, Any]:
+    """Return summary statistics of loaded catalogue."""
+    if not _catalogue:
+        load_items_db()
+    sub_cats = {r.get("Sub Category Name") for r in _catalogue if r.get("Sub Category Name")}
+    cats = {r.get("Category Name") for r in _catalogue if r.get("Category Name")}
+    return {
+        "total_items": len(_catalogue),
+        "total_sub_categories": len(sub_cats),
+        "total_categories": len(cats),
+    }
 
 
 def enrich_products(products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -170,7 +219,7 @@ def enrich_products(products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for product in products:
         p = dict(product)
         ai_name: str = str(p.get("product_name", "")).strip()
-        matches = enrich_product(ai_name)  # returns up to 5 best matches
+        matches = enrich_product(ai_name, top_k=5)  # returns up to 5 best matches
         if matches:
             p["catalogue_suggestions"] = [
                 {

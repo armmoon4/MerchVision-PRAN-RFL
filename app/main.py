@@ -25,6 +25,7 @@ from __future__ import annotations
 from collections import defaultdict
 import logging
 import os
+from typing import Any, Dict, List, Optional
 import uuid
 from pathlib import Path
 
@@ -68,7 +69,7 @@ from app.schemas import (
     UploadUrlRequest,
 )
 from app.services.ai_service import AIServiceError, analyze_rack_image
-from app.services.items_db_service import load_items_db
+from app.services.items_db_service import get_catalogue_stats, load_items_db, search_catalogue
 # storage_service retained for legacy compatibility (unused in analyze flow)
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -262,6 +263,46 @@ def get_ui():
 def health_check() -> HealthResponse:
     """Returns `{"status": "ok"}` when the server is running."""
     return HealthResponse()
+
+
+# ── Items Catalogue Lookup Endpoints ─────────────────────────────────────────
+
+
+@app.get(
+    "/catalogue/search",
+    response_model=List[CatalogueSuggestion],
+    summary="Search itemsdb.csv catalogue by keyword, item code, subcategory, or category",
+    tags=["Items Catalogue"],
+)
+@app.get(
+    "/api/catalogue/search",
+    response_model=List[CatalogueSuggestion],
+    include_in_schema=False,
+)
+def search_items_catalogue(
+    q: str = Query(..., description="Query string: product name, item code, subcategory, or category"),
+    limit: int = Query(20, ge=1, le=100, description="Max number of items to return"),
+) -> List[CatalogueSuggestion]:
+    """
+    Search `itemsdb.csv` in RAM for matching items with sub-category, category, and item code.
+    Zero AI tokens consumed.
+    """
+    results = search_catalogue(q, limit=limit)
+    return [CatalogueSuggestion(**r) for r in results]
+
+
+@app.get(
+    "/catalogue/stats",
+    summary="Get catalogue summary statistics (total items, sub-categories, categories)",
+    tags=["Items Catalogue"],
+)
+@app.get(
+    "/api/catalogue/stats",
+    include_in_schema=False,
+)
+def get_catalogue_statistics() -> Dict[str, Any]:
+    """Returns total items, total subcategories, and total categories loaded from itemsdb.csv."""
+    return get_catalogue_stats()
 
 
 # ── Direct Single-API Analysis (Synchronous 1-Call, Zero Disk Storage) ────────

@@ -114,6 +114,8 @@ PRAN_BRANDS: Set[str] = {
     "chashee", "mithai", "tasty treat", "winner", "active", "power",
 }
 
+GENERIC_BRAND_WORDS: Set[str] = {"pran", "rfl"}
+
 IGNORE_TOKENS: Set[str] = {
     "pcs", "pc", "pack", "pck", "combo", "jar", "box", "ctn", "pac",
     "ltd", "atc", "with", "and", "the", "for",
@@ -275,13 +277,15 @@ def infer_category(query_tokens: List[str]) -> Tuple[Optional[str], Optional[str
     if any(s in q_set for s in ["chanachur", "dal", "jhalmuri", "chip"]):
         return "SNACKS_NOODLES", None
 
-    # 8. Beverages (Unified: Juices, Liquid Drinks, Tetra Pak drinks, CSD, Vitality)
+    # 8. Dairy (Must precede general beverages so 'lassi drink' or 'milk drink' maps to Dairy!)
+    if any(m in q_set for m in ["milk", "dairy", "lassi", "ghee", "butter", "cheese", "curd", "yogurt", "yoghourt"]):
+        if "lassi" in q_set:
+            return "120-Dairy", "130-Lassi"
+        return "120-Dairy", None
+
+    # 9. Beverages (Unified: Juices, Liquid Drinks, Tetra Pak drinks, CSD, Vitality)
     if any(d in q_set for d in ["juice", "frooto", "drink", "beverage", "basil", "csd", "soda", "float"]):
         return "BEVERAGE", None
-
-    # 9. Dairy
-    if any(m in q_set for m in ["milk", "dairy", "lassi", "ghee", "butter", "cheese", "curd", "yogurt", "yoghourt"]):
-        return "120-Dairy", None
 
     # 10. Spices
     if any(s in q_set for s in ["masala", "spice", "turmeric", "chilli", "coriander", "cumin", "jeera"]):
@@ -339,7 +343,11 @@ def matches_target_category(
         ]
 
     if target_cat == "120-Dairy":
-        return row_cat == "120-Dairy"
+        if row_cat != "120-Dairy":
+            return False
+        if target_sub == "130-Lassi":
+            return row_sub == "130-Lassi"
+        return True
 
     if target_cat == "150-Spc":
         return row_cat == "150-Spc"
@@ -360,10 +368,11 @@ def _score_candidate(
     row: CatalogueRow,
     hard_lock: bool = True,
     allow_third_party: bool = False,
+    matched_prefix_count: int = 0,
 ) -> int:
     """
     Score a catalogue row against query tokens with category hard-locking,
-    flavor-priority matching, brand boosting, size alignment, and third-party filtering.
+    flavor-priority matching, brand boosting, size alignment, prefix priority, and third-party filtering.
     """
     row_cat = row.get("Category Name", "")
     row_sub = row.get("Sub Category Name", "")
@@ -383,6 +392,17 @@ def _score_candidate(
     name_lower = row_name.lower()
 
     score = 0
+
+    # Prefix match bonus (first two words or single distinctive word)
+    if matched_prefix_count >= 2:
+        score += 120
+        # Extra bonus if exact two-word phrase appears in sequence
+        if len(q_tokens) >= 2:
+            two_word_phrase = f"{q_tokens[0]} {q_tokens[1]}"
+            if two_word_phrase in name_lower:
+                score += 30
+    elif matched_prefix_count == 1:
+        score += 60
 
     # Subcategory bonus
     if target_sub and target_sub != "CAKE" and row_sub == target_sub:
@@ -439,15 +459,17 @@ def _score_candidate(
 
 def search_item(product_name: str, top_k: int = 5) -> List[CatalogueRow]:
     """
-    Search the catalogue for relevant items matching an AI-detected product name.
+    Search the catalogue for relevant items matching an AI-detected product name or search query.
 
     Strategy:
-      1. Normalize & tokenise input (expand abbreviations like s.berry, p.apple, donat, units).
-      2. Filter out non-PRAN third-party distributed brands unless explicitly queried.
-      3. Infer target category & subcategory to hard-lock the candidate pool.
-      4. Score with flavor-affinity, PRAN brand boost, size alignment, and subcategory boost.
-      5. Fall back to relaxed search if hard-locked search yields 0 matches.
-      6. Return top_k highest-scoring results.
+      1. Normalize & tokenise input.
+      2. Direct item code match if query is numeric.
+      3. First Two Words Search (e.g. 'pran lassi' from 'pran lassi saven drink 250ml'):
+         Searches catalogue items matching both prefix words and ranks by remaining tokens.
+      4. Single Distinctive Word fallback (e.g. 'lassi' or 'frooto').
+      5. Taxonomy-aware Hard-Locked search with flavor and brand scoring.
+      6. Relaxed fallback if hard-locked search yields 0 matches.
+      7. Return top_k highest-scoring results.
     """
     if not _catalogue:
         load_items_db()
@@ -460,7 +482,12 @@ def search_item(product_name: str, top_k: int = 5) -> List[CatalogueRow]:
 
     # Exact item code direct lookup
     if clean_query.isdigit():
-        code_matches = [r for r in _catalogue if r.get("Item Code") == clean_query]
+        code_matches = [
+            r for r in _catalogue
+            if r.get("Item Code") == clean_query
+            or r.get("Sub Category Code") == clean_query
+            or r.get("Category Code") == clean_query
+        ]
         if code_matches:
             return code_matches[:top_k]
 
@@ -468,6 +495,105 @@ def search_item(product_name: str, top_k: int = 5) -> List[CatalogueRow]:
     if not query_tokens:
         return []
 
+    allow_third_party = bool(TP_PATTERN.search(clean_query))
+
+    def is_allowed(row: CatalogueRow) -> bool:
+        if allow_third_party:
+            return True
+        r_name = row.get("Item Name", "")
+        r_sub = row.get("Sub Category Name", "")
+        return not (TP_PATTERN.search(r_name) or TP_PATTERN.search(r_sub))
+
+    # Meaningful tokens excluding noise words and ignore tokens
+    clean_tokens = [t for t in query_tokens if t not in IGNORE_TOKENS]
+    if not clean_tokens:
+        clean_tokens = query_tokens
+
+    # ── Strategy 1: First Two Words Search (Core Product Identity) ────────────
+    # E.g. "pran lassi saven drink 250ml" -> matches items containing both "pran" and "lassi"
+    first_two = clean_tokens[:2]
+    if len(first_two) == 2:
+        first_two_set = set(first_two)
+        candidates_two: List[CatalogueRow] = []
+        for r in _catalogue:
+            if not is_allowed(r):
+                continue
+            it_set = set(_tokenise(r.get("Item Name", "")))
+            if first_two_set.issubset(it_set):
+                candidates_two.append(r)
+
+        if candidates_two:
+            scored_two: List[Tuple[int, CatalogueRow]] = []
+            for r in candidates_two:
+                sc = _score_candidate(
+                    query_tokens,
+                    target_cat=None,
+                    target_sub=None,
+                    row=r,
+                    hard_lock=False,
+                    allow_third_party=allow_third_party,
+                    matched_prefix_count=2,
+                )
+                scored_two.append((sc, r))
+            scored_two.sort(key=lambda x: (-x[0], x[1].get("Item Name", "")))
+            return [row for _, row in scored_two[:top_k]]
+
+    # ── Strategy 2: Single Distinctive Keyword Fallback ───────────────────────
+    # If 1 word query or first word is a distinctive product term (e.g. "lassi")
+    if len(clean_tokens) >= 1:
+        w0 = clean_tokens[0]
+        if w0 not in GENERIC_BRAND_WORDS and len(w0) >= 3:
+            candidates_one: List[CatalogueRow] = []
+            for r in _catalogue:
+                if not is_allowed(r):
+                    continue
+                it_set = set(_tokenise(r.get("Item Name", "")))
+                if w0 in it_set:
+                    candidates_one.append(r)
+            if candidates_one:
+                scored_one: List[Tuple[int, CatalogueRow]] = []
+                for r in candidates_one:
+                    sc = _score_candidate(
+                        query_tokens,
+                        target_cat=None,
+                        target_sub=None,
+                        row=r,
+                        hard_lock=False,
+                        allow_third_party=allow_third_party,
+                        matched_prefix_count=1,
+                    )
+                    scored_one.append((sc, r))
+                scored_one.sort(key=lambda x: (-x[0], x[1].get("Item Name", "")))
+                return [row for _, row in scored_one[:top_k]]
+
+        # If w0 is 'pran'/'rfl' and w1 is distinctive (e.g. if w0+w1 didn't match), try w1
+        if w0 in GENERIC_BRAND_WORDS and len(clean_tokens) >= 2:
+            w1 = clean_tokens[1]
+            if w1 not in GENERIC_BRAND_WORDS and len(w1) >= 3:
+                candidates_w1: List[CatalogueRow] = []
+                for r in _catalogue:
+                    if not is_allowed(r):
+                        continue
+                    it_set = set(_tokenise(r.get("Item Name", "")))
+                    if w1 in it_set:
+                        candidates_w1.append(r)
+                if candidates_w1:
+                    scored_w1: List[Tuple[int, CatalogueRow]] = []
+                    for r in candidates_w1:
+                        sc = _score_candidate(
+                            query_tokens,
+                            target_cat=None,
+                            target_sub=None,
+                            row=r,
+                            hard_lock=False,
+                            allow_third_party=allow_third_party,
+                            matched_prefix_count=1,
+                        )
+                        scored_w1.append((sc, r))
+                    scored_w1.sort(key=lambda x: (-x[0], x[1].get("Item Name", "")))
+                    return [row for _, row in scored_w1[:top_k]]
+
+    # ── Strategy 3: Standard Taxonomy Hard-Locking & Token Scoring ────────────
     target_cat, target_sub = infer_category(query_tokens)
     allow_third_party = bool(TP_PATTERN.search(clean_query))
 

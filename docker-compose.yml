@@ -29,21 +29,32 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # Mount application code and test UI for live updates
+      # Mount application code for live updates (dev mode)
       - ./app:/app/app
       - ./testui.html:/app/testui.html
+      # itemsdb.csv — mounting allows you to update the CSV without rebuilding
+      - ./itemsdb.csv:/app/itemsdb.csv
       # Persist uploaded images across restarts
       - ./media:/app/media
+      # Persist embeddings across restarts so they are not regenerated on every start.
+      # On first run (or after 'docker compose build'), the image-baked embeddings
+      # are used.  To force a rebuild:
+      #   docker exec pran_rfl_backend python scripts/build_embeddings.py
+      - embeddings_data:/app/embeddings
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     env_file:
       - .env
     environment:
-      # Override DATABASE_URL to point to the Postgres service above
       DATABASE_URL: postgresql://postgres:postgres@db:5432/pran_rfl
       STORAGE_BASE_URL: /
+      # Semantic search tuning (optional overrides)
+      EMBEDDING_MODEL: "all-MiniLM-L6-v2"
+      CATALOGUE_SIMILARITY_THRESHOLD: "0.30"
+      EMBEDDINGS_DIR: "/app/embeddings"
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   postgres_data:
+  embeddings_data:

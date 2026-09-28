@@ -11,3 +11,10 @@ psycopg2-binary==2.9.10
 httpx
 pillow>=10.0.0
 
+# ── Semantic Catalogue Search ─────────────────────────────────────────────────
+# Sentence Transformers for product embedding generation
+sentence-transformers>=3.0.0
+# PyTorch CPU-only (saves ~2 GB vs full CUDA build; sufficient for 1,954 products)
+torch>=2.0.0
+# NumPy for fast cosine similarity via matrix dot product
+numpy>=1.26.0

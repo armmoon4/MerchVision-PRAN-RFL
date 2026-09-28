@@ -69,7 +69,12 @@ from app.schemas import (
     UploadUrlRequest,
 )
 from app.services.ai_service import AIServiceError, analyze_rack_image
-from app.services.items_db_service import get_catalogue_stats, load_items_db, search_catalogue
+from app.services.items_db_service import (
+    get_catalogue_stats,
+    load_items_db,
+    rebuild_embeddings,
+    search_catalogue,
+)
 # storage_service retained for legacy compatibility (unused in analyze flow)
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -89,7 +94,10 @@ settings = get_settings()
 # Create all DB tables & migrate missing columns on startup (idempotent)
 init_db()
 
-# Pre-load items catalogue into memory (1954 rows, ~1-2 ms, zero AI tokens)
+# Pre-load items catalogue + semantic embeddings into memory.
+# If pre-built embeddings exist on disk they are loaded instantly (~5 ms).
+# If missing (first run without Docker build step) they are generated here
+# using SentenceTransformer (~30-60 s on CPU for 1,954 products).
 load_items_db()
 
 # Ensure media directory exists
@@ -301,8 +309,38 @@ def search_items_catalogue(
     include_in_schema=False,
 )
 def get_catalogue_statistics() -> Dict[str, Any]:
-    """Returns total items, total subcategories, and total categories loaded from itemsdb.csv."""
+    """Returns total items, categories, embedding model info, and similarity threshold."""
     return get_catalogue_stats()
+
+
+@app.post(
+    "/catalogue/rebuild",
+    summary="Rebuild product embeddings from itemsdb.csv (run after CSV updates)",
+    tags=["Items Catalogue"],
+)
+@app.post(
+    "/api/catalogue/rebuild",
+    include_in_schema=False,
+)
+def rebuild_catalogue_embeddings() -> Dict[str, Any]:
+    """
+    Force a full re-generation of semantic search embeddings from itemsdb.csv.
+
+    Use this endpoint after updating itemsdb.csv without restarting the server.
+    The operation runs synchronously (typically 30-60 s on CPU for ~2 K products).
+    """
+    try:
+        count = rebuild_embeddings()
+        return {
+            "status": "ok",
+            "message": f"Embeddings rebuilt successfully for {count} products.",
+            "total_products": count,
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Embedding rebuild failed: {exc}",
+        ) from exc
 
 
 # ── Direct Single-API Analysis (Synchronous 1-Call, Zero Disk Storage) ────────

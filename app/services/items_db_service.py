@@ -1,39 +1,99 @@
 """
-app/services/items_db_service.py — PRAN-RFL Items Catalogue lookup service.
+app/services/items_db_service.py — PRAN-RFL Items Catalogue Semantic Search Service.
 
-Loads itemsdb.csv once at startup (singleton) and provides fast taxonomy-aware
-fuzzy/keyword search against Item Names and Categories.
+Architecture:
+  itemsdb.csv  (1,954 products)
+      |
+      |  on first startup (or force rebuild)
+      v
+  SentenceTransformer model: all-MiniLM-L6-v2  (384-dim embeddings)
+      |
+      v
+  embeddings/product_embeddings.npy   -- float32 matrix (N x 384), L2-normalised
+  embeddings/products_meta.json       -- catalogue metadata list
+
+  At search time:
+    query  -->  encode (1 vector)  -->  cosine similarity  -->  top-K above threshold
+
+Public API (drop-in replacement, same signatures):
+  load_items_db(force=False)         -> int
+  search_item(product_name, top_k=5) -> List[CatalogueRow]
+  search_catalogue(query, limit=20)  -> List[Dict]
+  enrich_product(product_name, top_k=5) -> List[CatalogueRow]
+  enrich_products(products)          -> List[Dict]
+  get_catalogue_stats()              -> Dict
+  rebuild_embeddings()               -> int   (force rebuild after CSV update)
 
 CSV columns expected:
     Sub Category Name, Sub Category Code, Category Name, Category Code,
     Item Name, Item Code
+
+Environment variables:
+  ITEMS_DB_CSV                      -- override CSV path
+  EMBEDDING_MODEL                   -- HuggingFace model name (default: all-MiniLM-L6-v2)
+  CATALOGUE_SIMILARITY_THRESHOLD    -- float 0-1, default 0.30
 """
 from __future__ import annotations
 
 import csv
+import json
 import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# ── Types ─────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Types
+# ---------------------------------------------------------------------------
 
-CatalogueRow = Dict[str, str]   # one CSV row, keys = column headers
+CatalogueRow = Dict[str, str]   # one CSV row; keys are CSV column headers
 
-# ── Singleton state ───────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Singleton state
+# ---------------------------------------------------------------------------
 
-_catalogue: List[CatalogueRow] = []
-_loaded: bool = False
+_catalogue: List[CatalogueRow] = []         # all rows from CSV (full metadata)
+_embeddings: Optional[np.ndarray] = None    # shape (N, 384) float32, L2-normalised
+_model = None                               # SentenceTransformer singleton
+_loaded: bool = False                       # True once load_items_db() has completed
 
-# ── Path resolution ───────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Configuration (overridable via env vars)
+# ---------------------------------------------------------------------------
 
-_DEFAULT_CSV_PATHS = [
-    Path("itemsdb.csv"),                          # CWD (uvicorn launched from project root)
-    Path(__file__).parent.parent.parent / "itemsdb.csv",  # repo root relative to this file
+# Cosine similarity threshold: results below this score are discarded.
+# Range: 0.0 (unrelated) to 1.0 (identical).  0.30 is a good starting point.
+SIMILARITY_THRESHOLD: float = float(
+    os.getenv("CATALOGUE_SIMILARITY_THRESHOLD", "0.30")
+)
+
+DEFAULT_TOP_K: int = 5
+
+# Sentence Transformer model. all-MiniLM-L6-v2 is ~22 MB and runs on CPU.
+EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+
+# ---------------------------------------------------------------------------
+# Path resolution
+# ---------------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).parent.parent.parent   # …/MerchVision-PRAN-RFL/
+
+_DEFAULT_CSV_PATHS: List[Path] = [
+    Path("itemsdb.csv"),           # CWD (uvicorn launched from project root)
+    _REPO_ROOT / "itemsdb.csv",    # absolute fallback
 ]
+
+# Pre-computed embeddings are persisted here so they survive restarts
+_EMBEDDINGS_DIR: Path = Path(
+    os.getenv("EMBEDDINGS_DIR", str(_REPO_ROOT / "embeddings"))
+)
+_EMBEDDINGS_FILE: Path = _EMBEDDINGS_DIR / "product_embeddings.npy"
+_META_FILE: Path       = _EMBEDDINGS_DIR / "products_meta.json"
 
 
 def _find_csv() -> Optional[Path]:
@@ -42,135 +102,198 @@ def _find_csv() -> Optional[Path]:
         p = Path(env_path)
         if p.is_file():
             return p
-        logger.warning("ITEMS_DB_CSV env var points to non-existent file: %s", env_path)
-
+        logger.warning(
+            "ITEMS_DB_CSV env var points to non-existent file: %s", env_path
+        )
     for candidate in _DEFAULT_CSV_PATHS:
         if candidate.is_file():
             return candidate
-
     return None
 
 
-# ── Canonical Vocabularies & Normalization ─────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Text pre-processing (abbreviation expansion)
+# ---------------------------------------------------------------------------
 
-ALIASES: Dict[str, str] = {
-    "p.apple": "pineapple",
-    "papple": "pineapple",
-    "s.berry": "strawberry",
-    "sberry": "strawberry",
+_ABBR_MAP: Dict[str, str] = {
+    "p.apple":   "pineapple",
+    "papple":    "pineapple",
+    "s.berry":   "strawberry",
+    "sberry":    "strawberry",
     "p.granate": "pomegranate",
-    "pgranate": "pomegranate",
-    "donat": "donut",
-    "choco": "chocolate",
-    "choc": "chocolate",
-    "vanila": "vanilla",
+    "pgranate":  "pomegranate",
+    "donat":     "donut",
+    "choco":     "chocolate",
+    "choc":      "chocolate",
+    "vanila":    "vanilla",
     "falvoured": "flavoured",
-    "falvor": "flavor",
-    "flavour": "flavored",
-    "flavoured": "flavored",
-    "flavor": "flavored",
-    "bisc": "biscuit",
-    "bis": "biscuit",
-}
-
-FLAVORS: Set[str] = {
-    "strawberry", "pineapple", "orange", "chocolate", "vanilla",
-    "banana", "coconut", "milk", "mango", "custard", "lemon",
-    "butter", "peanut", "elachi", "cardamom", "jeera", "cumin",
-    "spicy", "masala", "cheese", "onion", "garlic", "ginger",
-    "lychee", "pomegranate", "apple", "badam", "almond", "pista",
-    "cashew", "salt", "salted", "tomato", "chilli",
-}
-
-NOISE_WORDS: Set[str] = {
-    "cream", "crunchy", "special", "regular", "original",
-    "double", "filled", "mini", "plus", "club", "bisk",
-}
-
-# Third-party imported or distributed brands present in ERP itemsdb.csv
-# These must NEVER be suggested unless explicitly searched by the user.
-THIRD_PARTY_BRANDS: Set[str] = {
-    # Competitor / Distributed Beverage & Food Brands
-    "barbican", "red bull", "maduria", "sipco", "shams", "kuku bima", "kuku",
-    "milo", "nescafe", "carabao", "m150", "shark", "hemavition", "fizze",
-    "big bee", "kinza", "bauli", "canton", "tango", "spoti", "idopa",
-    # Distributed Personal Care / Cosmetics / Toiletries
-    "head & shoulders", "head and shoulders", "clear", "dove", "pantene",
-    "sunsilk", "lux", "lifebuoy", "camay", "fair & lovely", "pepsodent",
-    "colgate", "close up", "close-up", "fogg", "axe", "brylcreem",
-    "vaseline", "vicks", "bajaj", "parachute", "dettol", "savlon",
-    "harpic", "lizol", "wheel", "rin", "surf excel", "tide", "ariel",
-}
-
-TP_PATTERN: re.Pattern = re.compile(
-    r"\b(" + "|".join(re.escape(b) for b in sorted(THIRD_PARTY_BRANDS, key=len, reverse=True)) + r")\b",
-    re.IGNORECASE,
-)
-
-# Known PRAN in-house product lines and sub-brands
-PRAN_BRANDS: Set[str] = {
-    "pran", "drinko", "frooto", "bisk club", "mr. noodles", "all time",
-    "latina", "lavila", "cheer up", "potata", "bravo", "shero", "wonder",
-    "chashee", "mithai", "tasty treat", "winner", "active", "power",
-}
-
-GENERIC_BRAND_WORDS: Set[str] = {"pran", "rfl"}
-
-IGNORE_TOKENS: Set[str] = {
-    "pcs", "pc", "pack", "pck", "combo", "jar", "box", "ctn", "pac",
-    "ltd", "atc", "with", "and", "the", "for",
+    "falvor":    "flavor",
 }
 
 
-def _standardize_row(row: CatalogueRow) -> None:
-    """Defensive runtime cleanup for regional metadata or legacy misclassifications."""
-    cat = row.get("Category Name", "")
-    name = row.get("Item Name", "")
-    name_upper = name.upper()
-
-    # 1. Clean Singapore regional dumping to proper taxonomy
-    if cat == "Singapore":
-        if "CREAM BISCUIT" in name_upper or "BISCUIT" in name_upper:
-            row["Category Name"] = "145-Biscuit"
-            row["Category Code"] = "145"
-            row["Sub Category Name"] = "272-Bisc-Cream"
-            row["Sub Category Code"] = "272"
-        elif "MASALA" in name_upper:
-            row["Category Name"] = "150-Spc"
-            row["Category Code"] = "150"
-            row["Sub Category Name"] = "360-Spc-Parer Pack"
-            row["Sub Category Code"] = "360"
-        elif "GINGER PASTE" in name_upper:
-            row["Category Name"] = "150-Spc"
-            row["Category Code"] = "150"
-            row["Sub Category Name"] = "Paste"
-            row["Sub Category Code"] = "Paste"
-        elif "KOREAN" in name_upper or "NOODLE" in name_upper:
-            row["Category Name"] = "135-SN-GLB"
-            row["Category Code"] = "135"
-            row["Sub Category Name"] = "230-Noodles"
-            row["Sub Category Code"] = "230"
-        elif "DAL VAJA" in name_upper:
-            row["Category Name"] = "130-SN-BD"
-            row["Category Code"] = "130"
-            row["Sub Category Name"] = "210-Fried Snacks"
-            row["Sub Category Code"] = "210"
-
-    # 2. Standardize all Cream Biscuits under 145-Biscuit to 272-Bisc-Cream
-    if "cream biscuit" in name.lower() and "bisc" in row.get("Category Name", "").lower():
-        row["Sub Category Name"] = "272-Bisc-Cream"
-        row["Sub Category Code"] = "272"
+def _expand_abbreviations(text: str) -> str:
+    """Lowercase and expand product-name abbreviations; normalise unit tokens."""
+    t = text.lower()
+    t = re.sub(r"(\d+)\s*ml\b",   r"\1ml",  t)
+    t = re.sub(r"(\d+)\s*gm?\b",  r"\1gm",  t)
+    t = re.sub(r"(\d+)\s*kg\b",   r"\1kg",  t)
+    t = re.sub(r"(\d+)\s*ltr?\b", r"\1ltr", t)
+    for abbr, full in _ABBR_MAP.items():
+        t = re.sub(rf"\b{re.escape(abbr)}\b", full, t)
+    return t
 
 
-# ── Load ──────────────────────────────────────────────────────────────────────
+def _build_search_text(row: CatalogueRow) -> str:
+    """
+    Build the embedding text for a catalogue row.
+    Concatenating Item Name + Sub Category + Category gives the model richer
+    context (e.g. the word 'Lassi' also associates with '130-Lassi 120-Dairy').
+    """
+    item_name = _expand_abbreviations(row.get("Item Name", ""))
+    sub_cat   = row.get("Sub Category Name", "")
+    category  = row.get("Category Name", "")
+    parts = [item_name]
+    if sub_cat:
+        parts.append(sub_cat)
+    if category:
+        parts.append(category)
+    return " | ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# CSV loading
+# ---------------------------------------------------------------------------
+
+
+def _load_csv(csv_path: Path) -> List[CatalogueRow]:
+    """Read itemsdb.csv and return a list of cleaned row dicts."""
+    rows: List[CatalogueRow] = []
+    with csv_path.open(newline="", encoding="utf-8-sig") as fh:
+        reader = csv.DictReader(fh)
+        for raw in reader:
+            cleaned = {
+                k.strip().strip('"'): v.strip().strip('"')
+                for k, v in raw.items()
+                if k
+            }
+            if cleaned.get("Item Name"):
+                rows.append(cleaned)
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# SentenceTransformer model (lazy singleton)
+# ---------------------------------------------------------------------------
+
+
+def _get_model():
+    """Return the SentenceTransformer singleton, loading it on first call."""
+    global _model
+    if _model is None:
+        try:
+            from sentence_transformers import SentenceTransformer  # type: ignore
+            logger.info("Loading SentenceTransformer model: %s ...", EMBEDDING_MODEL)
+            _model = SentenceTransformer(EMBEDDING_MODEL)
+            logger.info("SentenceTransformer model loaded.")
+        except ImportError as exc:
+            raise RuntimeError(
+                "sentence-transformers is not installed. "
+                "Add it to requirements.txt and rebuild the Docker image."
+            ) from exc
+    return _model
+
+
+# ---------------------------------------------------------------------------
+# Embedding generation & persistence
+# ---------------------------------------------------------------------------
+
+
+def _build_and_save_embeddings(catalogue: List[CatalogueRow]) -> np.ndarray:
+    """
+    Encode all catalogue rows with SentenceTransformer and save to disk.
+    This is called exactly once (at startup or after a CSV update).
+    """
+    model = _get_model()
+    _EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Generating embeddings for %d products ...", len(catalogue))
+    texts = [_build_search_text(row) for row in catalogue]
+
+    embeddings: np.ndarray = model.encode(
+        texts,
+        normalize_embeddings=True,   # L2-normalise so cosine sim == dot product
+        show_progress_bar=False,
+        batch_size=64,
+    ).astype(np.float32)
+
+    np.save(str(_EMBEDDINGS_FILE), embeddings)
+    logger.info("Saved product embeddings -> %s", _EMBEDDINGS_FILE)
+
+    meta = [
+        {
+            "item_name":         row.get("Item Name", ""),
+            "item_code":         row.get("Item Code", ""),
+            "sub_category_name": row.get("Sub Category Name", ""),
+            "sub_category_code": row.get("Sub Category Code", ""),
+            "category_name":     row.get("Category Name", ""),
+            "category_code":     row.get("Category Code", ""),
+        }
+        for row in catalogue
+    ]
+    _META_FILE.write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    logger.info("Saved product metadata -> %s", _META_FILE)
+
+    return embeddings
+
+
+def _load_saved_embeddings() -> Optional[Tuple[np.ndarray, List[Dict]]]:
+    """
+    Load pre-computed embeddings + metadata from disk.
+    Returns (embeddings, meta_list) on success, or None if missing/corrupt.
+    """
+    if not _EMBEDDINGS_FILE.is_file() or not _META_FILE.is_file():
+        return None
+    try:
+        embeddings = np.load(str(_EMBEDDINGS_FILE))
+        meta       = json.loads(_META_FILE.read_text(encoding="utf-8"))
+        if len(embeddings) != len(meta):
+            logger.warning(
+                "Embeddings/meta size mismatch (%d vs %d) -- will rebuild.",
+                len(embeddings), len(meta),
+            )
+            return None
+        logger.info(
+            "Loaded embeddings from disk: %d products, dim=%d.",
+            len(embeddings), embeddings.shape[1],
+        )
+        return embeddings, meta
+    except Exception as exc:
+        logger.warning("Could not load saved embeddings (%s) -- will rebuild.", exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Public: load_items_db
+# ---------------------------------------------------------------------------
 
 
 def load_items_db(force: bool = False) -> int:
     """
-    Load (or re-load) itemsdb.csv into the in-memory catalogue.
-    Returns number of rows loaded.
+    Initialise the semantic catalogue search engine.
+
+    Steps:
+      1. Read itemsdb.csv into memory.
+      2. Load pre-computed embeddings from disk, OR generate+save them if missing.
+
+    Args:
+        force: If True, always regenerate embeddings even if saved ones exist.
+
+    Returns:
+        Number of products loaded.
     """
-    global _catalogue, _loaded
+    global _catalogue, _embeddings, _loaded
 
     if _loaded and not force:
         return len(_catalogue)
@@ -178,557 +301,251 @@ def load_items_db(force: bool = False) -> int:
     csv_path = _find_csv()
     if csv_path is None:
         logger.warning(
-            "itemsdb.csv not found. Product catalogue enrichment will be skipped. "
+            "itemsdb.csv not found -- catalogue search disabled. "
             "Set ITEMS_DB_CSV env var or place itemsdb.csv in the project root."
         )
-        _catalogue = []
-        _loaded = True
+        _catalogue, _embeddings, _loaded = [], None, True
         return 0
 
-    rows: List[CatalogueRow] = []
     try:
-        with csv_path.open(newline="", encoding="utf-8-sig") as fh:
-            reader = csv.DictReader(fh)
-            for row in reader:
-                cleaned = {k.strip().strip('"'): v.strip().strip('"') for k, v in row.items() if k}
-                if cleaned.get("Item Name"):
-                    _standardize_row(cleaned)
-                    rows.append(cleaned)
-        _catalogue = rows
-        _loaded = True
-        logger.info("ItemsDB loaded: %d products from %s", len(rows), csv_path)
+        _catalogue = _load_csv(csv_path)
+        logger.info("Loaded %d products from %s", len(_catalogue), csv_path)
     except Exception as exc:
-        logger.error("Failed to load itemsdb.csv from %s: %s", csv_path, exc)
-        _catalogue = []
-        _loaded = True
+        logger.error("Failed to read itemsdb.csv: %s", exc)
+        _catalogue, _embeddings, _loaded = [], None, True
+        return 0
 
+    if force:
+        _embeddings = _build_and_save_embeddings(_catalogue)
+    else:
+        saved = _load_saved_embeddings()
+        if saved is None:
+            _embeddings = _build_and_save_embeddings(_catalogue)
+        else:
+            _embeddings, saved_meta = saved
+            # Rebuild if the CSV has grown or shrunk since embeddings were saved
+            if len(saved_meta) != len(_catalogue):
+                logger.info(
+                    "CSV row count changed (%d -> %d) -- rebuilding embeddings.",
+                    len(saved_meta), len(_catalogue),
+                )
+                _embeddings = _build_and_save_embeddings(_catalogue)
+
+    _loaded = True
     return len(_catalogue)
 
 
-# ── Tokenization & Taxonomy Matching ──────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Core semantic search
+# ---------------------------------------------------------------------------
 
 
-def _normalize_text(text: str) -> str:
-    """Lowercase, expand abbreviations, standardize flavors and unit formats."""
-    t = text.lower()
-    # Normalize "pine apple" to "pineapple" to prevent false apple drink matches
-    t = re.sub(r"\bpine\s+apple\b", "pineapple", t)
-    # Standardize numeric units so "250 ml" and "250ml" match identically
-    t = re.sub(r"(\d+)\s*(?:ml|milliliter)\b", r"\1ml", t)
-    t = re.sub(r"(\d+)\s*(?:l|ltr|liter|litre)\b", r"\1ltr", t)
-    t = re.sub(r"(\d+)\s*(?:g|gm|gram)\b", r"\1gm", t)
-    t = re.sub(r"(\d+)\s*(?:kg|kilo)\b", r"\1kg", t)
-    for k, v in ALIASES.items():
-        t = re.sub(rf"\b{re.escape(k)}\b", v, t)
-    return t
-
-
-def _tokenise(text: str) -> List[str]:
-    """Normalize, split on alphanumeric boundaries, apply aliases, and singularize."""
-    norm = _normalize_text(text)
-    raw = [t for t in re.split(r"[^a-z0-9]+", norm) if len(t) >= 2]
-    res: List[str] = []
-    for t in raw:
-        if t in ALIASES:
-            t = ALIASES[t]
-        # Singularize English plurals (biscuits -> biscuit, wafers -> wafer)
-        if t.endswith("s") and len(t) > 3 and not t.endswith("ss"):
-            t = t[:-1]
-        res.append(t)
-    return res
-
-
-def infer_category(query_tokens: List[str]) -> Tuple[Optional[str], Optional[str]]:
+def _semantic_search(
+    query: str,
+    top_k: int = DEFAULT_TOP_K,
+    threshold: float = SIMILARITY_THRESHOLD,
+) -> List[Tuple[float, CatalogueRow]]:
     """
-    Infer the target PRAN category and subcategory from the product name tokens.
-    Enables Category Hard-Locking to eliminate hallucinations (e.g. Rice for Biscuits).
+    Encode *query* with SentenceTransformer, compute cosine similarity against
+    all pre-built product embeddings, and return the top-K results that meet
+    the similarity threshold.
+
+    Returns:
+        List of (score, CatalogueRow) tuples, sorted descending by score.
     """
-    q_set = set(query_tokens)
+    if _embeddings is None or not _catalogue:
+        return []
 
-    # 1. Wafer -> 146-Bakery / 300-Wafer
-    if "wafer" in q_set:
-        return "146-Bakery", "300-Wafer"
+    model = _get_model()
+    expanded_query = _expand_abbreviations(query.strip())
 
-    # 2. Cake / Donut -> 146-Bakery (Cakes only, exclude bread & wafer)
-    if any(c in q_set for c in ["cake", "cupcake", "donut", "muffin"]):
-        return "146-Bakery", "CAKE"
+    # Encode the single query vector (1 x D)
+    q_vec: np.ndarray = model.encode(
+        expanded_query,
+        normalize_embeddings=True,
+    ).astype(np.float32)
 
-    # 3. Biscuit / Cookie / Cracker -> 145-Biscuit
-    if any(b in q_set for b in ["biscuit", "cookie", "cracker"]):
-        if "cream" in q_set:
-            return "145-Biscuit", "272-Bisc-Cream"
-        return "145-Biscuit", None
+    # Fast cosine similarity via dot product (embeddings are L2-normalised)
+    scores: np.ndarray = _embeddings @ q_vec   # shape: (N,)
 
-    # 4. Toast / Rusk / Bela -> 147-Toast
-    if any(t in q_set for t in ["toast", "rusk", "bela"]):
-        return "147-Toast", None
+    # Over-fetch to leave room for threshold filtering
+    fetch_n     = min(top_k * 4, len(scores))
+    top_indices = np.argpartition(scores, -fetch_n)[-fetch_n:]
+    top_indices = top_indices[np.argsort(scores[top_indices])[::-1]]
 
-    # 5. Bread / Roll -> 146-Bakery / Bread
-    if any(br in q_set for br in ["bread", "bun", "roti"]):
-        return "146-Bakery", "Bread"
+    results: List[Tuple[float, CatalogueRow]] = []
+    for idx in top_indices:
+        score = float(scores[idx])
+        if score < threshold:
+            break          # array is sorted descending; no need to keep going
+        if idx < len(_catalogue):
+            results.append((score, _catalogue[idx]))
+        if len(results) >= top_k:
+            break
 
-    # 6. Rice -> 170-Rice
-    if any(r in q_set for r in ["rice", "basmati", "basmathi", "sella", "chinigura", "kalijeera"]):
-        return "170-Rice", None
-
-    # 7. Noodles / Snacks
-    if "noodle" in q_set:
-        return "SNACKS_NOODLES", None
-    if any(s in q_set for s in ["chanachur", "dal", "jhalmuri", "chip"]):
-        return "SNACKS_NOODLES", None
-
-    # 8. Dairy (Must precede general beverages so 'lassi drink' or 'milk drink' maps to Dairy!)
-    if any(m in q_set for m in ["milk", "dairy", "lassi", "ghee", "butter", "cheese", "curd", "yogurt", "yoghourt"]):
-        if "lassi" in q_set:
-            return "120-Dairy", "130-Lassi"
-        return "120-Dairy", None
-
-    # 9. Beverages (Unified: Juices, Liquid Drinks, Tetra Pak drinks, CSD, Vitality)
-    if any(d in q_set for d in ["juice", "frooto", "drink", "beverage", "basil", "csd", "soda", "float"]):
-        return "BEVERAGE", None
-
-    # 10. Spices
-    if any(s in q_set for s in ["masala", "spice", "turmeric", "chilli", "coriander", "cumin", "jeera"]):
-        return "150-Spc", None
-
-    # 11. Pickles & Household foods
-    if any(p in q_set for p in ["pickle", "achar", "sauce", "ketchup", "jam", "jelly"]):
-        return "180-HH-Food", None
-
-    # 12. Confectionery
-    if any(c in q_set for c in ["candy", "lollipop", "chocolate", "chew", "gum"]):
-        return "160-Confec", None
-
-    return None, None
+    return results
 
 
-def matches_target_category(
-    target_cat: Optional[str],
-    target_sub: Optional[str],
-    row_cat: str,
-    row_sub: str,
-) -> bool:
-    """Check if a catalogue row strictly matches the inferred category constraints."""
-    if not target_cat:
-        return True
-
-    if target_cat == "145-Biscuit":
-        return row_cat == "145-Biscuit"
-
-    if target_cat == "147-Toast":
-        return row_cat == "147-Toast"
-
-    if target_cat == "170-Rice":
-        return row_cat == "170-Rice"
-
-    if target_cat == "146-Bakery":
-        if row_cat != "146-Bakery":
-            return False
-        if target_sub == "300-Wafer":
-            return row_sub == "300-Wafer"
-        if target_sub == "CAKE":
-            return row_sub not in ["300-Wafer", "Bread"]
-        if target_sub == "Bread":
-            return row_sub == "Bread"
-        return True
-
-    if target_cat == "SNACKS_NOODLES":
-        return row_cat in ["130-SN-BD", "135-SN-GLB"]
-
-    if target_cat == "BEVERAGE":
-        return row_cat in [
-            "105-DR-LD", "106-DR-Basil", "107-DR-Oth",
-            "110-JU-PET", "111-JU-Can", "112-JU-Pak",
-            "115-VitaPower", "116-CSD",
-        ]
-
-    if target_cat == "120-Dairy":
-        if row_cat != "120-Dairy":
-            return False
-        if target_sub == "130-Lassi":
-            return row_sub == "130-Lassi"
-        return True
-
-    if target_cat == "150-Spc":
-        return row_cat == "150-Spc"
-
-    if target_cat == "180-HH-Food":
-        return row_cat == "180-HH-Food"
-
-    if target_cat == "160-Confec":
-        return row_cat == "160-Confec"
-
-    return True
+# ---------------------------------------------------------------------------
+# Direct item-code lookup
+# ---------------------------------------------------------------------------
 
 
-def _score_candidate(
-    q_tokens: List[str],
-    target_cat: Optional[str],
-    target_sub: Optional[str],
-    row: CatalogueRow,
-    hard_lock: bool = True,
-    allow_third_party: bool = False,
-    matched_prefix_count: int = 0,
-) -> int:
+def _lookup_by_code(code: str) -> List[CatalogueRow]:
+    """Exact match on Item Code, Sub Category Code, or Category Code."""
+    return [
+        r for r in _catalogue
+        if r.get("Item Code") == code
+        or r.get("Sub Category Code") == code
+        or r.get("Category Code") == code
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Public: search_item
+# ---------------------------------------------------------------------------
+
+
+def search_item(product_name: str, top_k: int = DEFAULT_TOP_K) -> List[CatalogueRow]:
     """
-    Score a catalogue row against query tokens with category hard-locking,
-    flavor-priority matching, brand boosting, size alignment, prefix priority, and third-party filtering.
+    Find the best-matching catalogue rows for a given product name using
+    semantic (embedding-based) search.
+
+    Args:
+        product_name: Free-text string, e.g. "Pran Lassi Drink 250ml".
+        top_k:        Maximum results to return.
+
+    Returns:
+        List of CatalogueRow dicts, best match first.
     """
-    row_cat = row.get("Category Name", "")
-    row_sub = row.get("Sub Category Name", "")
-    row_name = row.get("Item Name", "")
-
-    # Exclude non-PRAN third-party brands unless explicitly queried
-    if not allow_third_party:
-        if TP_PATTERN.search(row_name) or TP_PATTERN.search(row_sub):
-            return 0
-
-    # Hard-Locking check
-    if hard_lock and not matches_target_category(target_cat, target_sub, row_cat, row_sub):
-        return 0
-
-    item_tokens = _tokenise(row_name)
-    item_tokens_set = set(item_tokens)
-    name_lower = row_name.lower()
-
-    score = 0
-
-    # Prefix match bonus (first two words or single distinctive word)
-    if matched_prefix_count >= 2:
-        score += 120
-        # Extra bonus if exact two-word phrase appears in sequence
-        if len(q_tokens) >= 2:
-            two_word_phrase = f"{q_tokens[0]} {q_tokens[1]}"
-            if two_word_phrase in name_lower:
-                score += 30
-    elif matched_prefix_count == 1:
-        score += 60
-
-    # Subcategory bonus
-    if target_sub and target_sub != "CAKE" and row_sub == target_sub:
-        score += 50
-
-    # PRAN Brand boost: Prioritize PRAN family products over generic entries
-    q_has_pran = any(b in q_tokens for b in ["pran", "rfl"])
-    row_has_pran = "pran" in item_tokens_set or any(pb in name_lower for pb in PRAN_BRANDS)
-    if q_has_pran and row_has_pran:
-        score += 40
-    elif row_has_pran:
-        score += 20
-
-    # Flavor matching & conflict detection
-    q_flavors = set(q_tokens) & FLAVORS
-    row_flavors = item_tokens_set & FLAVORS
-
-    if q_flavors:
-        if q_flavors & row_flavors:
-            # Matches the query flavor (e.g. Apple, Orange, Mango, Chocolate, Strawberry)
-            score += 100
-        elif row_flavors:
-            # Conflicting flavor penalty (e.g., Orange biscuit for a Strawberry query)
-            score -= 90
-    elif row_flavors:
-        # Slight penalty when query has no flavor requested but item is a specialized flavor
-        score -= 2
-
-    # Token matching
-    for q in q_tokens:
-        if q in IGNORE_TOKENS:
-            continue
-        if q in item_tokens_set:
-            if re.match(r"^\d+(?:ml|gm|kg|ltr)$", q):
-                score += 50  # High bonus for exact package size match (e.g. 250ml)
-            elif q in FLAVORS:
-                score += 25  # High weight for matching flavor
-            elif q in PRAN_BRANDS:
-                score += 15
-            elif q == "drink":
-                score += 20
-            elif q in NOISE_WORDS:
-                score += 5   # Low weight for generic descriptors (cream, crunchy, etc.)
-            else:
-                score += 20  # High weight for distinct product names
-        elif any(q in it for it in item_tokens_set if len(it) >= 3):
-            score += 5
-
-    return score
-
-
-# ── Public Search & Enrichment ────────────────────────────────────────────────
-
-
-def search_item(product_name: str, top_k: int = 5) -> List[CatalogueRow]:
-    """
-    Search the catalogue for relevant items matching an AI-detected product name or search query.
-
-    Strategy:
-      1. Normalize & tokenise input.
-      2. Direct item code match if query is numeric.
-      3. First Two Words Search (e.g. 'pran lassi' from 'pran lassi saven drink 250ml'):
-         Searches catalogue items matching both prefix words and ranks by remaining tokens.
-      4. Single Distinctive Word fallback (e.g. 'lassi' or 'frooto').
-      5. Taxonomy-aware Hard-Locked search with flavor and brand scoring.
-      6. Relaxed fallback if hard-locked search yields 0 matches.
-      7. Return top_k highest-scoring results.
-    """
-    if not _catalogue:
+    if not _loaded:
         load_items_db()
-        if not _catalogue:
-            return []
 
-    clean_query = (product_name or "").strip()
-    if not clean_query:
+    clean = (product_name or "").strip()
+    if not clean:
         return []
 
-    # Exact item code direct lookup
-    if clean_query.isdigit():
-        code_matches = [
-            r for r in _catalogue
-            if r.get("Item Code") == clean_query
-            or r.get("Sub Category Code") == clean_query
-            or r.get("Category Code") == clean_query
-        ]
-        if code_matches:
-            return code_matches[:top_k]
+    if clean.isdigit():
+        return _lookup_by_code(clean)[:top_k]
 
-    query_tokens = _tokenise(clean_query)
-    if not query_tokens:
-        return []
-
-    allow_third_party = bool(TP_PATTERN.search(clean_query))
-
-    def is_allowed(row: CatalogueRow) -> bool:
-        if allow_third_party:
-            return True
-        r_name = row.get("Item Name", "")
-        r_sub = row.get("Sub Category Name", "")
-        return not (TP_PATTERN.search(r_name) or TP_PATTERN.search(r_sub))
-
-    # Meaningful tokens excluding noise words and ignore tokens
-    clean_tokens = [t for t in query_tokens if t not in IGNORE_TOKENS]
-    if not clean_tokens:
-        clean_tokens = query_tokens
-
-    # ── Strategy 1: First Two Words Search (Core Product Identity) ────────────
-    # E.g. "pran lassi saven drink 250ml" -> matches items containing both "pran" and "lassi"
-    first_two = clean_tokens[:2]
-    if len(first_two) == 2:
-        first_two_set = set(first_two)
-        candidates_two: List[CatalogueRow] = []
-        for r in _catalogue:
-            if not is_allowed(r):
-                continue
-            it_set = set(_tokenise(r.get("Item Name", "")))
-            if first_two_set.issubset(it_set):
-                candidates_two.append(r)
-
-        if candidates_two:
-            scored_two: List[Tuple[int, CatalogueRow]] = []
-            for r in candidates_two:
-                sc = _score_candidate(
-                    query_tokens,
-                    target_cat=None,
-                    target_sub=None,
-                    row=r,
-                    hard_lock=False,
-                    allow_third_party=allow_third_party,
-                    matched_prefix_count=2,
-                )
-                scored_two.append((sc, r))
-            scored_two.sort(key=lambda x: (-x[0], x[1].get("Item Name", "")))
-            return [row for _, row in scored_two[:top_k]]
-
-    # ── Strategy 2: Single Distinctive Keyword Fallback ───────────────────────
-    # If 1 word query or first word is a distinctive product term (e.g. "lassi")
-    if len(clean_tokens) >= 1:
-        w0 = clean_tokens[0]
-        if w0 not in GENERIC_BRAND_WORDS and len(w0) >= 3:
-            candidates_one: List[CatalogueRow] = []
-            for r in _catalogue:
-                if not is_allowed(r):
-                    continue
-                it_set = set(_tokenise(r.get("Item Name", "")))
-                if w0 in it_set:
-                    candidates_one.append(r)
-            if candidates_one:
-                scored_one: List[Tuple[int, CatalogueRow]] = []
-                for r in candidates_one:
-                    sc = _score_candidate(
-                        query_tokens,
-                        target_cat=None,
-                        target_sub=None,
-                        row=r,
-                        hard_lock=False,
-                        allow_third_party=allow_third_party,
-                        matched_prefix_count=1,
-                    )
-                    scored_one.append((sc, r))
-                scored_one.sort(key=lambda x: (-x[0], x[1].get("Item Name", "")))
-                return [row for _, row in scored_one[:top_k]]
-
-        # If w0 is 'pran'/'rfl' and w1 is distinctive (e.g. if w0+w1 didn't match), try w1
-        if w0 in GENERIC_BRAND_WORDS and len(clean_tokens) >= 2:
-            w1 = clean_tokens[1]
-            if w1 not in GENERIC_BRAND_WORDS and len(w1) >= 3:
-                candidates_w1: List[CatalogueRow] = []
-                for r in _catalogue:
-                    if not is_allowed(r):
-                        continue
-                    it_set = set(_tokenise(r.get("Item Name", "")))
-                    if w1 in it_set:
-                        candidates_w1.append(r)
-                if candidates_w1:
-                    scored_w1: List[Tuple[int, CatalogueRow]] = []
-                    for r in candidates_w1:
-                        sc = _score_candidate(
-                            query_tokens,
-                            target_cat=None,
-                            target_sub=None,
-                            row=r,
-                            hard_lock=False,
-                            allow_third_party=allow_third_party,
-                            matched_prefix_count=1,
-                        )
-                        scored_w1.append((sc, r))
-                    scored_w1.sort(key=lambda x: (-x[0], x[1].get("Item Name", "")))
-                    return [row for _, row in scored_w1[:top_k]]
-
-    # ── Strategy 3: Standard Taxonomy Hard-Locking & Token Scoring ────────────
-    target_cat, target_sub = infer_category(query_tokens)
-    allow_third_party = bool(TP_PATTERN.search(clean_query))
-
-    # Pass 1: Strict Category Hard-Locking
-    scored: List[Tuple[int, CatalogueRow]] = []
-    for row in _catalogue:
-        s = _score_candidate(
-            query_tokens,
-            target_cat,
-            target_sub,
-            row,
-            hard_lock=True,
-            allow_third_party=allow_third_party,
-        )
-        if s >= 15:
-            scored.append((s, row))
-
-    # Pass 2: Fallback without hard-locking if no matches found
-    if not scored and target_cat:
-        for row in _catalogue:
-            s = _score_candidate(
-                query_tokens,
-                target_cat,
-                target_sub,
-                row,
-                hard_lock=False,
-                allow_third_party=allow_third_party,
-            )
-            if s >= 20:
-                scored.append((s, row))
-
-    # Sort descending by score, then stable by Item Name
-    scored.sort(key=lambda x: (-x[0], x[1].get("Item Name", "")))
-    return [row for _, row in scored[:top_k]]
+    return [row for _, row in _semantic_search(clean, top_k=top_k)]
 
 
-def enrich_product(product_name: str, top_k: int = 5) -> List[CatalogueRow]:
-    """Return up to top_k best-matching catalogue rows for the given product name."""
-    return search_item(product_name, top_k=top_k)
+# ---------------------------------------------------------------------------
+# Public: search_catalogue
+# ---------------------------------------------------------------------------
 
 
 def search_catalogue(query: str, limit: int = 20) -> List[Dict[str, str]]:
     """
-    Public lookup for searching items catalogue with keyword, item code, subcategory, or category.
+    Keyword/semantic search used by GET /catalogue/search.
+
+    Returns a list of dicts with keys:
+      sub_category_name, sub_category_code, category_name, category_code,
+      item_name, item_code
     """
     clean = (query or "").strip()
     if not clean:
         return []
 
-    # Direct match on Item Code
     if clean.isdigit():
-        direct = [
-            r for r in _catalogue
-            if r.get("Item Code") == clean
-            or r.get("Sub Category Code") == clean
-            or r.get("Category Code") == clean
-        ]
+        direct = _lookup_by_code(clean)
         if direct:
-            return [
-                {
-                    "sub_category_name": m.get("Sub Category Name", ""),
-                    "sub_category_code": m.get("Sub Category Code", ""),
-                    "category_name": m.get("Category Name", ""),
-                    "category_code": m.get("Category Code", ""),
-                    "item_name": m.get("Item Name", ""),
-                    "item_code": m.get("Item Code", ""),
-                }
-                for m in direct[:limit]
-            ]
+            return [_row_to_suggestion(r) for r in direct[:limit]]
 
     matches = search_item(clean, top_k=limit)
-    return [
-        {
-            "sub_category_name": m.get("Sub Category Name", ""),
-            "sub_category_code": m.get("Sub Category Code", ""),
-            "category_name": m.get("Category Name", ""),
-            "category_code": m.get("Category Code", ""),
-            "item_name": m.get("Item Name", ""),
-            "item_code": m.get("Item Code", ""),
-        }
-        for m in matches
-    ]
+    return [_row_to_suggestion(r) for r in matches]
 
 
-def get_catalogue_stats() -> Dict[str, Any]:
-    """Return summary statistics of loaded catalogue."""
-    if not _catalogue:
-        load_items_db()
-    sub_cats = {r.get("Sub Category Name") for r in _catalogue if r.get("Sub Category Name")}
-    cats = {r.get("Category Name") for r in _catalogue if r.get("Category Name")}
+def _row_to_suggestion(row: CatalogueRow) -> Dict[str, str]:
     return {
-        "total_items": len(_catalogue),
-        "total_sub_categories": len(sub_cats),
-        "total_categories": len(cats),
+        "sub_category_name":  row.get("Sub Category Name", ""),
+        "sub_category_code":  row.get("Sub Category Code", ""),
+        "category_name":      row.get("Category Name", ""),
+        "category_code":      row.get("Category Code", ""),
+        "item_name":          row.get("Item Name", ""),
+        "item_code":          row.get("Item Code", ""),
     }
+
+
+# ---------------------------------------------------------------------------
+# Public: enrich_product / enrich_products
+# ---------------------------------------------------------------------------
+
+
+def enrich_product(
+    product_name: str, top_k: int = DEFAULT_TOP_K
+) -> List[CatalogueRow]:
+    """Return up to top_k best-matching catalogue rows for a product name."""
+    return search_item(product_name, top_k=top_k)
 
 
 def enrich_products(products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Enrich a list of AI-detected product dicts with catalogue suggestions.
+    Enrich a list of AI-detected products with catalogue suggestions.
 
-    Each input dict must have at least "product_name".
+    Each input dict must contain at least 'product_name'.
     Each output dict gains:
-        catalogue_suggestions : list of matching catalogue rows, each with:
-            sub_category_name, sub_category_code,
-            category_name, category_code,
-            item_name, item_code
-        matched (bool) : True if at least one catalogue match was found
+      - catalogue_suggestions: list of suggestion dicts
+      - matched: bool
     """
-    if not _catalogue:
+    if not _loaded:
         load_items_db()
         if not _catalogue:
-            return [dict(p, catalogue_suggestions=[], matched=False) for p in products]
+            return [
+                dict(p, catalogue_suggestions=[], matched=False) for p in products
+            ]
 
     enriched: List[Dict[str, Any]] = []
     for product in products:
-        p = dict(product)
-        ai_name: str = str(p.get("product_name", "")).strip()
-        matches = enrich_product(ai_name, top_k=5)
+        p       = dict(product)
+        ai_name = str(p.get("product_name", "")).strip()
+        matches = enrich_product(ai_name, top_k=DEFAULT_TOP_K)
         if matches:
-            p["catalogue_suggestions"] = [
-                {
-                    "sub_category_name": m.get("Sub Category Name", ""),
-                    "sub_category_code": m.get("Sub Category Code", ""),
-                    "category_name": m.get("Category Name", ""),
-                    "category_code": m.get("Category Code", ""),
-                    "item_name": m.get("Item Name", ""),
-                    "item_code": m.get("Item Code", ""),
-                }
-                for m in matches
-            ]
+            p["catalogue_suggestions"] = [_row_to_suggestion(m) for m in matches]
             p["matched"] = True
         else:
             p["catalogue_suggestions"] = []
             p["matched"] = False
         enriched.append(p)
-
     return enriched
+
+
+# ---------------------------------------------------------------------------
+# Public: get_catalogue_stats
+# ---------------------------------------------------------------------------
+
+
+def get_catalogue_stats() -> Dict[str, Any]:
+    """Return summary statistics of the loaded catalogue and search engine."""
+    if not _loaded:
+        load_items_db()
+    sub_cats = {r.get("Sub Category Name") for r in _catalogue if r.get("Sub Category Name")}
+    cats     = {r.get("Category Name") for r in _catalogue if r.get("Category Name")}
+    return {
+        "total_items":          len(_catalogue),
+        "total_sub_categories": len(sub_cats),
+        "total_categories":     len(cats),
+        "embedding_model":      EMBEDDING_MODEL,
+        "embeddings_loaded":    _embeddings is not None,
+        "similarity_threshold": SIMILARITY_THRESHOLD,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Utility: rebuild on demand
+# ---------------------------------------------------------------------------
+
+
+def rebuild_embeddings() -> int:
+    """
+    Force a full re-generation of embeddings from the current itemsdb.csv.
+    Call this after updating the CSV without restarting the server.
+
+    Returns:
+        Number of products embedded.
+    """
+    global _loaded
+    _loaded = False
+    load_items_db(force=True)
+    return len(_catalogue)

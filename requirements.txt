@@ -12,9 +12,11 @@ httpx
 pillow>=10.0.0
 
 # ── Semantic Catalogue Search ─────────────────────────────────────────────────
-# Sentence Transformers for product embedding generation
+# Sentence Transformers for product embedding + Cross-Encoder reranker
 sentence-transformers>=3.0.0
 # PyTorch CPU-only (saves ~2 GB vs full CUDA build; sufficient for 1,954 products)
 torch>=2.0.0
 # NumPy for fast cosine similarity via matrix dot product
 numpy>=1.26.0
+# BM25 lexical search (hybrid with FAISS)
+rank-bm25>=0.2.2

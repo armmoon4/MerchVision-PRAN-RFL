@@ -1,5 +1,5 @@
 """
-app/services/items_db_service.py — PRAN-RFL Items Catalogue Semantic Search Service.
+app/services/items_db_service.py — PRAN-RFL Items Catalogue Hybrid Search Service.
 
 Architecture:
   itemsdb.csv  (1,954 products)
@@ -12,8 +12,22 @@ Architecture:
   embeddings/product_embeddings.npy   -- float32 matrix (N x 384), L2-normalised
   embeddings/products_meta.json       -- catalogue metadata list
 
-  At search time:
-    query  -->  encode (1 vector)  -->  cosine similarity  -->  top-K above threshold
+  At search time (per detected product):
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │ Step 1 │ Sub-Category filter + Brand filter                         │
+    │        │ → search only inside same sub-cat (Lassi) + PRAN products  │
+    │        │ → Hybrid score: BM25 + FAISS cosine                        │
+    │        │ → If ≥3 results  ──►  proceed to Reranker                  │
+    ├────────┼─────────────────────────────────────────────────────────────┤
+    │ Step 2 │ Brand-only filter (all sub-categories)                      │
+    │        │ → merge with Step 1, deduplicate                            │
+    │        │ → If ≥3 results  ──►  proceed to Reranker                  │
+    ├────────┼─────────────────────────────────────────────────────────────┤
+    │ Step 3 │ Global semantic fallback (original behaviour)               │
+    ├────────┴─────────────────────────────────────────────────────────────┤
+    │  Reranker: Cross-Encoder  ms-marco-MiniLM-L-6-v2                    │
+    │  Final Top-K returned                                                │
+    └──────────────────────────────────────────────────────────────────────┘
 
 Public API (drop-in replacement, same signatures):
   load_items_db(force=False)         -> int
@@ -31,7 +45,11 @@ CSV columns expected:
 Environment variables:
   ITEMS_DB_CSV                      -- override CSV path
   EMBEDDING_MODEL                   -- HuggingFace model name (default: all-MiniLM-L6-v2)
-  CATALOGUE_SIMILARITY_THRESHOLD    -- float 0-1, default 0.30
+  RERANKER_MODEL                    -- Cross-Encoder model (default: cross-encoder/ms-marco-MiniLM-L-6-v2)
+  CATALOGUE_SIMILARITY_THRESHOLD    -- float 0-1, default 0.25
+  BM25_WEIGHT                       -- float 0-1, weight for BM25 in hybrid (default: 0.35)
+  FAISS_WEIGHT                      -- float 0-1, weight for FAISS in hybrid (default: 0.65)
+  ENABLE_RERANKER                   -- "true"/"false", default "true"
 """
 from __future__ import annotations
 
@@ -41,7 +59,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
@@ -60,22 +78,41 @@ CatalogueRow = Dict[str, str]   # one CSV row; keys are CSV column headers
 _catalogue: List[CatalogueRow] = []         # all rows from CSV (full metadata)
 _embeddings: Optional[np.ndarray] = None    # shape (N, 384) float32, L2-normalised
 _model = None                               # SentenceTransformer singleton
+_reranker = None                            # CrossEncoder singleton (lazy)
+_bm25 = None                               # BM25Okapi index over all product names
+_bm25_corpus: List[List[str]] = []         # tokenised corpus (parallel to _catalogue)
 _loaded: bool = False                       # True once load_items_db() has completed
+
+# Index: sub_category_code -> list of row indices into _catalogue / _embeddings
+_subcat_index: Dict[str, List[int]] = {}
+# Index: category_code -> list of row indices
+_cat_index: Dict[str, List[int]] = {}
 
 # ---------------------------------------------------------------------------
 # Configuration (overridable via env vars)
 # ---------------------------------------------------------------------------
 
-# Cosine similarity threshold: results below this score are discarded.
-# Range: 0.0 (unrelated) to 1.0 (identical).  0.30 is a good starting point.
+# Cosine similarity threshold — lower than before because BM25 helps fill gaps.
 SIMILARITY_THRESHOLD: float = float(
-    os.getenv("CATALOGUE_SIMILARITY_THRESHOLD", "0.30")
+    os.getenv("CATALOGUE_SIMILARITY_THRESHOLD", "0.25")
 )
 
 DEFAULT_TOP_K: int = 5
 
 # Sentence Transformer model. all-MiniLM-L6-v2 is ~22 MB and runs on CPU.
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+
+# Cross-Encoder reranker model (tiny, ~66 MB, CPU-friendly)
+RERANKER_MODEL: str = os.getenv(
+    "RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"
+)
+
+# Hybrid score weights (must sum to 1.0)
+BM25_WEIGHT: float  = float(os.getenv("BM25_WEIGHT",  "0.35"))
+FAISS_WEIGHT: float = float(os.getenv("FAISS_WEIGHT", "0.65"))
+
+# Toggle reranker (set ENABLE_RERANKER=false to skip in resource-constrained envs)
+ENABLE_RERANKER: bool = os.getenv("ENABLE_RERANKER", "true").lower() == "true"
 
 # ---------------------------------------------------------------------------
 # Path resolution
@@ -143,6 +180,13 @@ def _expand_abbreviations(text: str) -> str:
     return t
 
 
+def _tokenize(text: str) -> List[str]:
+    """Simple whitespace+punctuation tokenizer for BM25."""
+    expanded = _expand_abbreviations(text)
+    tokens = re.findall(r"[a-z0-9]+", expanded)
+    return tokens
+
+
 def _build_search_text(row: CatalogueRow) -> str:
     """
     Build the embedding text for a catalogue row.
@@ -201,6 +245,70 @@ def _get_model():
                 "Add it to requirements.txt and rebuild the Docker image."
             ) from exc
     return _model
+
+
+# ---------------------------------------------------------------------------
+# Cross-Encoder Reranker (lazy singleton)
+# ---------------------------------------------------------------------------
+
+
+def _get_reranker():
+    """Return the CrossEncoder singleton, loading it on first call."""
+    global _reranker
+    if _reranker is None and ENABLE_RERANKER:
+        try:
+            from sentence_transformers.cross_encoder import CrossEncoder  # type: ignore
+            logger.info("Loading Cross-Encoder reranker: %s ...", RERANKER_MODEL)
+            _reranker = CrossEncoder(RERANKER_MODEL, max_length=128)
+            logger.info("Cross-Encoder reranker loaded.")
+        except Exception as exc:
+            logger.warning(
+                "Could not load Cross-Encoder reranker (%s). "
+                "Reranking disabled. Error: %s",
+                RERANKER_MODEL, exc,
+            )
+            _reranker = None
+    return _reranker
+
+
+# ---------------------------------------------------------------------------
+# BM25 index
+# ---------------------------------------------------------------------------
+
+
+def _build_bm25_index(catalogue: List[CatalogueRow]) -> None:
+    """Build a BM25 index over product Item Names."""
+    global _bm25, _bm25_corpus
+    try:
+        from rank_bm25 import BM25Okapi  # type: ignore
+        logger.info("Building BM25 index for %d products ...", len(catalogue))
+        _bm25_corpus = [_tokenize(r.get("Item Name", "")) for r in catalogue]
+        _bm25 = BM25Okapi(_bm25_corpus)
+        logger.info("BM25 index built.")
+    except ImportError:
+        logger.warning(
+            "rank_bm25 is not installed — BM25 disabled. "
+            "Add 'rank-bm25' to requirements.txt for hybrid search."
+        )
+        _bm25 = None
+        _bm25_corpus = []
+
+
+def _bm25_scores(query: str, n: int) -> Optional[np.ndarray]:
+    """
+    Return BM25 scores for *query* across all catalogue products.
+    Returns shape (N,) array normalised to [0,1], or None if BM25 unavailable.
+    """
+    if _bm25 is None:
+        return None
+    tokens = _tokenize(query)
+    if not tokens:
+        return None
+    scores: np.ndarray = np.array(_bm25.get_scores(tokens), dtype=np.float32)
+    max_score = scores.max()
+    if max_score > 0:
+        scores = scores / max_score   # normalise to [0, 1]
+    return scores
 
 
 # ---------------------------------------------------------------------------
@@ -275,17 +383,39 @@ def _load_saved_embeddings() -> Optional[Tuple[np.ndarray, List[Dict]]]:
 
 
 # ---------------------------------------------------------------------------
+# Category & sub-category index
+# ---------------------------------------------------------------------------
+
+
+def _build_category_index() -> None:
+    """Build fast lookup indexes: sub_category_code -> [indices], category_code -> [indices]."""
+    global _subcat_index, _cat_index
+    _subcat_index = {}
+    _cat_index = {}
+    for i, row in enumerate(_catalogue):
+        sc = row.get("Sub Category Code", "").strip()
+        cc = row.get("Category Code", "").strip()
+        if sc:
+            _subcat_index.setdefault(sc, []).append(i)
+        if cc:
+            _cat_index.setdefault(cc, []).append(i)
+
+
+# ---------------------------------------------------------------------------
 # Public: load_items_db
 # ---------------------------------------------------------------------------
 
 
 def load_items_db(force: bool = False) -> int:
     """
-    Initialise the semantic catalogue search engine.
+    Initialise the hybrid catalogue search engine.
 
     Steps:
       1. Read itemsdb.csv into memory.
-      2. Load pre-computed embeddings from disk, OR generate+save them if missing.
+      2. Load pre-computed FAISS embeddings from disk, or generate+save them.
+      3. Build BM25 index from product names.
+      4. Build category/sub-category lookup indexes.
+      5. Warm up Cross-Encoder reranker (lazy, first-use load).
 
     Args:
         force: If True, always regenerate embeddings even if saved ones exist.
@@ -315,6 +445,7 @@ def load_items_db(force: bool = False) -> int:
         _catalogue, _embeddings, _loaded = [], None, True
         return 0
 
+    # FAISS embeddings
     if force:
         _embeddings = _build_and_save_embeddings(_catalogue)
     else:
@@ -323,7 +454,6 @@ def load_items_db(force: bool = False) -> int:
             _embeddings = _build_and_save_embeddings(_catalogue)
         else:
             _embeddings, saved_meta = saved
-            # Rebuild if the CSV has grown or shrunk since embeddings were saved
             if len(saved_meta) != len(_catalogue):
                 logger.info(
                     "CSV row count changed (%d -> %d) -- rebuilding embeddings.",
@@ -331,59 +461,354 @@ def load_items_db(force: bool = False) -> int:
                 )
                 _embeddings = _build_and_save_embeddings(_catalogue)
 
+    # BM25 index
+    _build_bm25_index(_catalogue)
+
+    # Category indexes
+    _build_category_index()
+    logger.info(
+        "Category index built: %d sub-categories, %d categories.",
+        len(_subcat_index), len(_cat_index),
+    )
+
     _loaded = True
     return len(_catalogue)
 
 
 # ---------------------------------------------------------------------------
-# Core semantic search
+# Core: FAISS cosine similarity (global)
 # ---------------------------------------------------------------------------
 
 
-def _semantic_search(
+def _faiss_scores_global(query: str) -> Optional[np.ndarray]:
+    """
+    Encode *query* and return cosine similarity scores for all catalogue rows.
+    Returns shape (N,) float32 array (already normalised, range roughly 0-1).
+    """
+    if _embeddings is None or not _catalogue:
+        return None
+    model = _get_model()
+    expanded = _expand_abbreviations(query.strip())
+    q_vec: np.ndarray = model.encode(
+        expanded, normalize_embeddings=True
+    ).astype(np.float32)
+    return _embeddings @ q_vec   # shape (N,)
+
+
+# ---------------------------------------------------------------------------
+# Core: Hybrid score for a subset of indices
+# ---------------------------------------------------------------------------
+
+
+def _hybrid_search_indices(
     query: str,
-    top_k: int = DEFAULT_TOP_K,
+    candidate_indices: List[int],
+    top_k: int,
     threshold: float = SIMILARITY_THRESHOLD,
 ) -> List[Tuple[float, CatalogueRow]]:
     """
-    Encode *query* with SentenceTransformer, compute cosine similarity against
-    all pre-built product embeddings, and return the top-K results that meet
-    the similarity threshold.
+    Compute Hybrid (BM25 + FAISS) scores restricted to *candidate_indices*.
+
+    Hybrid score = FAISS_WEIGHT * faiss_score + BM25_WEIGHT * bm25_score
 
     Returns:
-        List of (score, CatalogueRow) tuples, sorted descending by score.
+        List of (hybrid_score, CatalogueRow) sorted descending, above threshold.
     """
-    if _embeddings is None or not _catalogue:
+    if _embeddings is None or not _catalogue or not candidate_indices:
         return []
 
+    idx_array = np.array(candidate_indices, dtype=np.int32)
+
+    # --- FAISS scores for the subset ---
     model = _get_model()
-    expanded_query = _expand_abbreviations(query.strip())
-
-    # Encode the single query vector (1 x D)
+    expanded = _expand_abbreviations(query.strip())
     q_vec: np.ndarray = model.encode(
-        expanded_query,
-        normalize_embeddings=True,
+        expanded, normalize_embeddings=True
     ).astype(np.float32)
+    sub_emb    = _embeddings[idx_array]
+    faiss_sub  = (sub_emb @ q_vec).astype(np.float32)  # shape (M,)
 
-    # Fast cosine similarity via dot product (embeddings are L2-normalised)
-    scores: np.ndarray = _embeddings @ q_vec   # shape: (N,)
+    # --- BM25 scores for the subset ---
+    bm25_global = _bm25_scores(query, len(_catalogue))
+    if bm25_global is not None:
+        bm25_sub = bm25_global[idx_array]              # shape (M,)
+        hybrid   = FAISS_WEIGHT * faiss_sub + BM25_WEIGHT * bm25_sub
+    else:
+        hybrid = faiss_sub   # BM25 unavailable, fall back to FAISS only
 
-    # Over-fetch to leave room for threshold filtering
-    fetch_n     = min(top_k * 4, len(scores))
-    top_indices = np.argpartition(scores, -fetch_n)[-fetch_n:]
-    top_indices = top_indices[np.argsort(scores[top_indices])[::-1]]
+    # Sort descending by hybrid score
+    sorted_order = np.argsort(hybrid)[::-1]
 
     results: List[Tuple[float, CatalogueRow]] = []
-    for idx in top_indices:
-        score = float(scores[idx])
+    for pos in sorted_order:
+        score = float(hybrid[pos])
         if score < threshold:
-            break          # array is sorted descending; no need to keep going
-        if idx < len(_catalogue):
-            results.append((score, _catalogue[idx]))
+            break
+        orig_idx = int(idx_array[pos])
+        if orig_idx < len(_catalogue):
+            results.append((score, _catalogue[orig_idx]))
         if len(results) >= top_k:
             break
 
     return results
+
+
+def _hybrid_search_global(
+    query: str,
+    top_k: int,
+    threshold: float = SIMILARITY_THRESHOLD,
+) -> List[Tuple[float, CatalogueRow]]:
+    """Global hybrid search across all catalogue rows (Step 3 fallback)."""
+    if _embeddings is None or not _catalogue:
+        return []
+
+    all_indices = list(range(len(_catalogue)))
+    return _hybrid_search_indices(query, all_indices, top_k=top_k * 2, threshold=threshold)
+
+
+# ---------------------------------------------------------------------------
+# Brand & sub-category keyword extraction helpers
+# ---------------------------------------------------------------------------
+
+# Common brand keywords found in product names (case-insensitive)
+_KNOWN_BRANDS: List[str] = [
+    "pran", "fresh", "rfl", "bisk club", "moo", "frooto", "mr noodles",
+    "acme", "aci", "frutika", "igloo", "danish", "bashundhara",
+]
+
+
+def _extract_brand_tokens(product_name: str) -> Set[str]:
+    """
+    Return lowercase brand tokens found in *product_name*.
+    E.g. "PRAN Lassi Strawberry 200ml" -> {"pran"}
+    """
+    name_lower = product_name.lower()
+    found: Set[str] = set()
+    for brand in _KNOWN_BRANDS:
+        if brand in name_lower:
+            found.add(brand)
+    return found
+
+
+def _row_contains_brand(row: CatalogueRow, brand_tokens: Set[str]) -> bool:
+    """True if Item Name of *row* contains any of the brand tokens."""
+    if not brand_tokens:
+        return True   # no brand filter → accept all
+    name = row.get("Item Name", "").lower()
+    return any(b in name for b in brand_tokens)
+
+
+# Sub-category keyword hints: words in detected product name -> sub-cat keywords.
+# Maps a trigger word (must appear in detected name) to a list of sub-category
+# name fragments to look for (case-insensitive substring match).
+_SUBCAT_KEYWORD_HINTS: List[Tuple[str, List[str]]] = [
+    ("lassi",       ["lassi"]),
+    ("yogurt",      ["lassi", "yogurt", "dairy"]),
+    ("juice",       ["juice", "ju-", "ju "]),
+    ("noodle",      ["noodle"]),
+    ("biscuit",     ["bisc", "cookie", "cracke"]),
+    ("cookie",      ["bisc", "cookie"]),
+    ("oil",         ["oil"]),
+    ("soap",        ["soap"]),
+    ("shampoo",     ["shampoo"]),
+    ("rice",        ["rice"]),
+    ("flour",       ["flour", "atta"]),
+    ("milk",        ["milk", "dairy"]),
+    ("drink",       ["drink", "dr-", "lassi", "juice"]),
+    ("water",       ["water"]),
+    ("chips",       ["chips", "snack"]),
+    ("chocolate",   ["choc"]),
+    ("candy",       ["candy", "confect"]),
+    ("vinegar",     ["vinegar"]),
+    ("sauce",       ["sauce"]),
+    ("mustard",     ["mustard"]),
+]
+
+
+def _infer_subcat_codes(product_name: str) -> List[str]:
+    """
+    Given a detected product name, return a priority list of Sub Category Codes
+    to search within first.
+
+    Strategy:
+      1. Find keyword hints matching the product name.
+      2. For each hint, find all sub-category codes whose Sub Category Name
+         contains any of the hint fragments.
+    Returns a deduplicated list of sub-category codes (may be empty).
+    """
+    name_lower = product_name.lower()
+    matched_fragments: List[str] = []
+    for trigger, fragments in _SUBCAT_KEYWORD_HINTS:
+        if trigger in name_lower:
+            matched_fragments.extend(fragments)
+
+    if not matched_fragments:
+        return []
+
+    matched_codes: List[str] = []
+    seen: Set[str] = set()
+    for code, indices in _subcat_index.items():
+        if not indices:
+            continue
+        subcat_name = _catalogue[indices[0]].get("Sub Category Name", "").lower()
+        for frag in matched_fragments:
+            if frag in subcat_name and code not in seen:
+                matched_codes.append(code)
+                seen.add(code)
+                break
+
+    return matched_codes
+
+
+# ---------------------------------------------------------------------------
+# Cross-Encoder Reranker
+# ---------------------------------------------------------------------------
+
+
+def _rerank(
+    query: str,
+    candidates: List[Tuple[float, CatalogueRow]],
+    top_k: int,
+) -> List[Tuple[float, CatalogueRow]]:
+    """
+    Pass *candidates* through the Cross-Encoder reranker for better final ranking.
+
+    If the reranker is unavailable (not installed / ENABLE_RERANKER=false),
+    the original hybrid-scored list is returned unchanged.
+
+    Args:
+        query:      The detected product name string.
+        candidates: List of (hybrid_score, row) sorted by hybrid score.
+        top_k:      How many results to return.
+
+    Returns:
+        Re-sorted (reranker_score, row) list, truncated to top_k.
+    """
+    reranker = _get_reranker()
+    if reranker is None or not candidates:
+        return candidates[:top_k]
+
+    # Build (query, product_name) pairs for the cross-encoder
+    pairs = [
+        (query, row.get("Item Name", ""))
+        for _, row in candidates
+    ]
+    try:
+        scores: List[float] = reranker.predict(pairs).tolist()
+    except Exception as exc:
+        logger.warning("Reranker prediction failed (%s); using hybrid scores.", exc)
+        return candidates[:top_k]
+
+    ranked = sorted(
+        zip(scores, [row for _, row in candidates]),
+        key=lambda t: t[0],
+        reverse=True,
+    )
+    logger.debug(
+        "Reranked %d candidates -> top: %s (%.3f)",
+        len(candidates),
+        ranked[0][1].get("Item Name", "?") if ranked else "?",
+        ranked[0][0] if ranked else 0.0,
+    )
+    return ranked[:top_k]
+
+
+# ---------------------------------------------------------------------------
+# 3-Step Priority + Hybrid Search Pipeline
+# ---------------------------------------------------------------------------
+
+
+def _priority_search(
+    product_name: str,
+    top_k: int = DEFAULT_TOP_K,
+) -> List[Tuple[float, CatalogueRow]]:
+    """
+    Full pipeline:
+
+    Step 1: Sub-Category filter + Brand filter → Hybrid (BM25 + FAISS)
+    Step 2: Brand-only filter (all categories) → Hybrid, merged with Step 1
+    Step 3: Global hybrid fallback
+    ────────────────────────────────────────────────────────────
+    Cross-Encoder Reranker applied to final candidate pool.
+
+    Returns deduplicated (score, CatalogueRow) list, best first.
+    """
+    FALLBACK_THRESHOLD = 3   # min good matches before skipping to reranker
+
+    brand_tokens = _extract_brand_tokens(product_name)
+    subcat_codes = _infer_subcat_codes(product_name)
+
+    # ---- Step 1: sub-category + brand -----------------------------------
+    step1_results: List[Tuple[float, CatalogueRow]] = []
+    if subcat_codes:
+        candidate_idx: List[int] = []
+        for code in subcat_codes:
+            for idx in _subcat_index.get(code, []):
+                if _row_contains_brand(_catalogue[idx], brand_tokens):
+                    candidate_idx.append(idx)
+
+        if candidate_idx:
+            step1_results = _hybrid_search_indices(
+                product_name,
+                candidate_idx,
+                top_k=top_k * 2,   # fetch extra so reranker has more to work with
+            )
+            logger.debug(
+                "Step 1 (sub-cat+brand) for '%s': %d candidates -> %d results (codes=%s)",
+                product_name, len(candidate_idx), len(step1_results), subcat_codes,
+            )
+
+    seen_codes: Set[str] = {row.get("Item Code", "") for _, row in step1_results}
+    merged: List[Tuple[float, CatalogueRow]] = list(step1_results)
+
+    if len(merged) >= FALLBACK_THRESHOLD:
+        return _rerank(product_name, merged, top_k)
+
+    # ---- Step 2: brand-only (all categories) ----------------------------
+    if brand_tokens:
+        brand_candidate_idx: List[int] = [
+            i for i, row in enumerate(_catalogue)
+            if _row_contains_brand(row, brand_tokens)
+            and row.get("Item Code", "") not in seen_codes
+        ]
+        if brand_candidate_idx:
+            brand_results = _hybrid_search_indices(
+                product_name,
+                brand_candidate_idx,
+                top_k=top_k * 2,
+            )
+            logger.debug(
+                "Step 2 (brand-only) for '%s': %d candidates -> %d results",
+                product_name, len(brand_candidate_idx), len(brand_results),
+            )
+            for score, row in brand_results:
+                code = row.get("Item Code", "")
+                if code not in seen_codes:
+                    merged.append((score, row))
+                    seen_codes.add(code)
+                if len(merged) >= top_k * 2:
+                    break
+
+    if len(merged) >= FALLBACK_THRESHOLD:
+        merged.sort(key=lambda t: t[0], reverse=True)
+        return _rerank(product_name, merged, top_k)
+
+    # ---- Step 3: global fallback ----------------------------------------
+    logger.debug(
+        "Step 3 (global fallback) for '%s': only %d results so far",
+        product_name, len(merged),
+    )
+    global_results = _hybrid_search_global(product_name, top_k=top_k * 2)
+    for score, row in global_results:
+        code = row.get("Item Code", "")
+        if code not in seen_codes:
+            merged.append((score, row))
+            seen_codes.add(code)
+        if len(merged) >= top_k * 2:
+            break
+
+    merged.sort(key=lambda t: t[0], reverse=True)
+    return _rerank(product_name, merged, top_k)
 
 
 # ---------------------------------------------------------------------------
@@ -409,10 +834,14 @@ def _lookup_by_code(code: str) -> List[CatalogueRow]:
 def search_item(product_name: str, top_k: int = DEFAULT_TOP_K) -> List[CatalogueRow]:
     """
     Find the best-matching catalogue rows for a given product name using
-    semantic (embedding-based) search.
+    the full hybrid pipeline:
+      1. Sub-category + brand filter   → BM25 + FAISS hybrid
+      2. Brand-only filter             → BM25 + FAISS hybrid (fallback)
+      3. Global hybrid                 → global fallback
+      4. Cross-Encoder reranker        → final ordering
 
     Args:
-        product_name: Free-text string, e.g. "Pran Lassi Drink 250ml".
+        product_name: Free-text string, e.g. "Pran Lassi Strawberry 200ml".
         top_k:        Maximum results to return.
 
     Returns:
@@ -428,7 +857,7 @@ def search_item(product_name: str, top_k: int = DEFAULT_TOP_K) -> List[Catalogue
     if clean.isdigit():
         return _lookup_by_code(clean)[:top_k]
 
-    return [row for _, row in _semantic_search(clean, top_k=top_k)]
+    return [row for _, row in _priority_search(clean, top_k=top_k)]
 
 
 # ---------------------------------------------------------------------------
@@ -527,8 +956,12 @@ def get_catalogue_stats() -> Dict[str, Any]:
         "total_sub_categories": len(sub_cats),
         "total_categories":     len(cats),
         "embedding_model":      EMBEDDING_MODEL,
+        "reranker_model":       RERANKER_MODEL if ENABLE_RERANKER else "disabled",
+        "bm25_enabled":         _bm25 is not None,
         "embeddings_loaded":    _embeddings is not None,
         "similarity_threshold": SIMILARITY_THRESHOLD,
+        "bm25_weight":          BM25_WEIGHT,
+        "faiss_weight":         FAISS_WEIGHT,
     }
 
 

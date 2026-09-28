@@ -165,12 +165,15 @@ _ABBR_MAP: Dict[str, str] = {
     "vanila":    "vanilla",
     "falvoured": "flavoured",
     "falvor":    "flavor",
+    "litchi":    "lychee",
 }
 
 
 def _expand_abbreviations(text: str) -> str:
     """Lowercase and expand product-name abbreviations; normalise unit tokens."""
     t = text.lower()
+    t = re.sub(r"\b1\s*(?:l|ltr|liter|litre)\b", "1000ml", t)
+    t = re.sub(r"\b2\s*(?:l|ltr|liter|litre)\b", "2000ml", t)
     t = re.sub(r"(\d+)\s*ml\b",   r"\1ml",  t)
     t = re.sub(r"(\d+)\s*gm?\b",  r"\1gm",  t)
     t = re.sub(r"(\d+)\s*kg\b",   r"\1kg",  t)
@@ -591,20 +594,36 @@ def _extract_brand_tokens(product_name: str) -> Set[str]:
 
 
 def _row_contains_brand(row: CatalogueRow, brand_tokens: Set[str]) -> bool:
-    """True if Item Name of *row* contains any of the brand tokens."""
+    """
+    True if Item Name or Sub Category Name contains any of the brand tokens.
+    In PRAN's catalogue, items without an explicit corporate brand prefix
+    (e.g. 'Pomegranate TP 1000ml', 'Drinko', 'Frooto', 'All Time')
+    belong to PRAN unless they have an explicit competing brand prefix.
+    """
     if not brand_tokens:
         return True   # no brand filter → accept all
-    name = row.get("Item Name", "").lower()
-    return any(b in name for b in brand_tokens)
+    combined_name = (
+        row.get("Item Name", "") + " " + row.get("Sub Category Name", "")
+    ).lower()
+    if any(b in combined_name for b in brand_tokens):
+        return True
+    if "pran" in brand_tokens:
+        competing_brands = {"fresh", "danish", "acme", "aci", "igloo", "bashundhara"}
+        if not any(cb in combined_name for cb in competing_brands):
+            return True
+    return False
 
 
 # Sub-category keyword hints: words in detected product name -> sub-cat keywords.
 # Maps a trigger word (must appear in detected name) to a list of sub-category
-# name fragments to look for (case-insensitive substring match).
+# or category name fragments to look for (case-insensitive substring match).
 _SUBCAT_KEYWORD_HINTS: List[Tuple[str, List[str]]] = [
     ("lassi",       ["lassi"]),
-    ("yogurt",      ["lassi", "yogurt", "dairy"]),
-    ("juice",       ["juice", "ju-", "ju "]),
+    ("yogurt",      ["lassi", "yogurt"]),
+    ("juice",       ["juice", "ju-", "ju ", "jus", "frooto"]),
+    ("drink",       ["drink", "dr-", "dr ", "ju-", "ju ", "jus", "frooto", "bever"]),
+    ("cocktail",    ["ju-", "jus", "pak"]),
+    ("fruit",       ["ju-", "jus", "pak", "frooto", "fruit"]),
     ("noodle",      ["noodle"]),
     ("biscuit",     ["bisc", "cookie", "cracke"]),
     ("cookie",      ["bisc", "cookie"]),
@@ -614,7 +633,6 @@ _SUBCAT_KEYWORD_HINTS: List[Tuple[str, List[str]]] = [
     ("rice",        ["rice"]),
     ("flour",       ["flour", "atta"]),
     ("milk",        ["milk", "dairy"]),
-    ("drink",       ["drink", "dr-", "lassi", "juice"]),
     ("water",       ["water"]),
     ("chips",       ["chips", "snack"]),
     ("chocolate",   ["choc"]),
@@ -633,13 +651,19 @@ def _infer_subcat_codes(product_name: str) -> List[str]:
     Strategy:
       1. Find keyword hints matching the product name.
       2. For each hint, find all sub-category codes whose Sub Category Name
-         contains any of the hint fragments.
+         or Category Name contains any of the hint fragments.
     Returns a deduplicated list of sub-category codes (may be empty).
     """
     name_lower = product_name.lower()
     matched_fragments: List[str] = []
+
+    # If explicitly lassi or yogurt, do not include broad beverage/juice hints
+    is_lassi = "lassi" in name_lower or "yogurt" in name_lower
+
     for trigger, fragments in _SUBCAT_KEYWORD_HINTS:
         if trigger in name_lower:
+            if is_lassi and trigger in ("drink", "juice", "fruit"):
+                continue
             matched_fragments.extend(fragments)
 
     if not matched_fragments:
@@ -650,9 +674,14 @@ def _infer_subcat_codes(product_name: str) -> List[str]:
     for code, indices in _subcat_index.items():
         if not indices:
             continue
-        subcat_name = _catalogue[indices[0]].get("Sub Category Name", "").lower()
+        first_row = _catalogue[indices[0]]
+        cat_search_text = (
+            first_row.get("Sub Category Name", "")
+            + " "
+            + first_row.get("Category Name", "")
+        ).lower()
         for frag in matched_fragments:
-            if frag in subcat_name and code not in seen:
+            if frag in cat_search_text and code not in seen:
                 matched_codes.append(code)
                 seen.add(code)
                 break

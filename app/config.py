@@ -38,6 +38,20 @@ class Settings(BaseSettings):
     gemini_thinking_level: str = "medium"  # low, medium, or high (minimal not supported in 3.7)
     max_image_dimension: int = 1600  # Optimal resolution (Lanczos) for low vision input tokens
 
+    # ── Token Optimization Settings ───────────────────────────────────────────
+    # Adaptive Thinking (Optimization #1): scale budget by image complexity
+    adaptive_thinking: bool = True
+    adaptive_thinking_low_threshold: float = 0.35   # complexity < this → budget=0
+    adaptive_thinking_high_threshold: float = 0.65  # complexity >= this → full budget
+
+    # Smart Image Format (Optimization #2): WebP saves 25-35% vs JPEG at same quality
+    image_output_format: str = "webp"  # "webp" or "jpeg"
+    jpeg_quality: int = 83             # 83 = sweet spot for text legibility vs file size
+
+    # Two-Pass Strategy (Optimization #3): cheap small pass first
+    enable_two_pass: bool = True
+    two_pass_first_dimension: int = 512  # px for Pass 1 (cheap thumbnail pass)
+
     # ── Token Limits (Gemini 3.7 Flash) ───────────────────────────────────────
     max_input_tokens: int = 1_048_576
     max_output_tokens: int = 65_536

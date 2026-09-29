@@ -23,6 +23,8 @@ class CatalogueSuggestion(BaseModel):
     category_code: str = ""
     item_name: str = ""    # exact Item Name from catalogue
     item_code: str = ""    # exact Item Code from catalogue
+    confidence: Optional[float] = None  # Match confidence score (0.0 to 1.0)
+
 
 
 class DetectedProduct(BaseModel):

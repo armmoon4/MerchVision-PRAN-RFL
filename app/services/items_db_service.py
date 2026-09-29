@@ -31,10 +31,11 @@ Architecture:
 
 Public API (drop-in replacement, same signatures):
   load_items_db(force=False)         -> int
+  search_item_with_scores(name, top_k=5) -> List[Tuple[float, CatalogueRow]]  (confidence 0.0-1.0)
   search_item(product_name, top_k=5) -> List[CatalogueRow]
-  search_catalogue(query, limit=20)  -> List[Dict]
-  enrich_product(product_name, top_k=5) -> List[CatalogueRow]
-  enrich_products(products)          -> List[Dict]
+  search_catalogue(query, limit=20)  -> List[Dict] (includes 'confidence')
+  enrich_product(product_name, top_k=5) -> List[Tuple[float, CatalogueRow]]
+  enrich_products(products)          -> List[Dict] (each suggestion includes 'confidence')
   get_catalogue_stats()              -> Dict
   rebuild_embeddings()               -> int   (force rebuild after CSV update)
 
@@ -56,6 +57,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import math
 import os
 import re
 from pathlib import Path
@@ -92,7 +94,7 @@ _cat_index: Dict[str, List[int]] = {}
 # Configuration (overridable via env vars)
 # ---------------------------------------------------------------------------
 
-# Cosine similarity threshold — lower than before because BM25 helps fill gaps.
+# Cosine similarity threshold for candidate retrieval in hybrid search
 SIMILARITY_THRESHOLD: float = float(
     os.getenv("CATALOGUE_SIMILARITY_THRESHOLD", "0.25")
 )
@@ -703,7 +705,7 @@ def _rerank(
     Pass *candidates* through the Cross-Encoder reranker for better final ranking.
 
     If the reranker is unavailable (not installed / ENABLE_RERANKER=false),
-    the original hybrid-scored list is returned unchanged.
+    the original hybrid-scored list is returned with clamped confidence scores in [0, 1].
 
     Args:
         query:      The detected product name string.
@@ -711,11 +713,14 @@ def _rerank(
         top_k:      How many results to return.
 
     Returns:
-        Re-sorted (reranker_score, row) list, truncated to top_k.
+        Re-sorted (confidence, row) list, truncated to top_k.
     """
     reranker = _get_reranker()
     if reranker is None or not candidates:
-        return candidates[:top_k]
+        return [
+            (round(max(min(float(s), 1.0), 0.0), 4), row)
+            for s, row in candidates[:top_k]
+        ]
 
     # Build (query, product_name) pairs for the cross-encoder
     pairs = [
@@ -723,18 +728,28 @@ def _rerank(
         for _, row in candidates
     ]
     try:
-        scores: List[float] = reranker.predict(pairs).tolist()
+        raw_scores: List[float] = reranker.predict(pairs).tolist()
     except Exception as exc:
         logger.warning("Reranker prediction failed (%s); using hybrid scores.", exc)
-        return candidates[:top_k]
+        return [
+            (round(max(min(float(s), 1.0), 0.0), 4), row)
+            for s, row in candidates[:top_k]
+        ]
+
+    # Sigmoid mapping: 1 / (1 + exp(-logit)) -> calibrated confidence in [0.0, 1.0]
+    def _sigmoid(logit: float) -> float:
+        clipped = max(min(logit, 30.0), -30.0)
+        return 1.0 / (1.0 + math.exp(-clipped))
+
+    confidences = [round(_sigmoid(float(s)), 4) for s in raw_scores]
 
     ranked = sorted(
-        zip(scores, [row for _, row in candidates]),
+        zip(confidences, [row for _, row in candidates]),
         key=lambda t: t[0],
         reverse=True,
     )
     logger.debug(
-        "Reranked %d candidates -> top: %s (%.3f)",
+        "Reranked %d candidates -> top: %s (confidence: %.4f)",
         len(candidates),
         ranked[0][1].get("Item Name", "?") if ranked else "?",
         ranked[0][0] if ranked else 0.0,
@@ -856,25 +871,23 @@ def _lookup_by_code(code: str) -> List[CatalogueRow]:
 
 
 # ---------------------------------------------------------------------------
-# Public: search_item
+# Public: search_item & search_item_with_scores
 # ---------------------------------------------------------------------------
 
 
-def search_item(product_name: str, top_k: int = DEFAULT_TOP_K) -> List[CatalogueRow]:
+def search_item_with_scores(
+    product_name: str, top_k: int = DEFAULT_TOP_K
+) -> List[Tuple[float, CatalogueRow]]:
     """
-    Find the best-matching catalogue rows for a given product name using
-    the full hybrid pipeline:
+    Find best-matching catalogue rows with calibrated confidence [0.0 - 1.0]
+    for a given product name using the hybrid pipeline:
       1. Sub-category + brand filter   → BM25 + FAISS hybrid
       2. Brand-only filter             → BM25 + FAISS hybrid (fallback)
       3. Global hybrid                 → global fallback
-      4. Cross-Encoder reranker        → final ordering
-
-    Args:
-        product_name: Free-text string, e.g. "Pran Lassi Strawberry 200ml".
-        top_k:        Maximum results to return.
+      4. Cross-Encoder reranker        → final ordering & sigmoid confidence
 
     Returns:
-        List of CatalogueRow dicts, best match first.
+        List of (confidence, CatalogueRow) tuples, best match first.
     """
     if not _loaded:
         load_items_db()
@@ -884,9 +897,14 @@ def search_item(product_name: str, top_k: int = DEFAULT_TOP_K) -> List[Catalogue
         return []
 
     if clean.isdigit():
-        return _lookup_by_code(clean)[:top_k]
+        return [(1.0, r) for r in _lookup_by_code(clean)[:top_k]]
 
-    return [row for _, row in _priority_search(clean, top_k=top_k)]
+    return _priority_search(clean, top_k=top_k)
+
+
+def search_item(product_name: str, top_k: int = DEFAULT_TOP_K) -> List[CatalogueRow]:
+    """Return catalogue rows for product name (backward compatible)."""
+    return [row for _, row in search_item_with_scores(product_name, top_k=top_k)]
 
 
 # ---------------------------------------------------------------------------
@@ -894,13 +912,13 @@ def search_item(product_name: str, top_k: int = DEFAULT_TOP_K) -> List[Catalogue
 # ---------------------------------------------------------------------------
 
 
-def search_catalogue(query: str, limit: int = 20) -> List[Dict[str, str]]:
+def search_catalogue(query: str, limit: int = 20) -> List[Dict[str, Any]]:
     """
     Keyword/semantic search used by GET /catalogue/search.
 
     Returns a list of dicts with keys:
       sub_category_name, sub_category_code, category_name, category_code,
-      item_name, item_code
+      item_name, item_code, confidence
     """
     clean = (query or "").strip()
     if not clean:
@@ -909,14 +927,16 @@ def search_catalogue(query: str, limit: int = 20) -> List[Dict[str, str]]:
     if clean.isdigit():
         direct = _lookup_by_code(clean)
         if direct:
-            return [_row_to_suggestion(r) for r in direct[:limit]]
+            return [_row_to_suggestion(r, confidence=1.0) for r in direct[:limit]]
 
-    matches = search_item(clean, top_k=limit)
-    return [_row_to_suggestion(r) for r in matches]
+    matches = search_item_with_scores(clean, top_k=limit)
+    return [_row_to_suggestion(r, confidence=score) for score, r in matches]
 
 
-def _row_to_suggestion(row: CatalogueRow) -> Dict[str, str]:
-    return {
+def _row_to_suggestion(
+    row: CatalogueRow, confidence: Optional[float] = None
+) -> Dict[str, Any]:
+    sug: Dict[str, Any] = {
         "sub_category_name":  row.get("Sub Category Name", ""),
         "sub_category_code":  row.get("Sub Category Code", ""),
         "category_name":      row.get("Category Name", ""),
@@ -924,6 +944,9 @@ def _row_to_suggestion(row: CatalogueRow) -> Dict[str, str]:
         "item_name":          row.get("Item Name", ""),
         "item_code":          row.get("Item Code", ""),
     }
+    if confidence is not None:
+        sug["confidence"] = round(float(confidence), 4)
+    return sug
 
 
 # ---------------------------------------------------------------------------
@@ -933,19 +956,19 @@ def _row_to_suggestion(row: CatalogueRow) -> Dict[str, str]:
 
 def enrich_product(
     product_name: str, top_k: int = DEFAULT_TOP_K
-) -> List[CatalogueRow]:
-    """Return up to top_k best-matching catalogue rows for a product name."""
-    return search_item(product_name, top_k=top_k)
+) -> List[Tuple[float, CatalogueRow]]:
+    """Return up to top_k best-matching (confidence, CatalogueRow) tuples for a product name."""
+    return search_item_with_scores(product_name, top_k=top_k)
 
 
 def enrich_products(products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Enrich a list of AI-detected products with catalogue suggestions.
+    Enrich a list of AI-detected products with catalogue suggestions and confidence scores.
 
     Each input dict must contain at least 'product_name'.
     Each output dict gains:
-      - catalogue_suggestions: list of suggestion dicts
-      - matched: bool
+      - catalogue_suggestions: list of suggestion dicts with 'confidence' (0.0 to 1.0)
+      - matched: bool (True if >=1 catalogue suggestion found)
     """
     if not _loaded:
         load_items_db()
@@ -960,7 +983,10 @@ def enrich_products(products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         ai_name = str(p.get("product_name", "")).strip()
         matches = enrich_product(ai_name, top_k=DEFAULT_TOP_K)
         if matches:
-            p["catalogue_suggestions"] = [_row_to_suggestion(m) for m in matches]
+            p["catalogue_suggestions"] = [
+                _row_to_suggestion(row, confidence=score)
+                for score, row in matches
+            ]
             p["matched"] = True
         else:
             p["catalogue_suggestions"] = []

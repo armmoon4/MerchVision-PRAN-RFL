@@ -563,7 +563,7 @@
     /* Column header inside suggestions */
     .sug-col-header {
       display: grid;
-      grid-template-columns: 76px 1fr 150px 120px;
+      grid-template-columns: 76px 1fr 140px 110px 75px;
       gap: 8px;
       padding: 6px 14px 4px;
       font-size: 10px;
@@ -578,7 +578,7 @@
     /* Each suggestion row */
     .sug-row {
       display: grid;
-      grid-template-columns: 76px 1fr 150px 120px;
+      grid-template-columns: 76px 1fr 140px 110px 75px;
       gap: 8px;
       padding: 7px 14px;
       font-size: 12px;
@@ -629,6 +629,33 @@
       background: rgba(168, 85, 247, .08);
       padding: 2px 6px;
       border-radius: 4px;
+    }
+
+    .sug-conf {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-align: center;
+    }
+
+    .conf-high {
+      color: #4ade80;
+      background: rgba(74, 222, 128, .12);
+      border: 1px solid rgba(74, 222, 128, .25);
+    }
+
+    .conf-med {
+      color: #fbbf24;
+      background: rgba(251, 191, 36, .12);
+      border: 1px solid rgba(251, 191, 36, .25);
+    }
+
+    .conf-low {
+      color: #f87171;
+      background: rgba(248, 113, 113, .12);
+      border: 1px solid rgba(248, 113, 113, .25);
     }
 
     @media (max-width: 640px) {
@@ -1029,7 +1056,7 @@
       let productsHtml = '';
 
       if (products.length > 0) {
-        const matchedCount = products.filter(p => p.catalogue_suggestions?.length > 0).length;
+        const matchedCount = products.filter(p => p.matched ?? (p.catalogue_suggestions?.length > 0)).length;
         const cards = products.map((p, i) => {
           const cardId = 'card-' + i;
           const suggestions = p.catalogue_suggestions || [];
@@ -1038,13 +1065,20 @@
           /* Build "Other Suggestions" rows */
           let sugBodyHtml = '';
           if (hasSug) {
-            const rowsHtml = suggestions.map(s => `
+            const rowsHtml = suggestions.map(s => {
+              const confVal = s.confidence != null ? Math.round(s.confidence * 100) : null;
+              const confBadge = confVal != null
+                ? `<span class="sug-conf ${confVal >= 70 ? 'conf-high' : confVal >= 40 ? 'conf-med' : 'conf-low'}" title="Confidence: ${(s.confidence * 100).toFixed(1)}%">${confVal}%</span>`
+                : `<span class="sug-conf">-</span>`;
+              return `
             <div class="sug-row">
               <span class="sug-code">${esc(s.item_code)}</span>
               <span class="sug-item-name">${esc(s.item_name)}</span>
               <span class="sug-subcat">${esc(s.sub_category_name)}</span>
               <span class="sug-cat">${esc(s.category_name)}</span>
-            </div>`).join('');
+              ${confBadge}
+            </div>`;
+            }).join('');
 
             sugBodyHtml = `
             <div class="sug-col-header">
@@ -1052,6 +1086,7 @@
               <span>Item Name</span>
               <span>Sub-Category</span>
               <span>Category</span>
+              <span>Confidence</span>
             </div>
             ${rowsHtml}`;
           }
@@ -1158,7 +1193,7 @@
           const totT = item.total_tokens || (inT + outT);
           const cost = item.estimated_cost_usd ? '$' + Number(item.estimated_cost_usd).toFixed(6) : '-';
           const prods = item.detected_products || [];
-          const matched = prods.filter(p => p.catalogue_suggestions?.length > 0).length;
+          const matched = prods.filter(p => p.matched ?? (p.catalogue_suggestions?.length > 0)).length;
           return `<tr onclick="poll('${item.upload_id}')">
           <td>${new Date(item.created_at).toLocaleTimeString()}</td>
           <td><span class="status-badge status-${item.status}">${item.status}</span></td>

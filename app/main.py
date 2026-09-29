@@ -395,12 +395,11 @@ async def analyze_image_direct(
     | Field | Description |
     |---|---|
     | `product_name` | AI-detected product name |
-    | `quantity_visible` | Number of units visible on the rack |
-    | `matched` | `true` if catalogue matches were found |
-    | `catalogue_suggestions` | **List** of up to 5 matching rows from `itemsdb.csv` |
+    | `matched` | `true` if catalogue suggestions were found |
+    | `catalogue_suggestions` | **List** of matching rows from `itemsdb.csv` with confidence scores |
 
     Each `catalogue_suggestion` contains:
-    `sub_category_name`, `sub_category_code`, `category_name`, `category_code`, `item_name`, `item_code`.
+    `sub_category_name`, `sub_category_code`, `category_name`, `category_code`, `item_name`, `item_code`, `confidence`.
 
     > **Zero extra AI tokens** — catalogue lookup is done locally after the AI call.
     """

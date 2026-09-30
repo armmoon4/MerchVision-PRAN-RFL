@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     gemini_timeout_seconds: int = 30
     gemini_thinking_budget: int = 0  # 0 disables reasoning latency for pure shelf extraction
     gemini_thinking_level: str = "low"  # low, medium, or high
-    max_image_dimension: int = 1024  # Optimal resolution (Lanczos) for low vision input tokens (1024px vs 1600px)
+    max_image_dimension: int = 1600  # Default max dimension for Lanczos downscaling
 
     # ── Token Limits (Gemini 3.7 Flash) ───────────────────────────────────────
     max_input_tokens: int = 1_048_576

@@ -805,7 +805,7 @@
         ItemsDB Catalogue Explorer
       </button>
       <button class="view-btn" id="btnViewHits" onclick="switchView('hits')">
-        📊 Analysis API Hits &amp; Telemetry
+        Analysis API Hits &amp; Telemetry
       </button>
     </div>
 
@@ -947,45 +947,59 @@
     <!-- ===================================================================== -->
     <div id="hitsView" style="display:none;">
       <div class="grid" style="grid-template-columns: 1fr 1fr; margin-bottom: 20px;">
-        
+
         <!-- Hit Metrics Breakdown -->
         <div class="card">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
             <h2 style="font-size:15px; color:#fff; font-weight:700;">
-              ⚡ Analysis API Call Telemetry
+              Analysis API Call Telemetry
             </h2>
-            <button onclick="loadSummaryStats(); loadFullHitsLog();" style="background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.3); color:#38bdf8; padding:5px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;">
+            <button onclick="loadSummaryStats(); loadFullHitsLog();"
+              style="background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.3); color:#38bdf8; padding:5px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;">
               ↻ Refresh
             </button>
           </div>
           <table style="width:100%; font-size:13px; border-collapse:collapse;">
             <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
               <td style="padding:9px 0; color:var(--text-muted);">Total Analysis Requests (API Hits)</td>
-              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:800; font-size:15px; color:#38bdf8; text-align:right;" id="teleTotalHits">-</td>
+              <td
+                style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:800; font-size:15px; color:#38bdf8; text-align:right;"
+                id="teleTotalHits">-</td>
             </tr>
             <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
               <td style="padding:9px 0; color:var(--text-muted);">Completed Successfully</td>
-              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#22c55e; text-align:right;" id="teleCompletedHits">-</td>
+              <td
+                style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#22c55e; text-align:right;"
+                id="teleCompletedHits">-</td>
             </tr>
             <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
               <td style="padding:9px 0; color:var(--text-muted);">Processing / In-Flight</td>
-              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#fbbf24; text-align:right;" id="teleProcessingHits">-</td>
+              <td
+                style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#fbbf24; text-align:right;"
+                id="teleProcessingHits">-</td>
             </tr>
             <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
               <td style="padding:9px 0; color:var(--text-muted);">Failed Calls</td>
-              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#ef4444; text-align:right;" id="teleFailedHits">-</td>
+              <td
+                style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#ef4444; text-align:right;"
+                id="teleFailedHits">-</td>
             </tr>
             <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
               <td style="padding:9px 0; color:var(--text-muted);">Success Rate</td>
-              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#34d399; text-align:right;" id="teleSuccessRate">-</td>
+              <td
+                style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#34d399; text-align:right;"
+                id="teleSuccessRate">-</td>
             </tr>
             <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
               <td style="padding:9px 0; color:var(--text-muted);">Avg Tokens per API Hit</td>
-              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; text-align:right;" id="teleAvgTokens">-</td>
+              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; text-align:right;"
+                id="teleAvgTokens">-</td>
             </tr>
             <tr>
               <td style="padding:9px 0; color:var(--text-muted);">Avg USD Cost per API Hit</td>
-              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#fbbf24; text-align:right;" id="teleAvgCost">-</td>
+              <td
+                style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#fbbf24; text-align:right;"
+                id="teleAvgCost">-</td>
             </tr>
           </table>
         </div>
@@ -993,7 +1007,7 @@
         <!-- Top Detected Products Across Hits -->
         <div class="card">
           <h2 style="font-size:15px; color:#fff; font-weight:700; margin-bottom:14px;">
-            🏆 Top Recognized Products (Across All API Hits)
+            Top Recognized Products (Across All API Hits)
           </h2>
           <div id="topProductsList" style="max-height:260px; overflow-y:auto;">
             <p style="color:var(--text-muted); font-size:13px;">No data yet.</p>
@@ -1006,9 +1020,10 @@
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
           <h2 style="font-size:15px; color:#fff; font-weight:700;">
-            📜 Detailed API Hit Log &amp; Invocations
+            Detailed API Hit Log &amp; Invocations
           </h2>
-          <span style="font-size:12px; color:var(--text-muted);">Click any row to inspect detected SKUs in scanner view</span>
+          <span style="font-size:12px; color:var(--text-muted);">Click any row to inspect detected SKUs in scanner
+            view</span>
         </div>
         <div id="fullHitsContainer" style="overflow-x:auto;">Loading API hits...</div>
       </div>

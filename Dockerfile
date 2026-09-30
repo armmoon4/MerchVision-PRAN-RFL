@@ -40,13 +40,14 @@ COPY . .
 # Ensure required directories exist
 RUN mkdir -p media/uploads embeddings scripts
 
+# ── Pre-download HuggingFace models at image build time ──────────────────────
+# Both the embedding model and the cross-encoder reranker (~88 MB total)
+# are pre-downloaded and baked into the image layer so the container starts
+# with zero runtime download delay and zero HTTP checks on requests.
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" \
+    && python -c "from sentence_transformers.cross_encoder import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
+
 # ── Pre-compute product embeddings at image build time ────────────────────────
-# The model (~22 MB) is downloaded from HuggingFace Hub during 'docker build'.
-# The resulting .npy and .json files are baked into the image layer, so
-# the container starts instantly without any embedding work on first request.
-#
-# If ITEMS_DB_CSV is overridden at runtime, mount a new embeddings/ volume
-# and run:   docker exec <container> python scripts/build_embeddings.py
 RUN python scripts/build_embeddings.py \
         --csv itemsdb.csv \
         --out-dir embeddings \

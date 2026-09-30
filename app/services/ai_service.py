@@ -230,13 +230,13 @@ def _call_openrouter(
     for attempt in range(1, max_retries + 1):
         try:
             extra_body: dict[str, Any] = {}
-            effort = getattr(settings, "openrouter_reasoning_effort", "low")
-            max_r_tokens = getattr(settings, "openrouter_reasoning_max_tokens", 128)
+            effort = str(getattr(settings, "openrouter_reasoning_effort", "none") or "none").lower()
+            max_r_tokens = getattr(settings, "openrouter_reasoning_max_tokens", 0)
             # OpenRouter requires either effort OR max_tokens (not both).
-            # Setting effort='low' or max_tokens=128 prevents runaway thinking output tokens (cutting 1000+ tokens to ~150).
-            if effort in ("low", "medium", "high"):
+            # Setting effort='none' or max_tokens=0 disables runaway thinking output tokens (cutting 1000+ tokens to ~150).
+            if effort in ("none", "low", "medium", "high"):
                 extra_body["reasoning"] = {"effort": effort}
-            elif max_r_tokens is not None and max_r_tokens > 0:
+            elif max_r_tokens is not None and max_r_tokens >= 0:
                 extra_body["reasoning"] = {"max_tokens": int(max_r_tokens)}
 
             create_kwargs: dict[str, Any] = {

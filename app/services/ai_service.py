@@ -52,29 +52,39 @@ from app.services.items_db_service import enrich_products, load_items_db
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """You are a retail shelf auditor for PRAN products.
+SYSTEM_PROMPT = """You are a retail shelf auditor for PRAN and RFL products.
 
-Your job: analyze the provided image of a product rack and identify every PRAN product that is visible.
+Your job: analyze the provided image of a product rack and identify every PRAN or RFL product that is visible.
 
-PRAN products include (but are not limited to):
-- PRAN juices, drinks, flavored water, dairy, snacks, noodles, chips, biscuits, spices, sauces, pickles/achar
+PRAN and RFL brands include (but are not limited to):
+- PRAN juices, drinks, Frooto, Drinko, flavored water, dairy, Lassi, Moo, snacks, noodles, Mr. Noodles,
+  chips, biscuits, Bisk Club, spices, sauces, pickles/achar, Fit Crackers, All Time, Potata
+- RFL plastics, housewares, and any RFL-branded consumer goods visible on shelf
 
-Return your answer as a **raw JSON array only** — no markdown, no code fences, no explanation, no prose. Each element must have exactly two keys:
-  "product_name"      : string  — the full product name and variant (e.g. "PRAN Mango Juice 250ml")
-  "quantity_visible"  : integer or null — number of units clearly visible on the rack
+Return your answer as **plain text only** — one product per line in this exact format:
+  product name|quantity
 
-Example (do NOT include this in your response):
-[
-  {"product_name": "PRAN Mango Juice", "quantity_visible": 6}
-]
+Rules:
+- product name: full name with brand + variant + size if visible (e.g. PRAN Mango Juice 250ml)
+- quantity: integer — best estimate of units clearly visible; use 1 if unsure
+- NO markdown, NO JSON, NO code fences, NO explanation, NO blank lines between entries
+- If nothing is visible, output a single empty line
 
-If no PRAN products are visible, return an empty array: []
+Example output (do NOT copy this into your response):
+PRAN Mango Juice 250ml|6
+Bisk Club Cream Biscuit Chocolate 90g|4
+PRAN Lassi Strawberry 200ml|3
 """
 
 _FENCE_PATTERN = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 _OBJECT_PATTERN = re.compile(
     r'\{\s*"product_name"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*,\s*"quantity_visible"\s*:\s*([0-9]+|null)\s*\}',
     re.DOTALL | re.IGNORECASE,
+)
+# Compact pipe-delimited pattern: "Product Name 250ml|6"
+_PIPE_LINE_PATTERN = re.compile(
+    r'^(?P<name>[^|\n]+?)\|(?P<qty>\d+)\s*$',
+    re.MULTILINE,
 )
 
 
@@ -198,10 +208,13 @@ def _resolve_image_bytes(image_input: str | bytes) -> tuple[bytes, str]:
 # ── Main function ─────────────────────────────────────────────────────────────
 
 
+_COMPACT_USER_PROMPT = "List all PRAN and RFL products visible. One per line as: product name|quantity"
+
+
 def _call_openrouter(
     image_bytes: bytes,
     mime_type: str,
-    prompt: str = "Identify all PRAN products visible in this image. Return the raw JSON array only.",
+    prompt: str = _COMPACT_USER_PROMPT,
 ) -> tuple[str, dict[str, Any]]:
     """
     Call OpenRouter (https://openrouter.ai/api/v1) with google/gemini-3.7-flash using OpenAI SDK.
@@ -329,12 +342,13 @@ def _call_gemini_direct(
                 model=model_name,
                 contents=[
                     image_part,
-                    "Identify all PRAN products visible in this image. Return the raw JSON array only.",
+                    "List all PRAN and RFL products visible. One per line as: product name|quantity",
                 ],
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
                     temperature=1,
-                    response_mime_type="application/json",
+                    # No response_mime_type: we use compact pipe-delimited plain text
+                    # (incompatible with application/json mode) which saves ~64% output tokens.
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                     thinking_config=thinking_config,
                 ),
@@ -405,6 +419,66 @@ def openrouter_chat_completion(
     )
 
 
+# ── Parse helpers ────────────────────────────────────────────────────────────
+
+
+def _parse_pipe_text(raw_text: str) -> list[dict[str, Any]]:
+    """
+    Parse compact pipe-delimited plain text format (primary output format).
+
+    Expected one product per line:
+        PRAN Mango Juice 250ml|6
+        Bisk Club Cream Biscuit Chocolate 90g|4
+
+    Falls back gracefully when model returns JSON instead.
+    """
+    results: list[dict[str, Any]] = []
+    for m in _PIPE_LINE_PATTERN.finditer(raw_text or ""):
+        name = m.group("name").strip()
+        qty_str = m.group("qty").strip()
+        if not name:
+            continue
+        try:
+            qty = max(1, int(qty_str))
+        except (ValueError, TypeError):
+            qty = 1
+        results.append({"product_name": name, "quantity_visible": qty})
+    return results
+
+
+def _parse_ai_response(raw_text: str) -> list[dict[str, Any]]:
+    """
+    Full parse of AI response.
+    Priority: pipe-delimited text → JSON → regex object fallback.
+    """
+    # 1. Compact pipe-delimited format (primary — ~64% fewer output tokens)
+    pipe_results = _parse_pipe_text(raw_text)
+    if pipe_results:
+        return pipe_results
+
+    # 2. JSON fallback (model ignored instructions or old prompt in cache)
+    stripped = (raw_text or "").strip()
+    fence = _FENCE_PATTERN.search(stripped)
+    json_text = fence.group(1).strip() if fence else stripped
+
+    parsed: list[dict[str, Any]] = []
+    try:
+        data = json.loads(json_text)
+        if isinstance(data, list):
+            parsed = [i for i in data if isinstance(i, dict)]
+        elif isinstance(data, dict) and "products" in data and isinstance(data["products"], list):
+            parsed = [i for i in data["products"] if isinstance(i, dict)]
+    except (json.JSONDecodeError, ValueError):
+        # 3. Regex object fallback for malformed JSON
+        for m in _OBJECT_PATTERN.finditer(json_text):
+            qty_raw = m.group(2).strip()
+            parsed.append({
+                "product_name":     m.group(1).strip(),
+                "quantity_visible": int(qty_raw) if qty_raw.isdigit() else 1,
+            })
+    return parsed
+
+
 # ── Main function ─────────────────────────────────────────────────────────────
 
 
@@ -457,27 +531,12 @@ def analyze_rack_image(image_input: str | bytes) -> dict[str, Any]:
         raise AIServiceError("OPENROUTER_API_KEY (or GEMINI_API_KEY) is not set. Add your API key to .env file.")
 
     # ── Step 3: Parse model output ─────────────────────────────────────────────
-    raw_text_stripped = (raw_text or "").strip()
-
-    fence_match = _FENCE_PATTERN.search(raw_text_stripped)
-    json_text = fence_match.group(1).strip() if fence_match else raw_text_stripped
-
-    parsed_items: list[dict[str, Any]] = []
-
-    try:
-        data = json.loads(json_text)
-        if isinstance(data, list):
-            parsed_items = [i for i in data if isinstance(i, dict)]
-        elif isinstance(data, dict) and "products" in data and isinstance(data["products"], list):
-            parsed_items = [i for i in data["products"] if isinstance(i, dict)]
-    except (json.JSONDecodeError, ValueError):
-        for match in _OBJECT_PATTERN.finditer(json_text):
-            p_name = match.group(1).strip()
-            qty_raw = match.group(2).strip()
-            qty = int(qty_raw) if qty_raw.isdigit() else None
-            parsed_items.append({"product_name": p_name, "quantity_visible": qty})
+    # Uses pipe-delimited parser first (primary format), JSON as fallback.
+    parsed_items: list[dict[str, Any]] = _parse_ai_response(raw_text)
 
     # ── Step 4: Deduplicate by product name ────────────────────────────────────
+    # Uses max() not sum() — for a single-image scan, the same product appearing
+    # twice means the model double-counted one shelf zone, not two locations.
     deduped: dict[str, dict[str, Any]] = {}
     for item in parsed_items:
         name = str(item.get("product_name", "Unknown Product")).strip()
@@ -488,7 +547,7 @@ def analyze_rack_image(image_input: str | bytes) -> dict[str, Any]:
         name_key = name.lower()
         if name_key in deduped:
             prev_qty = deduped[name_key].get("quantity_visible") or 0
-            deduped[name_key]["quantity_visible"] = prev_qty + qty_int
+            deduped[name_key]["quantity_visible"] = max(prev_qty, qty_int)
         else:
             deduped[name_key] = {"product_name": name, "quantity_visible": qty_int}
 

@@ -86,8 +86,8 @@ def get_model_info() -> ModelInfoResponse:
         supported_inputs=["Text", "Image", "Video", "Audio", "PDF"],
         supported_outputs=["Text"],
         capabilities=ModelCapabilities(),
-        active_thinking_budget=int(getattr(settings, "gemini_thinking_budget", 1024) or 1024),
-        active_thinking_level=str(getattr(settings, "gemini_thinking_level", "medium") or "medium"),
+        active_thinking_budget=int(getattr(settings, "gemini_thinking_budget", 128) or 128),
+        active_thinking_level=str(getattr(settings, "gemini_thinking_level", "low") or "low"),
         pricing_input_per_million=float(settings.token_cost_input_per_million),
         pricing_output_per_million=float(settings.token_cost_output_per_million),
     )
@@ -331,8 +331,8 @@ def route_token_request(payload: TokenRouteRequest) -> TokenRouteResponse:
 
     # Route recommendation
     priority = (payload.priority or "standard").lower()
-    thinking_level = payload.thinking_level or getattr(settings, "gemini_thinking_level", "medium")
-    budget = int(getattr(settings, "gemini_thinking_budget", 1024) or 1024)
+    thinking_level = payload.thinking_level or getattr(settings, "gemini_thinking_level", "low")
+    budget = int(getattr(settings, "gemini_thinking_budget", 128) or 128)
 
     if priority == "batch":
         route = "batch_api"

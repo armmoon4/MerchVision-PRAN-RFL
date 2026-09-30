@@ -29,14 +29,18 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_model: str = "google/gemini-3.7-flash"
     openrouter_timeout_seconds: int = 45
+    # OpenRouter reasoning control ("low", "medium", "high" or none):
+    # Setting to "low" prevents Gemini 3.7 Flash from wasting 1,000+ reasoning tokens per image
+    openrouter_reasoning_effort: str = "low"
+    openrouter_reasoning_max_tokens: int = 128
 
     # ── Google Gemini Direct ──────────────────────────────────────────────────
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.7-flash"
     gemini_timeout_seconds: int = 30
-    gemini_thinking_budget: int = 1024  # Capped reasoning budget for cost efficiency
-    gemini_thinking_level: str = "medium"  # low, medium, or high (minimal not supported in 3.7)
-    max_image_dimension: int = 1600  # Optimal resolution (Lanczos) for low vision input tokens
+    gemini_thinking_budget: int = 128  # Capped reasoning budget for cost efficiency (128 vs 1024)
+    gemini_thinking_level: str = "low"  # low, medium, or high
+    max_image_dimension: int = 1024  # Optimal resolution (Lanczos) for low vision input tokens (1024px vs 1600px)
 
     # ── Token Limits (Gemini 3.7 Flash) ───────────────────────────────────────
     max_input_tokens: int = 1_048_576

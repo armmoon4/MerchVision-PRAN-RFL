@@ -101,10 +101,10 @@ def _detect_mime_type(data: bytes) -> str:
     return "image/jpeg"
 
 
-def _optimize_image_bytes(raw_data: bytes, max_dim: int = 1600) -> tuple[bytes, str]:
+def _optimize_image_bytes(raw_data: bytes, max_dim: int = 1024) -> tuple[bytes, str]:
     """
-    Downscale oversized camera photos to a max dimension (e.g. 1600px) using Lanczos.
-    Preserves fine text sharpness while reducing Gemini vision tile count (input tokens).
+    Downscale oversized camera photos to a max dimension (e.g. 1024px) using Lanczos.
+    Preserves fine text sharpness while cutting vision tile count and token costs by ~50%.
     """
     try:
         with Image.open(io.BytesIO(raw_data)) as im:
@@ -143,7 +143,7 @@ def _resolve_image_bytes(image_input: str | bytes) -> tuple[bytes, str]:
     Raises AIServiceError on any failure.
     """
     settings = get_settings()
-    max_dim = int(getattr(settings, "max_image_dimension", 1600) or 1600)
+    max_dim = int(getattr(settings, "max_image_dimension", 1024) or 1024)
 
     # 1. Direct raw bytes
     if isinstance(image_input, bytes):
@@ -229,9 +229,19 @@ def _call_openrouter(
 
     for attempt in range(1, max_retries + 1):
         try:
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[
+            extra_body: dict[str, Any] = {}
+            effort = getattr(settings, "openrouter_reasoning_effort", "low")
+            max_r_tokens = getattr(settings, "openrouter_reasoning_max_tokens", 128)
+            # OpenRouter requires either effort OR max_tokens (not both).
+            # Setting effort='low' or max_tokens=128 prevents runaway thinking output tokens (cutting 1000+ tokens to ~150).
+            if effort in ("low", "medium", "high"):
+                extra_body["reasoning"] = {"effort": effort}
+            elif max_r_tokens is not None and max_r_tokens > 0:
+                extra_body["reasoning"] = {"max_tokens": int(max_r_tokens)}
+
+            create_kwargs: dict[str, Any] = {
+                "model": model_name,
+                "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {
                         "role": "user",
@@ -246,8 +256,12 @@ def _call_openrouter(
                         ]
                     }
                 ],
-                temperature=0.2,
-            )
+                "temperature": 0.2,
+            }
+            if extra_body:
+                create_kwargs["extra_body"] = extra_body
+
+            response = client.chat.completions.create(**create_kwargs)
             raw_text = response.choices[0].message.content or ""
             usage = response.usage
             prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0) if usage else 0
@@ -530,11 +544,11 @@ def estimate_tokens(
       - Thinking tokens (budget configured, e.g. 1024).
     """
     settings = get_settings()
-    max_dim = int(getattr(settings, "max_image_dimension", 1600) or 1600)
+    max_dim = int(getattr(settings, "max_image_dimension", 1024) or 1024)
 
     # 1. Determine image dimensions
-    w, h = 1600, 1200  # standard default photo dimension
-    dim_str = "1600x1200 (estimated)"
+    w, h = 1024, 768  # standard default photo dimension
+    dim_str = "1024x768 (estimated)"
 
     if image_width and image_height and image_width > 0 and image_height > 0:
         w, h = image_width, image_height
@@ -571,7 +585,7 @@ def estimate_tokens(
     total_prompt_tokens = vision_tokens + system_tokens + prompt_tokens
 
     # Thinking & output estimate
-    active_budget = thinking_budget if thinking_budget is not None else int(getattr(settings, "gemini_thinking_budget", 1024) or 1024)
+    active_budget = thinking_budget if thinking_budget is not None else int(getattr(settings, "gemini_thinking_budget", 128) or 128)
     expected_output_tokens = 200
     estimated_total_output = expected_output_tokens + (active_budget if active_budget > 0 else 0)
 

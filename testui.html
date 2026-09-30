@@ -777,12 +777,20 @@
   <div class="container">
 
     <!-- Header -->
+    <!-- Header -->
     <header>
       <h1>
         TEST PANEL | MerchVision
+        <span class="pill pill-blue" id="headerHitsPill" title="Total Analysis API hits">
+          API Hits: <strong id="headerHitsCount">0</strong>
+        </span>
+        <span class="pill pill-green" id="headerSuccessPill" title="Successful Analysis Hits">
+          ✓ Completed: <strong id="headerSuccessCount">0</strong>
+        </span>
       </h1>
       <div class="links">
         <a href="/tokens/models" target="_blank">Token Router</a>
+        <a href="/uploads/summary" target="_blank">Analytics JSON</a>
         <a href="/docs" target="_blank">Swagger Docs</a>
         <a href="/redoc" target="_blank">ReDoc</a>
       </div>
@@ -796,29 +804,46 @@
       <button class="view-btn" id="btnViewCat" onclick="switchView('catalogue')">
         ItemsDB Catalogue Explorer
       </button>
+      <button class="view-btn" id="btnViewHits" onclick="switchView('hits')">
+        📊 Analysis API Hits &amp; Telemetry
+      </button>
     </div>
 
     <!-- Summary Stats -->
     <div class="summary-grid" id="summaryStats">
+      <div class="stat-card" style="border-color: rgba(56, 189, 248, 0.45); cursor: pointer;"
+        onclick="switchView('hits')" title="Click to view detailed API hit breakdown">
+        <div class="stat-label">Analysis API Hits</div>
+        <div class="stat-val" id="statScans" style="color:#38bdf8;">-</div>
+        <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">
+          <span style="color:#22c55e;" id="statSuccessSub">0 ok</span> &bull;
+          <span style="color:#ef4444;" id="statFailSub">0 fail</span>
+        </div>
+      </div>
       <div class="stat-card">
-        <div class="stat-label">Total Scans</div>
-        <div class="stat-val" id="statScans" style="color:var(--text-main);">-</div>
+        <div class="stat-label">Products Detected</div>
+        <div class="stat-val" id="statProductsTotal" style="color:#a78bfa;">-</div>
+        <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">Across all rack scans</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Input Tokens</div>
         <div class="stat-val" id="statInTokens" style="color:var(--token-in);">-</div>
+        <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">Vision prompt tokens</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Output Tokens</div>
         <div class="stat-val" id="statOutTokens" style="color:var(--token-out);">-</div>
+        <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">Model completions</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Total Tokens</div>
         <div class="stat-val" id="statTotalTokens" style="color:var(--primary);">-</div>
+        <div style="font-size:10px; color:var(--text-muted); margin-top:2px;" id="statAvgTokensSub">Avg: - / hit</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Total Cost (USD)</div>
         <div class="stat-val" id="statCost" style="color:var(--token-cost);">-</div>
+        <div style="font-size:10px; color:var(--text-muted); margin-top:2px;" id="statAvgCostSub">Avg: - / hit</div>
       </div>
     </div>
 
@@ -917,6 +942,78 @@
       </div>
     </div>
 
+    <!-- ===================================================================== -->
+    <!-- VIEW 3: ANALYSIS API HITS & TELEMETRY                                  -->
+    <!-- ===================================================================== -->
+    <div id="hitsView" style="display:none;">
+      <div class="grid" style="grid-template-columns: 1fr 1fr; margin-bottom: 20px;">
+        
+        <!-- Hit Metrics Breakdown -->
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+            <h2 style="font-size:15px; color:#fff; font-weight:700;">
+              ⚡ Analysis API Call Telemetry
+            </h2>
+            <button onclick="loadSummaryStats(); loadFullHitsLog();" style="background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.3); color:#38bdf8; padding:5px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;">
+              ↻ Refresh
+            </button>
+          </div>
+          <table style="width:100%; font-size:13px; border-collapse:collapse;">
+            <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
+              <td style="padding:9px 0; color:var(--text-muted);">Total Analysis Requests (API Hits)</td>
+              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:800; font-size:15px; color:#38bdf8; text-align:right;" id="teleTotalHits">-</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
+              <td style="padding:9px 0; color:var(--text-muted);">Completed Successfully</td>
+              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#22c55e; text-align:right;" id="teleCompletedHits">-</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
+              <td style="padding:9px 0; color:var(--text-muted);">Processing / In-Flight</td>
+              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#fbbf24; text-align:right;" id="teleProcessingHits">-</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
+              <td style="padding:9px 0; color:var(--text-muted);">Failed Calls</td>
+              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#ef4444; text-align:right;" id="teleFailedHits">-</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
+              <td style="padding:9px 0; color:var(--text-muted);">Success Rate</td>
+              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#34d399; text-align:right;" id="teleSuccessRate">-</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
+              <td style="padding:9px 0; color:var(--text-muted);">Avg Tokens per API Hit</td>
+              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; text-align:right;" id="teleAvgTokens">-</td>
+            </tr>
+            <tr>
+              <td style="padding:9px 0; color:var(--text-muted);">Avg USD Cost per API Hit</td>
+              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#fbbf24; text-align:right;" id="teleAvgCost">-</td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- Top Detected Products Across Hits -->
+        <div class="card">
+          <h2 style="font-size:15px; color:#fff; font-weight:700; margin-bottom:14px;">
+            🏆 Top Recognized Products (Across All API Hits)
+          </h2>
+          <div id="topProductsList" style="max-height:260px; overflow-y:auto;">
+            <p style="color:var(--text-muted); font-size:13px;">No data yet.</p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Full Hit Audit Log -->
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <h2 style="font-size:15px; color:#fff; font-weight:700;">
+            📜 Detailed API Hit Log &amp; Invocations
+          </h2>
+          <span style="font-size:12px; color:var(--text-muted);">Click any row to inspect detected SKUs in scanner view</span>
+        </div>
+        <div id="fullHitsContainer" style="overflow-x:auto;">Loading API hits...</div>
+      </div>
+    </div>
+
   </div>
   <script>
     let pollInterval = null;
@@ -925,8 +1022,14 @@
     function switchView(v) {
       document.getElementById('btnViewScan').classList.toggle('active', v === 'scan');
       document.getElementById('btnViewCat').classList.toggle('active', v === 'catalogue');
+      document.getElementById('btnViewHits').classList.toggle('active', v === 'hits');
       document.getElementById('scanView').style.display = v === 'scan' ? 'block' : 'none';
       document.getElementById('catalogueView').style.display = v === 'catalogue' ? 'block' : 'none';
+      document.getElementById('hitsView').style.display = v === 'hits' ? 'block' : 'none';
+      if (v === 'hits') {
+        loadSummaryStats();
+        loadFullHitsLog();
+      }
     }
 
     /* ── Tab mode ────────────────────────────────────────────────────────────── */
@@ -944,14 +1047,16 @@
       const single = document.getElementById('singleApiMode').checked;
       btn.disabled = true; btn.textContent = single ? 'Analyzing in RAM…' : 'Enqueuing…';
       const val = document.getElementById('imgBase64').value.trim();
+      const t0 = performance.now();
       try {
         const r = await fetch(single ? '/analyze' : '/uploads/url', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_url: val })
         });
+        const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
         const d = await r.json();
         if (!r.ok) throw new Error(d.detail || 'Failed');
-        if (single) { renderResult(d, val); loadHistory(); loadSummaryStats(); }
+        if (single) { renderResult(d, val, elapsed); loadHistory(); loadSummaryStats(); }
         else startPolling(d.upload_id, val);
       } catch (err) { alert('Error: ' + err.message); }
       finally { btn.disabled = false; btn.textContent = 'Analyze Base64 In-Memory'; }
@@ -963,14 +1068,16 @@
       const single = document.getElementById('singleApiMode').checked;
       btn.disabled = true; btn.textContent = single ? 'Analyzing…' : 'Submitting…';
       const val = document.getElementById('imgUrl').value.trim();
+      const t0 = performance.now();
       try {
         const r = await fetch(single ? '/analyze' : '/uploads/url', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_url: val })
         });
+        const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
         const d = await r.json();
         if (!r.ok) throw new Error(d.detail || 'Failed');
-        if (single) { renderResult(d, val); loadHistory(); loadSummaryStats(); }
+        if (single) { renderResult(d, val, elapsed); loadHistory(); loadSummaryStats(); }
         else startPolling(d.upload_id, val);
       } catch (err) { alert('Error: ' + err.message); }
       finally { btn.disabled = false; btn.textContent = 'Start AI Analysis (URL)'; }
@@ -984,11 +1091,13 @@
       const file = document.getElementById('imgFile').files[0];
       const fd = new FormData(); fd.append('file', file);
       const preview = URL.createObjectURL(file);
+      const t0 = performance.now();
       try {
         const r = await fetch(single ? '/analyze/file' : '/uploads', { method: 'POST', body: fd });
+        const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
         const d = await r.json();
         if (!r.ok) throw new Error(d.detail || 'Failed');
-        if (single) { renderResult(d, preview); loadHistory(); loadSummaryStats(); }
+        if (single) { renderResult(d, preview, elapsed); loadHistory(); loadSummaryStats(); }
         else startPolling(d.upload_id, preview);
       } catch (err) { alert('Error: ' + err.message); }
       finally { btn.disabled = false; btn.textContent = 'Stream & Analyze In-Memory'; }
@@ -1022,7 +1131,7 @@
     }
 
     /* ── Render result ───────────────────────────────────────────────────────── */
-    function renderResult(data, previewSrc) {
+    function renderResult(data, previewSrc, latencySec) {
       const container = document.getElementById('resultContent');
 
       /* Token values */
@@ -1031,8 +1140,15 @@
       const totTok = data.total_tokens || (data.token_usage?.total_tokens ?? 0) || inTok + outTok;
       const cost = data.estimated_cost_usd ?? data.token_usage?.estimated_cost_usd ?? 0;
 
+      const latencyChip = latencySec ? `
+        <div class="token-chip" style="border-color:rgba(56,189,248,0.35);">
+          <div class="token-chip-title">Latency</div>
+          <div class="token-chip-val" style="color:#38bdf8;">${latencySec}s</div>
+        </div>` : '';
+
       const tokenHtml = data.status === 'COMPLETED' ? `
       <div class="token-row">
+        ${latencyChip}
         <div class="token-chip">
           <div class="token-chip-title">Input</div>
           <div class="token-chip-val" style="color:var(--token-in);">${inTok.toLocaleString()}</div>
@@ -1163,18 +1279,113 @@
       return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    /* ── Summary Stats ───────────────────────────────────────────────────────── */
+    /* ── Summary Stats & API Hits ────────────────────────────────────────────── */
     async function loadSummaryStats() {
       try {
         const r = await fetch('/uploads/summary');
         if (!r.ok) return;
         const d = await r.json();
-        document.getElementById('statScans').textContent = d.total_scans;
+
+        const total = d.total_scans || 0;
+        const completed = d.completed_scans || 0;
+        const failed = d.failed_scans || 0;
+        const processing = d.processing_scans || 0;
+
+        // Header pills
+        const hitCountEl = document.getElementById('headerHitsCount');
+        if (hitCountEl) hitCountEl.textContent = total.toLocaleString();
+        const successCountEl = document.getElementById('headerSuccessCount');
+        if (successCountEl) successCountEl.textContent = completed.toLocaleString();
+
+        // Top Summary Cards
+        document.getElementById('statScans').textContent = total.toLocaleString();
+        document.getElementById('statSuccessSub').textContent = `${completed} ok`;
+        document.getElementById('statFailSub').textContent = `${failed} fail`;
+
+        const totalProdsEl = document.getElementById('statProductsTotal');
+        if (totalProdsEl) totalProdsEl.textContent = (d.total_products_detected || 0).toLocaleString();
+
         document.getElementById('statInTokens').textContent = (d.total_input_tokens || 0).toLocaleString();
         document.getElementById('statOutTokens').textContent = (d.total_output_tokens || 0).toLocaleString();
         document.getElementById('statTotalTokens').textContent = (d.total_tokens || 0).toLocaleString();
+        document.getElementById('statAvgTokensSub').textContent = `Avg: ${(d.avg_tokens_per_scan || 0).toLocaleString()} / hit`;
         document.getElementById('statCost').textContent = '$' + Number(d.total_estimated_cost_usd || 0).toFixed(5);
+        document.getElementById('statAvgCostSub').textContent = `Avg: $${Number(d.avg_cost_per_scan_usd || 0).toFixed(5)} / hit`;
+
+        // Telemetry breakdown (Hits View)
+        const teleTotal = document.getElementById('teleTotalHits');
+        if (teleTotal) {
+          teleTotal.textContent = total.toLocaleString();
+          document.getElementById('teleCompletedHits').textContent = completed.toLocaleString();
+          document.getElementById('teleProcessingHits').textContent = processing.toLocaleString();
+          document.getElementById('teleFailedHits').textContent = failed.toLocaleString();
+          const rate = total > 0 ? ((completed / total) * 100).toFixed(1) + '%' : '100%';
+          document.getElementById('teleSuccessRate').textContent = rate;
+          document.getElementById('teleAvgTokens').textContent = (d.avg_tokens_per_scan || 0).toLocaleString();
+          document.getElementById('teleAvgCost').textContent = '$' + Number(d.avg_cost_per_scan_usd || 0).toFixed(5);
+        }
+
+        // Top products list
+        const topEl = document.getElementById('topProductsList');
+        if (topEl && d.top_products) {
+          if (!d.top_products.length) {
+            topEl.innerHTML = '<p style="color:var(--text-muted); font-size:13px;">No products detected yet.</p>';
+          } else {
+            topEl.innerHTML = d.top_products.map((p, idx) => `
+              <div style="display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid rgba(51,65,85,0.3); font-size:12px;">
+                <span style="font-weight:600; color:#e2e8f0;">
+                  <span style="color:#38bdf8; font-family:'JetBrains Mono',monospace; margin-right:6px;">#${idx + 1}</span>
+                  ${esc(p.product_name)}
+                </span>
+                <span style="font-family:'JetBrains Mono',monospace;">
+                  <strong style="color:#22c55e;">${p.total_quantity} units</strong> 
+                  <span style="color:var(--text-muted); font-size:11px;">(${p.scan_appearances} hits)</span>
+                </span>
+              </div>
+            `).join('');
+          }
+        }
       } catch (e) { console.error(e); }
+    }
+
+    /* ── Full Hits Audit Log ─────────────────────────────────────────────────── */
+    async function loadFullHitsLog() {
+      const c = document.getElementById('fullHitsContainer');
+      if (!c) return;
+      try {
+        const r = await fetch('/uploads?limit=50');
+        const d = await r.json();
+        if (!d.items || !d.items.length) {
+          c.innerHTML = '<p style="color:var(--text-muted); font-size:13px; margin-top:8px;">No API hits recorded yet.</p>';
+          return;
+        }
+        const rows = d.items.map(item => {
+          const inT = item.input_tokens || 0;
+          const outT = item.output_tokens || 0;
+          const totT = item.total_tokens || (inT + outT);
+          const cost = item.estimated_cost_usd ? '$' + Number(item.estimated_cost_usd).toFixed(6) : '-';
+          const prods = item.detected_products || [];
+          const matched = prods.filter(p => p.matched ?? (p.catalogue_suggestions?.length > 0)).length;
+          return `<tr onclick="poll('${item.upload_id}'); switchView('scan');" title="Click to view details in Scanner view">
+            <td style="font-family:'JetBrains Mono',monospace; color:#38bdf8; font-weight:600;">${item.upload_id.substring(0, 8)}...</td>
+            <td>${new Date(item.created_at).toLocaleString()}</td>
+            <td><span class="status-badge status-${item.status}">${item.status}</span></td>
+            <td><strong>${prods.length}</strong> SKUs</td>
+            <td style="color:#4ade80; font-weight:700;">${prods.length ? matched + '/' + prods.length : '-'}</td>
+            <td style="font-family:'JetBrains Mono',monospace; font-size:11px;">${totT > 0 ? inT + ' in / ' + outT + ' out' : '-'}</td>
+            <td style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--token-cost);">${cost}</td>
+          </tr>`;
+        }).join('');
+        c.innerHTML = `<table class="history-table">
+          <thead><tr>
+            <th>Hit ID</th><th>Timestamp</th><th>Status</th><th>Detected SKUs</th>
+            <th>Catalogue Match</th><th>Tokens</th><th>Est. Cost</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      } catch (e) {
+        c.innerHTML = '<p style="color:var(--danger);">Failed to load API hits.</p>';
+      }
     }
 
     /* ── History Table ───────────────────────────────────────────────────────── */

@@ -56,15 +56,29 @@ from app.services.items_db_service import enrich_products, load_items_db
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """Retail shelf auditor for PRAN Food & Beverage products.
-Detect ONLY visible PRAN food and drink items (Juices, Basil Seed drinks, Dairy/Lassi, Noodles, Biscuits, Bakery, Confectionery, Snacks).
-Strict rules:
-- Do NOT detect RFL plastic items, non-food items, or competitor brands (e.g. F&N, Coca-Cola).
-- Output plain text ONLY, one item per line:
-product name|quantity
-- product name: PRAN brand with variant, flavor, and pack size if visible
-- quantity: integer count
-- No markdown, no json, no explanation. If no PRAN food items are visible, return empty line."""
+SYSTEM_PROMPT = """You are a retail shelf auditor for PRAN products.
+
+Your job: analyze the provided image of a product rack and identify every PRAN product that is visible.
+
+PRAN brands include (but are not limited to):
+- PRAN juices, drinks, Frooto, Drinko, flavored water, dairy, Lassi, Moo, snacks, noodles, Mr. Noodles,
+  chips, biscuits, Bisk Club, spices, sauces, pickles/achar, Fit Crackers, All Time, Potata
+- Ignore RFL plastics, housewares, non-food items, and competitor brands.
+
+Return your answer as **plain text only** — one product per line in this exact format:
+  product name|quantity
+
+Rules:
+- product name: full name with brand + variant + size if visible (e.g. PRAN Mango Juice 250ml)
+- quantity: integer — best estimate of units clearly visible; use 1 if unsure
+- NO markdown, NO JSON, NO code fences, NO explanation, NO blank lines between entries
+- If nothing is visible, output a single empty line
+
+Example output (do NOT copy this into your response):
+PRAN Mango Juice 250ml|6
+Bisk Club Cream Biscuit Chocolate 90g|4
+PRAN Lassi Strawberry 200ml|3
+"""
 
 
 _FENCE_PATTERN = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
@@ -140,6 +154,10 @@ def _optimize_image_bytes(raw_data: bytes, max_dim: int = 1024, quality: int = 8
     try:
         with Image.open(io.BytesIO(raw_data)) as im:
             detected_format = (im.format or "JPEG").upper()
+            # Bake in EXIF rotation: re-encoding drops the tag, so a portrait phone
+            # photo would otherwise reach the model sideways and hurt recognition.
+            from PIL import ImageOps
+            im = ImageOps.exif_transpose(im)
             if im.mode not in ("RGB", "L"):
                 im = im.convert("RGB")
 
@@ -185,7 +203,7 @@ def _resolve_image_bytes(image_input: str | bytes) -> tuple[bytes, str]:
     if isinstance(image_input, bytes):
         if not image_input:
             raise AIServiceError("Image bytes cannot be empty.")
-        return _optimize_image_bytes(image_input, max_dim=max_dim)
+        return _optimize_image_bytes(image_input, max_dim=max_dim, quality=quality)
 
     image_str = (image_input or "").strip()
     if not image_str:
@@ -197,7 +215,7 @@ def _resolve_image_bytes(image_input: str | bytes) -> tuple[bytes, str]:
         if match:
             try:
                 raw_data = base64.b64decode(match.group(2))
-                return _optimize_image_bytes(raw_data, max_dim=max_dim)
+                return _optimize_image_bytes(raw_data, max_dim=max_dim, quality=quality)
             except Exception as exc:
                 raise AIServiceError(f"Failed to decode base64 data URI: {exc}") from exc
         raise AIServiceError("Invalid base64 data URI format.")
@@ -208,7 +226,7 @@ def _resolve_image_bytes(image_input: str | bytes) -> tuple[bytes, str]:
             with httpx.Client(timeout=30.0, follow_redirects=True) as client:
                 resp = client.get(image_str)
                 resp.raise_for_status()
-                return _optimize_image_bytes(resp.content, max_dim=max_dim)
+                return _optimize_image_bytes(resp.content, max_dim=max_dim, quality=quality)
         except Exception as exc:
             raise AIServiceError(f"Failed to fetch remote image from '{image_str}': {exc}") from exc
 
@@ -222,7 +240,7 @@ def _resolve_image_bytes(image_input: str | bytes) -> tuple[bytes, str]:
             or (raw_data.startswith(b"RIFF") and len(raw_data) >= 12 and raw_data[8:12] == b"WEBP")
             or raw_data.startswith(b"GIF8")
         ):
-            return _optimize_image_bytes(raw_data, max_dim=max_dim)
+            return _optimize_image_bytes(raw_data, max_dim=max_dim, quality=quality)
     except Exception:
         pass
 
@@ -234,7 +252,7 @@ def _resolve_image_bytes(image_input: str | bytes) -> tuple[bytes, str]:
 # ── Main function ─────────────────────────────────────────────────────────────
 
 
-_COMPACT_USER_PROMPT = "Extract visible PRAN food and drink items only."
+_COMPACT_USER_PROMPT = "List all visible PRAN products on this shelf. One per line as: product name|quantity"
 
 
 def _call_openrouter(
@@ -273,7 +291,7 @@ def _call_openrouter(
         default_headers=default_headers,
     )
 
-    model_name = settings.openrouter_model or "google/gemini-2.5-flash-lite"
+    model_name = settings.openrouter_model or "google/gemini-2.5-flash"
     logger.info("Calling OpenRouter with model: %s (base_url: %s)", model_name, settings.openrouter_base_url)
 
     max_retries = 3
@@ -318,8 +336,20 @@ def _call_openrouter(
             if extra_body:
                 create_kwargs["extra_body"] = extra_body
 
+            freq_penalty = float(getattr(settings, "openrouter_frequency_penalty", 0.2) or 0.2)
+            if freq_penalty > 0:
+                create_kwargs["frequency_penalty"] = freq_penalty
+
             response = client.chat.completions.create(**create_kwargs)
-            raw_text = response.choices[0].message.content or ""
+            choice = response.choices[0] if response.choices else None
+            raw_text = choice.message.content if choice and choice.message else ""
+            finish_reason = getattr(choice, "finish_reason", "unknown") if choice else "unknown"
+            if finish_reason == "length":
+                logger.warning(
+                    "OpenRouter generation hit max_tokens limit (%d) and was truncated mid-response (finish_reason='length')!",
+                    max_out_tokens,
+                )
+
             usage = response.usage
             prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0) if usage else 0
             output_tokens = int(getattr(usage, "completion_tokens", 0) or 0) if usage else 0
@@ -333,8 +363,8 @@ def _call_openrouter(
                 cost = calculate_token_cost(prompt_tokens, output_tokens)
 
             logger.info(
-                "OpenRouter Token usage: in=%d, out=%d, total=%d, exact_billed_cost=$%.6f",
-                prompt_tokens, output_tokens, total_tokens, cost,
+                "OpenRouter Token usage: in=%d, out=%d, total=%d, exact_billed_cost=$%.6f (finish_reason=%s)",
+                prompt_tokens, output_tokens, total_tokens, cost, finish_reason,
             )
 
             return raw_text, {
@@ -596,7 +626,7 @@ def _lookup_cached_analysis(image_hash: str, db: Any = None) -> RackUpload | Non
 
 def analyze_rack_image(image_input: str | bytes, db: Any = None) -> dict[str, Any]:
     """
-    Analyze rack photo using OpenRouter (google/gemini-2.5-flash-lite) or Google Gemini Direct:
+    Analyze rack photo using OpenRouter (google/gemini-2.5-flash) or Google Gemini Direct:
 
       1. Download / decode image → optimized bytes (tile-aligned, Lanczos, quality control)
       2. Check exact SHA-256 image cache (0 tokens on hit)
@@ -680,7 +710,7 @@ def analyze_rack_image(image_input: str | bytes, db: Any = None) -> dict[str, An
     # twice means the model double-counted one shelf zone, not two locations.
     deduped: dict[str, dict[str, Any]] = {}
     for item in parsed_items:
-        name = str(item.get("product_name", "Unknown Product")).strip()
+        name = re.sub(r"\s+", " ", str(item.get("product_name", "Unknown Product"))).strip(" -*•\t")
         if not name:
             continue
         qty = item.get("quantity_visible")

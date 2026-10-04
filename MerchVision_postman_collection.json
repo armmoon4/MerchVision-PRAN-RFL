@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "7b8f9e61-9c32-4d5e-a812-70b13d7890fa",
     "name": "MerchVision - PRAN-RFL Rack Recognition & Token Analytics API",
-    "description": "Comprehensive Postman API Collection for the **PRAN-RFL Rack Recognition System** backend service.\n\n### Backend Host\n- **Target Host:** `http://172.17.4.199:8093`\n- **Health Check:** `http://172.17.4.199:8093/health`\n- **Swagger Docs:** `http://172.17.4.199:8093/docs`\n- **Web UI:** `http://172.17.4.199:8093/ui`\n\n### Core Features\n1. **Single-Call Direct Analysis:** Immediate AI analysis returning product counts, tokens, and cost in 1 request (`/analyze`, `/analyze/file`, `/analyze/url`).\n2. **Asynchronous Processing:** 202 Accepted upload queue + polling (`/uploads`, `/uploads/url`, `/uploads/{upload_id}`).\n3. **Analytics & Aggregations:** Summary token usage, total costs, top detected SKUs (`/uploads/summary`).\n4. **History & Management:** Search, pagination, filtering, and deletion of scans.",
+    "description": "Comprehensive Postman API Collection for the **PRAN-RFL Rack Recognition System** backend service.\n\n### Backend Host\n- **Target Host:** `http://172.17.4.199:8093`\n- **Health Check:** `http://172.17.4.199:8093/health`\n- **Swagger Docs:** `http://172.17.4.199:8093/docs`\n- **Web UI:** `http://172.17.4.199:8093/ui`\n\n### Core Features\n1. **Single-Call Direct Analysis:** Immediate AI analysis returning product counts, tokens, and cost in 1 request (`/analyze`, `/analyze/url`).\n2. **Asynchronous Processing:** 202 Accepted upload queue + polling (`/uploads`, `/uploads/url`, `/uploads/{upload_id}`).\n3. **Analytics & Aggregations:** Summary token usage, total costs, top detected SKUs (`/uploads/summary`).\n4. **History & Management:** Search, pagination, filtering, and deletion of scans.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -97,7 +97,7 @@
       "description": "Direct 1-call analysis endpoints that process the rack photo synchronously and return detected products, token usage, and cost estimation in a single response without polling.",
       "item": [
         {
-          "name": "Direct Analyze (JSON - S3 / Remote URL / Base64)",
+          "name": "Direct Analyze (File Upload)",
           "event": [
             {
               "listen": "test",
@@ -128,8 +128,27 @@
               }
             ],
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\"\n}"
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Rack photo (JPEG, PNG, or WebP - max 10MB)",
+                  "contentType": "image/jpeg"
+                },
+                {
+                  "key": "shop_id",
+                  "value": "SHOP-Gulshan-102",
+                  "type": "text",
+                  "description": "Optional shop identifier"
+                },
+                {
+                  "key": "merchandiser_id",
+                  "value": "MER-Rahim-45",
+                  "type": "text",
+                  "description": "Optional merchandiser identifier"
+                }
+              ]
             },
             "url": {
               "raw": "{{baseUrl}}/analyze",
@@ -140,23 +159,13 @@
                 "analyze"
               ]
             },
-            "description": "Single-call analysis via JSON payload. Accepts an S3 presigned URL, HTTP/HTTPS image URL, or Base64 data string in `image_url`. Runs Gemini AI analysis and returns detected products and token usage immediately."
+            "description": "Accepts an image file, saves it, runs Gemini vision analysis synchronously, and returns detections and token metrics in one single HTTP response."
           },
           "response": [
             {
-              "name": "200 OK - Direct Analysis Result (JSON URL)",
+              "name": "200 OK - Direct Analysis Result",
               "originalRequest": {
                 "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\"\n}"
-                },
                 "url": {
                   "raw": "{{baseUrl}}/analyze",
                   "host": [
@@ -176,12 +185,12 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"upload_id\": \"f0051207-7e9f-4f5d-a8a1-8b1fed212103\",\n  \"status\": \"COMPLETED\",\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\",\n  \"detected_products\": [\n    {\n      \"product_name\": \"PRAN Mango Juice 250ml\",\n      \"quantity_visible\": 6\n    },\n    {\n      \"product_name\": \"PRAN Lassi 200ml\",\n      \"quantity_visible\": 4\n    },\n    {\n      \"product_name\": \"RFL Water Bottle 1L\",\n      \"quantity_visible\": 2\n    }\n  ],\n  \"token_usage\": {\n    \"input_tokens\": 1280,\n    \"output_tokens\": 94,\n    \"total_tokens\": 1374,\n    \"estimated_cost_usd\": 0.000166\n  },\n  \"input_tokens\": 1280,\n  \"output_tokens\": 94,\n  \"total_tokens\": 1374,\n  \"estimated_cost_usd\": 0.000166,\n  \"error_message\": null,\n  \"created_at\": \"2026-09-23T08:30:00Z\"\n}"
+              "body": "{\n  \"upload_id\": \"f0051207-7e9f-4f5d-a8a1-8b1fed212103\",\n  \"status\": \"COMPLETED\",\n  \"shop_id\": \"SHOP-Gulshan-102\",\n  \"merchandiser_id\": \"MER-Rahim-45\",\n  \"image_url\": \"http://172.17.4.199:8093/media/uploads/SHOP-Gulshan-102/ab62985150b840a480a575b828fb1c49.jpg\",\n  \"detected_products\": [\n    {\n      \"product_name\": \"PRAN Mango Juice 250ml\",\n      \"quantity_visible\": 6\n    },\n    {\n      \"product_name\": \"PRAN Lassi 200ml\",\n      \"quantity_visible\": 4\n    },\n    {\n      \"product_name\": \"RFL Water Bottle 1L\",\n      \"quantity_visible\": 2\n    }\n  ],\n  \"token_usage\": {\n    \"input_tokens\": 1280,\n    \"output_tokens\": 94,\n    \"total_tokens\": 1374,\n    \"estimated_cost_usd\": 0.000166\n  },\n  \"input_tokens\": 1280,\n  \"output_tokens\": 94,\n  \"total_tokens\": 1374,\n  \"estimated_cost_usd\": 0.000166,\n  \"error_message\": null,\n  \"created_at\": \"2026-09-07T09:30:00Z\"\n}"
             }
           ]
         },
         {
-          "name": "Direct Analyze (File Upload - In-Memory)",
+          "name": "Direct Analyze (Image URL)",
           "event": [
             {
               "listen": "test",
@@ -199,6 +208,65 @@
               }
             }
           ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\",\n  \"shop_id\": \"SHOP-Dhanmondi-55\",\n  \"merchandiser_id\": \"MER-Karim-12\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/analyze/url",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analyze",
+                "url"
+              ]
+            },
+            "description": "Downloads an image from a public URL, validates it, and runs synchronous AI recognition in a single response."
+          },
+          "response": [
+            {
+              "name": "200 OK - Direct Analysis Result (URL)",
+              "originalRequest": {
+                "method": "POST",
+                "url": {
+                  "raw": "{{baseUrl}}/analyze/url",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "analyze",
+                    "url"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"upload_id\": \"e1195678-4321-4f5d-9876-123456789abc\",\n  \"status\": \"COMPLETED\",\n  \"shop_id\": \"SHOP-Dhanmondi-55\",\n  \"merchandiser_id\": \"MER-Karim-12\",\n  \"image_url\": \"http://172.17.4.199:8093/media/uploads/SHOP-Dhanmondi-55/7c6382901a1b418ebacb391781fa01.jpg\",\n  \"detected_products\": [\n    {\n      \"product_name\": \"PRAN Frooto 250ml\",\n      \"quantity_visible\": 5\n    }\n  ],\n  \"token_usage\": {\n    \"input_tokens\": 1150,\n    \"output_tokens\": 80,\n    \"total_tokens\": 1230,\n    \"estimated_cost_usd\": 0.000147\n  },\n  \"input_tokens\": 1150,\n  \"output_tokens\": 80,\n  \"total_tokens\": 1230,\n  \"estimated_cost_usd\": 0.000147,\n  \"error_message\": null,\n  \"created_at\": \"2026-09-07T09:35:00Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Direct Analyze (Alias: /uploads/analyze)",
           "request": {
             "method": "POST",
             "header": [
@@ -213,118 +281,20 @@
                 {
                   "key": "file",
                   "type": "file",
-                  "description": "Rack photo (JPEG, PNG, or WebP - max 10MB)",
+                  "description": "Rack photo (JPEG, PNG, or WebP)",
                   "contentType": "image/jpeg"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/analyze/file",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "analyze",
-                "file"
-              ]
-            },
-            "description": "Accepts an uploaded image file via multipart form-data, processes it purely in-memory (zero permanent disk storage), and synchronously returns detected products, token usage, and cost estimation."
-          },
-          "response": [
-            {
-              "name": "200 OK - Direct File Analysis Result",
-              "originalRequest": {
-                "method": "POST",
-                "url": {
-                  "raw": "{{baseUrl}}/analyze/file",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "analyze",
-                    "file"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
+                },
                 {
-                  "key": "Content-Type",
-                  "value": "application/json"
+                  "key": "shop_id",
+                  "value": "SHOP-Banani-08",
+                  "type": "text"
+                },
+                {
+                  "key": "merchandiser_id",
+                  "value": "MER-Jamal-99",
+                  "type": "text"
                 }
-              ],
-              "body": "{\n  \"upload_id\": \"a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d\",\n  \"status\": \"COMPLETED\",\n  \"image_url\": \"direct_file_upload_in_memory\",\n  \"detected_products\": [\n    {\n      \"product_name\": \"PRAN Mango Juice 250ml\",\n      \"quantity_visible\": 5\n    },\n    {\n      \"product_name\": \"PRAN Frooto 250ml\",\n      \"quantity_visible\": 3\n    }\n  ],\n  \"token_usage\": {\n    \"input_tokens\": 1150,\n    \"output_tokens\": 80,\n    \"total_tokens\": 1230,\n    \"estimated_cost_usd\": 0.000147\n  },\n  \"input_tokens\": 1150,\n  \"output_tokens\": 80,\n  \"total_tokens\": 1230,\n  \"estimated_cost_usd\": 0.000147,\n  \"error_message\": null,\n  \"created_at\": \"2026-09-23T08:31:00Z\"\n}"
-            }
-          ]
-        },
-        {
-          "name": "Direct Analyze (Alias: /analyze/url)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 200) {",
-                  "    var json = pm.response.json();",
-                  "    if (json.upload_id) {",
-                  "        pm.collectionVariables.set('upload_id', json.upload_id);",
-                  "        console.log('Saved upload_id to collection variable:', json.upload_id);",
-                  "    }",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/analyze/url",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "analyze",
-                "url"
               ]
-            },
-            "description": "Direct alias for `POST /analyze` using JSON payload."
-          },
-          "response": []
-        },
-        {
-          "name": "Direct Analyze (Alias: /uploads/analyze)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/uploads/analyze",
@@ -379,7 +349,7 @@
                 {
                   "key": "file",
                   "type": "file",
-                  "description": "Rack photo file (JPEG, PNG, WebP)",
+                  "description": "Rack photo file",
                   "contentType": "image/jpeg"
                 },
                 {
@@ -405,7 +375,7 @@
                 "uploads"
               ]
             },
-            "description": "Uploads a rack image file and starts asynchronous AI recognition in-memory. Returns 202 Accepted with upload_id immediately."
+            "description": "Uploads a rack image file and starts asynchronous AI recognition. Returns 202 Accepted with upload_id immediately."
           },
           "response": [
             {
@@ -431,7 +401,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"upload_id\": \"b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d\",\n  \"status\": \"PENDING\",\n  \"message\": \"Image received in-memory. Processing started.\"\n}"
+              "body": "{\n  \"upload_id\": \"b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d\",\n  \"status\": \"PENDING\",\n  \"message\": \"Image received. Processing started.\"\n}"
             }
           ]
         },
@@ -468,7 +438,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\"\n}"
+              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\",\n  \"shop_id\": \"SHOP-Mirpur-301\",\n  \"merchandiser_id\": \"MER-Hasan-19\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/uploads/url",
@@ -480,7 +450,7 @@
                 "url"
               ]
             },
-            "description": "Accepts an S3 URL, HTTP image URL, or Base64 string and triggers async background AI analysis. Returns 202 Accepted immediately."
+            "description": "Accepts a publicly accessible image URL and triggers async background AI analysis. Returns 202 Accepted immediately."
           },
           "response": [
             {
@@ -507,7 +477,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"upload_id\": \"a9c8e7d6-5432-1b0a-9f8e-7d6c5b4a3210\",\n  \"status\": \"PENDING\",\n  \"message\": \"Image input received. Processing started.\"\n}"
+              "body": "{\n  \"upload_id\": \"a9c8e7d6-5432-1b0a-9f8e-7d6c5b4a3210\",\n  \"status\": \"PENDING\",\n  \"message\": \"Image URL received. Processing started.\"\n}"
             }
           ]
         },
@@ -558,7 +528,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"upload_id\": \"b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d\",\n  \"status\": \"COMPLETED\",\n  \"image_url\": \"async_upload_in_memory\",\n  \"detected_products\": [\n    {\n      \"product_name\": \"PRAN Mango Juice 250ml\",\n      \"quantity_visible\": 8\n    },\n    {\n      \"product_name\": \"PRAN Potata Biscuits 100g\",\n      \"quantity_visible\": 12\n    }\n  ],\n  \"input_tokens\": 1240,\n  \"output_tokens\": 90,\n  \"total_tokens\": 1330,\n  \"estimated_cost_usd\": 0.00016,\n  \"token_usage\": {\n    \"input_tokens\": 1240,\n    \"output_tokens\": 90,\n    \"total_tokens\": 1330,\n    \"estimated_cost_usd\": 0.00016\n  },\n  \"error_message\": null,\n  \"created_at\": \"2026-09-23T08:30:00Z\",\n  \"updated_at\": \"2026-09-23T08:30:04Z\"\n}"
+              "body": "{\n  \"upload_id\": \"b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d\",\n  \"status\": \"COMPLETED\",\n  \"shop_id\": \"SHOP-Uttara-204\",\n  \"merchandiser_id\": \"MER-Anis-07\",\n  \"image_url\": \"http://172.17.4.199:8093/media/uploads/SHOP-Uttara-204/a416b2518e104f2bbcf3341829e1.jpg\",\n  \"detected_products\": [\n    {\n      \"product_name\": \"PRAN Mango Juice 250ml\",\n      \"quantity_visible\": 8\n    },\n    {\n      \"product_name\": \"PRAN Potata Biscuits 100g\",\n      \"quantity_visible\": 12\n    }\n  ],\n  \"input_tokens\": 1240,\n  \"output_tokens\": 90,\n  \"total_tokens\": 1330,\n  \"estimated_cost_usd\": 0.00016,\n  \"token_usage\": {\n    \"input_tokens\": 1240,\n    \"output_tokens\": 90,\n    \"total_tokens\": 1330,\n    \"estimated_cost_usd\": 0.00016\n  },\n  \"error_message\": null,\n  \"created_at\": \"2026-09-07T09:40:00Z\",\n  \"updated_at\": \"2026-09-07T09:40:04Z\"\n}"
             },
             {
               "name": "200 OK - Processing Status",
@@ -584,7 +554,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"upload_id\": \"b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d\",\n  \"status\": \"PROCESSING\",\n  \"image_url\": \"async_upload_in_memory\",\n  \"detected_products\": null,\n  \"input_tokens\": null,\n  \"output_tokens\": null,\n  \"total_tokens\": null,\n  \"estimated_cost_usd\": null,\n  \"token_usage\": null,\n  \"error_message\": null,\n  \"created_at\": \"2026-09-23T08:30:00Z\",\n  \"updated_at\": \"2026-09-23T08:30:01Z\"\n}"
+              "body": "{\n  \"upload_id\": \"b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d\",\n  \"status\": \"PROCESSING\",\n  \"shop_id\": \"SHOP-Uttara-204\",\n  \"merchandiser_id\": \"MER-Anis-07\",\n  \"image_url\": \"http://172.17.4.199:8093/media/uploads/SHOP-Uttara-204/a416b2518e104f2bbcf3341829e1.jpg\",\n  \"detected_products\": null,\n  \"input_tokens\": null,\n  \"output_tokens\": null,\n  \"total_tokens\": null,\n  \"estimated_cost_usd\": null,\n  \"token_usage\": null,\n  \"error_message\": null,\n  \"created_at\": \"2026-09-07T09:40:00Z\",\n  \"updated_at\": \"2026-09-07T09:40:01Z\"\n}"
             }
           ]
         },
@@ -706,7 +676,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"total\": 1,\n  \"limit\": 20,\n  \"offset\": 0,\n  \"items\": [\n    {\n      \"upload_id\": \"b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d\",\n      \"status\": \"COMPLETED\",\n      \"shop_id\": \"SHOP-Uttara-204\",\n      \"merchandiser_id\": \"MER-Anis-07\",\n      \"image_url\": \"async_upload_in_memory\",\n      \"detected_products\": [\n        {\n          \"product_name\": \"PRAN Mango Juice 250ml\",\n          \"quantity_visible\": 8\n        }\n      ],\n      \"input_tokens\": 1240,\n      \"output_tokens\": 90,\n      \"total_tokens\": 1330,\n      \"estimated_cost_usd\": 0.00016,\n      \"token_usage\": {\n        \"input_tokens\": 1240,\n        \"output_tokens\": 90,\n        \"total_tokens\": 1330,\n        \"estimated_cost_usd\": 0.00016\n      },\n      \"error_message\": null,\n      \"created_at\": \"2026-09-23T08:30:00Z\",\n      \"updated_at\": \"2026-09-23T08:30:04Z\"\n    }\n  ]\n}"
+              "body": "{\n  \"total\": 1,\n  \"limit\": 20,\n  \"offset\": 0,\n  \"items\": [\n    {\n      \"upload_id\": \"b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d\",\n      \"status\": \"COMPLETED\",\n      \"shop_id\": \"SHOP-Uttara-204\",\n      \"merchandiser_id\": \"MER-Anis-07\",\n      \"image_url\": \"http://172.17.4.199:8093/media/uploads/SHOP-Uttara-204/a416b2518e104f2bbcf3341829e1.jpg\",\n      \"detected_products\": [\n        {\n          \"product_name\": \"PRAN Mango Juice 250ml\",\n          \"quantity_visible\": 8\n        }\n      ],\n      \"input_tokens\": 1240,\n      \"output_tokens\": 90,\n      \"total_tokens\": 1330,\n      \"estimated_cost_usd\": 0.00016,\n      \"token_usage\": {\n        \"input_tokens\": 1240,\n        \"output_tokens\": 90,\n        \"total_tokens\": 1330,\n        \"estimated_cost_usd\": 0.00016\n      },\n      \"error_message\": null,\n      \"created_at\": \"2026-09-07T09:40:00Z\",\n      \"updated_at\": \"2026-09-07T09:40:04Z\"\n    }\n  ]\n}"
             }
           ]
         },
@@ -933,205 +903,6 @@
               "body": "{\n  \"detail\": \"Upload 'invalid-id' not found.\"\n}"
             }
           ]
-        }
-      ]
-    },
-    {
-      "name": "5. Token Router & Model Metering API",
-      "description": "Endpoints to query Gemini 3.7 Flash model specs, token boundaries, live pricing rates, estimate token usage, live count tokens, and route payloads.",
-      "item": [
-        {
-          "name": "Get Model Specs & Capabilities",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/tokens/models",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "models"
-              ]
-            },
-            "description": "Returns full metadata and capabilities for the active Gemini 3.7 Flash model including 1M input / 65k output limits."
-          }
-        },
-        {
-          "name": "Get Token Pricing Rates",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/tokens/pricing",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "pricing"
-              ]
-            },
-            "description": "Returns current token pricing rates per 1M and 1K tokens."
-          }
-        },
-        {
-          "name": "Chat with google/gemini-3.7-flash (OpenRouter)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"messages\": [\n    {\"role\": \"system\", \"content\": \"You are a retail shelf specialist.\"},\n    {\"role\": \"user\", \"content\": \"Explain how shelf inventory scanning works.\"}\n  ]\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/tokens/chat",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "chat"
-              ]
-            },
-            "description": "Direct text chat completion with google/gemini-3.7-flash through OpenRouter."
-          }
-        },
-        {
-          "name": "Get Global Token Consumption Stats",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/tokens/summary",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "summary"
-              ]
-            },
-            "description": "Returns total tokens consumed, total USD spent, and scan averages across all historical requests."
-          }
-        },
-        {
-          "name": "Estimate Token Usage & Cost",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"image_width\": 1920,\n  \"image_height\": 1080,\n  \"thinking_budget\": 1024\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/tokens/estimate",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "estimate"
-              ]
-            },
-            "description": "Pre-calculates estimated vision tokens, system tokens, thinking tokens, and USD cost before making an inference call."
-          }
-        },
-        {
-          "name": "Live Count Tokens",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"text\": \"Identify all PRAN-RFL products on this shelf.\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/tokens/count",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "count"
-              ]
-            },
-            "description": "Counts exact tokens for text or image payloads using the Gemini SDK token counter."
-          }
-        },
-        {
-          "name": "Route & Validate Payload",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"prompt\": \"Shelf recognition task\",\n  \"priority\": \"standard\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/tokens/route",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "route"
-              ]
-            },
-            "description": "Token-aware router that analyzes payload size, verifies context window limits, and advises execution path."
-          }
         }
       ]
     }

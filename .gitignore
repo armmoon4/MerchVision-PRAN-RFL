@@ -80,3 +80,9 @@ Thumbs.db
 # ─── Misc ─────────────────────────────────────────────────────────────────────
 *.bak
 *.tmp
+
+# ─── Semantic Search Embeddings (generated artefacts, not for version control) ─
+# These are built by scripts/build_embeddings.py or at Docker image build time.
+# Regenerate with: python scripts/build_embeddings.py
+embeddings/
+*.npy

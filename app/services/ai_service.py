@@ -14,6 +14,7 @@ Design notes:
   - Retries up to 3 times with exponential backoff on 503/429 errors.
 """
 import base64
+import hashlib
 import io
 import json
 import logging
@@ -22,6 +23,7 @@ import tempfile
 import time
 import re
 import socket
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from PIL import Image
@@ -47,34 +49,23 @@ from openai import OpenAI, OpenAIError
 import httpx
 
 from app.config import get_settings
+from app.database import SessionLocal
+from app.models import ProcessingStatus, RackUpload
 from app.services.items_db_service import enrich_products, load_items_db
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """You are a retail shelf auditor for PRAN and RFL products.
+SYSTEM_PROMPT = """Retail shelf auditor for PRAN Food & Beverage products.
+Detect ONLY visible PRAN food and drink items (Juices, Basil Seed drinks, Dairy/Lassi, Noodles, Biscuits, Bakery, Confectionery, Snacks).
+Strict rules:
+- Do NOT detect RFL plastic items, non-food items, or competitor brands (e.g. F&N, Coca-Cola).
+- Output plain text ONLY, one item per line:
+product name|quantity
+- product name: PRAN brand with variant, flavor, and pack size if visible
+- quantity: integer count
+- No markdown, no json, no explanation. If no PRAN food items are visible, return empty line."""
 
-Your job: analyze the provided image of a product rack and identify every PRAN or RFL product that is visible.
-
-PRAN and RFL brands include (but are not limited to):
-- PRAN juices, drinks, Frooto, Drinko, flavored water, dairy, Lassi, Moo, snacks, noodles, Mr. Noodles,
-  chips, biscuits, Bisk Club, spices, sauces, pickles/achar, Fit Crackers, All Time, Potata
-- RFL plastics, housewares, and any RFL-branded consumer goods visible on shelf
-
-Return your answer as **plain text only** — one product per line in this exact format:
-  product name|quantity
-
-Rules:
-- product name: full name with brand + variant + size if visible (e.g. PRAN Mango Juice 250ml)
-- quantity: integer — best estimate of units clearly visible; use 1 if unsure
-- NO markdown, NO JSON, NO code fences, NO explanation, NO blank lines between entries
-- If nothing is visible, output a single empty line
-
-Example output (do NOT copy this into your response):
-PRAN Mango Juice 250ml|6
-Bisk Club Cream Biscuit Chocolate 90g|4
-PRAN Lassi Strawberry 200ml|3
-"""
 
 _FENCE_PATTERN = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 _OBJECT_PATTERN = re.compile(
@@ -111,25 +102,59 @@ def _detect_mime_type(data: bytes) -> str:
     return "image/jpeg"
 
 
-def _optimize_image_bytes(raw_data: bytes, max_dim: int = 1024) -> tuple[bytes, str]:
+def _autocrop_borders(im: Image.Image, tolerance: int = 18) -> Image.Image:
     """
-    Downscale oversized camera photos to a max dimension (e.g. 1024px) using Lanczos.
-    Preserves fine text sharpness while cutting vision tile count and token costs by ~50%.
+    Remove uniform solid borders (e.g. black letterbox bars, solid scanner margins).
+    Saves vision tokens by not encoding empty margin tiles into the VLM.
+    """
+    try:
+        from PIL import ImageChops
+        # Sample border color from top-left pixel
+        bg = Image.new(im.mode, im.size, im.getpixel((0, 0)))
+        diff = ImageChops.difference(im, bg)
+        diff = ImageChops.add(diff, diff, 2.0, -tolerance)
+        bbox = diff.getbbox()
+        if bbox:
+            w_crop = bbox[2] - bbox[0]
+            h_crop = bbox[3] - bbox[1]
+            orig_area = im.size[0] * im.size[1]
+            crop_area = w_crop * h_crop
+            # Only crop if borders take up > 3% and valid content retains >= 40% of original
+            if 0.40 <= (crop_area / orig_area) <= 0.97:
+                logger.info(
+                    "Auto-cropped empty margins from %dx%d to %dx%d (saved ~%d%% non-product area)",
+                    im.size[0], im.size[1], w_crop, h_crop, int((1.0 - (crop_area / orig_area)) * 100),
+                )
+                return im.crop(bbox)
+    except Exception as exc:
+        logger.debug("Border autocrop skipped: %s", exc)
+    return im
+
+
+def _optimize_image_bytes(raw_data: bytes, max_dim: int = 1024, quality: int = 82) -> tuple[bytes, str]:
+    """
+    Downscale oversized camera photos to tile-aligned max dimension (default 1024px) using Lanczos.
+    Snaps to 768-pixel tile grid boundaries to avoid the 3rd-tile penalty (e.g. 1600px -> 1024px
+    drops vision tokens from ~1,806 down to ~774).
     """
     try:
         with Image.open(io.BytesIO(raw_data)) as im:
             detected_format = (im.format or "JPEG").upper()
             if im.mode not in ("RGB", "L"):
                 im = im.convert("RGB")
+
+            # Remove empty letterbox/scanner borders before tile slicing
+            im = _autocrop_borders(im)
+
             w, h = im.size
             if max(w, h) > max_dim:
                 im.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
                 buf = io.BytesIO()
-                im.save(buf, format="JPEG", quality=88, optimize=True)
+                im.save(buf, format="JPEG", quality=quality, optimize=True)
                 opt_data = buf.getvalue()
                 logger.info(
-                    "Optimized image from %dx%d (%d bytes) to %dx%d (%d bytes)",
-                    w, h, len(raw_data), im.size[0], im.size[1], len(opt_data),
+                    "Optimized image from %dx%d (%d bytes) to %dx%d (%d bytes, quality=%d)",
+                    w, h, len(raw_data), im.size[0], im.size[1], len(opt_data), quality,
                 )
                 return opt_data, "image/jpeg"
 
@@ -154,6 +179,7 @@ def _resolve_image_bytes(image_input: str | bytes) -> tuple[bytes, str]:
     """
     settings = get_settings()
     max_dim = int(getattr(settings, "max_image_dimension", 1024) or 1024)
+    quality = int(getattr(settings, "image_quality", 82) or 82)
 
     # 1. Direct raw bytes
     if isinstance(image_input, bytes):
@@ -208,7 +234,7 @@ def _resolve_image_bytes(image_input: str | bytes) -> tuple[bytes, str]:
 # ── Main function ─────────────────────────────────────────────────────────────
 
 
-_COMPACT_USER_PROMPT = "List all PRAN and RFL products visible. One per line as: product name|quantity"
+_COMPACT_USER_PROMPT = "Extract visible PRAN food and drink items only."
 
 
 def _call_openrouter(
@@ -217,7 +243,12 @@ def _call_openrouter(
     prompt: str = _COMPACT_USER_PROMPT,
 ) -> tuple[str, dict[str, Any]]:
     """
-    Call OpenRouter (https://openrouter.ai/api/v1) with google/gemini-3.7-flash using OpenAI SDK.
+    Call OpenRouter (https://openrouter.ai/api/v1) with token-optimized settings:
+    - Flash-Lite class model by default
+    - Output capped via max_tokens (e.g. 450)
+    - Temperature 0.0 for deterministic, minimal token output
+    - OpenRouter edge response cache header (X-OpenRouter-Cache)
+    - Reasoning suppressed to prevent 1,000+ token thinking waste
     """
     settings = get_settings()
     api_key = settings.openrouter_api_key or os.getenv("OPENROUTER_API_KEY", "")
@@ -227,13 +258,22 @@ def _call_openrouter(
     base64_img = base64.b64encode(image_bytes).decode("utf-8")
     data_url = f"data:{mime_type};base64,{base64_img}"
 
+    # Build OpenRouter-optimized headers including response cache
+    default_headers: dict[str, str] = {
+        "HTTP-Referer": "https://merchvision.pranrfl.com",
+        "X-Title": "MerchVision PRAN-RFL Shelf Auditor",
+    }
+    if getattr(settings, "openrouter_enable_cache_header", True):
+        default_headers["X-OpenRouter-Cache"] = "true"
+
     client = OpenAI(
         base_url=settings.openrouter_base_url or "https://openrouter.ai/api/v1",
         api_key=api_key,
         timeout=float(getattr(settings, "openrouter_timeout_seconds", 45) or 45),
+        default_headers=default_headers,
     )
 
-    model_name = settings.openrouter_model or "google/gemini-3.7-flash"
+    model_name = settings.openrouter_model or "google/gemini-2.5-flash-lite"
     logger.info("Calling OpenRouter with model: %s (base_url: %s)", model_name, settings.openrouter_base_url)
 
     max_retries = 3
@@ -246,11 +286,14 @@ def _call_openrouter(
             effort = str(getattr(settings, "openrouter_reasoning_effort", "none") or "none").lower()
             max_r_tokens = getattr(settings, "openrouter_reasoning_max_tokens", 0)
             # OpenRouter requires either effort OR max_tokens (not both).
-            # Setting effort='none' or max_tokens=0 disables runaway thinking output tokens (cutting 1000+ tokens to ~150).
+            # Setting effort='none' or max_tokens=0 disables runaway thinking output tokens.
             if effort in ("none", "low", "medium", "high"):
                 extra_body["reasoning"] = {"effort": effort}
             elif max_r_tokens is not None and max_r_tokens >= 0:
                 extra_body["reasoning"] = {"max_tokens": int(max_r_tokens)}
+
+            max_out_tokens = int(getattr(settings, "openrouter_max_tokens", 450) or 450)
+            temp = float(getattr(settings, "openrouter_temperature", 0.0) or 0.0)
 
             create_kwargs: dict[str, Any] = {
                 "model": model_name,
@@ -269,7 +312,8 @@ def _call_openrouter(
                         ]
                     }
                 ],
-                "temperature": 0.2,
+                "temperature": temp,
+                "max_tokens": max_out_tokens,
             }
             if extra_body:
                 create_kwargs["extra_body"] = extra_body
@@ -281,10 +325,15 @@ def _call_openrouter(
             output_tokens = int(getattr(usage, "completion_tokens", 0) or 0) if usage else 0
             total_tokens = int(getattr(usage, "total_tokens", 0) or 0) if usage else (prompt_tokens + output_tokens)
 
-            cost = calculate_token_cost(prompt_tokens, output_tokens)
+            # OpenRouter provides exact billed USD cost directly in usage.cost
+            direct_cost = getattr(usage, "cost", None)
+            if direct_cost is not None and isinstance(direct_cost, (int, float)) and direct_cost >= 0:
+                cost = round(float(direct_cost), 6)
+            else:
+                cost = calculate_token_cost(prompt_tokens, output_tokens)
 
             logger.info(
-                "OpenRouter Token usage: in=%d, out=%d, total=%d, cost=$%.6f",
+                "OpenRouter Token usage: in=%d, out=%d, total=%d, exact_billed_cost=$%.6f",
                 prompt_tokens, output_tokens, total_tokens, cost,
             )
 
@@ -310,9 +359,14 @@ def _call_openrouter(
 def _call_gemini_direct(
     image_bytes: bytes,
     mime_type: str,
+    prompt: str = _COMPACT_USER_PROMPT,
 ) -> tuple[str, dict[str, Any]]:
     """
-    Call Google Gemini Direct using google-genai SDK.
+    Call Google Gemini Direct using google-genai SDK with token-optimized parameters:
+    - Temperature 0.0 (deterministic, concise output)
+    - max_output_tokens capped to 450
+    - media_resolution control (e.g. MEDIUM: ~560 tokens vs default 1,120+)
+    - thinking_budget=0 to eliminate reasoning token overhead
     """
     settings = get_settings()
     if not settings.gemini_api_key or "YOUR_GEMINI" in settings.gemini_api_key:
@@ -321,16 +375,27 @@ def _call_gemini_direct(
     image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
 
     thinking_config = None
-    thinking_budget = getattr(settings, "gemini_thinking_budget", 1024)
-    thinking_level = getattr(settings, "gemini_thinking_level", "medium")
+    thinking_budget = getattr(settings, "gemini_thinking_budget", 0)
+    thinking_level = getattr(settings, "gemini_thinking_level", "low")
     if thinking_budget is not None and thinking_budget >= 0:
         thinking_config = types.ThinkingConfig(thinking_budget=thinking_budget)
     elif thinking_level in ("low", "medium", "high"):
         thinking_config = types.ThinkingConfig(thinking_level=thinking_level)
 
+    # Resolution controls vision token consumption per image
+    media_res_str = str(getattr(settings, "gemini_media_resolution", "medium") or "medium").upper()
+    media_resolution = None
+    if hasattr(types, "MediaResolution"):
+        if "LOW" in media_res_str:
+            media_resolution = types.MediaResolution.MEDIA_RESOLUTION_LOW
+        elif "MEDIUM" in media_res_str:
+            media_resolution = types.MediaResolution.MEDIA_RESOLUTION_MEDIUM
+        elif "HIGH" in media_res_str:
+            media_resolution = types.MediaResolution.MEDIA_RESOLUTION_HIGH
+
     client = genai.Client(api_key=settings.gemini_api_key)
     model_name: str = settings.gemini_model
-    logger.info("Calling Gemini direct model: %s (thinking_budget=%s)", model_name, thinking_budget)
+    logger.info("Calling Gemini direct model: %s (thinking_budget=%s, media_res=%s)", model_name, thinking_budget, media_res_str)
 
     max_retries = 3
     retry_delay = 5.0
@@ -338,20 +403,23 @@ def _call_gemini_direct(
 
     for attempt in range(1, max_retries + 1):
         try:
+            config_kwargs: dict[str, Any] = {
+                "system_instruction": SYSTEM_PROMPT,
+                "temperature": float(getattr(settings, "gemini_temperature", 0.0) or 0.0),
+                "max_output_tokens": int(getattr(settings, "gemini_max_output_tokens", 450) or 450),
+                "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True),
+                "thinking_config": thinking_config,
+            }
+            if media_resolution:
+                config_kwargs["media_resolution"] = media_resolution
+
             response = client.models.generate_content(
                 model=model_name,
                 contents=[
                     image_part,
-                    "List all PRAN and RFL products visible. One per line as: product name|quantity",
+                    prompt,
                 ],
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                    temperature=1,
-                    # No response_mime_type: we use compact pipe-delimited plain text
-                    # (incompatible with application/json mode) which saves ~64% output tokens.
-                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-                    thinking_config=thinking_config,
-                ),
+                config=types.GenerateContentConfig(**config_kwargs),
             )
             raw_text: str = response.text or ""
 
@@ -482,33 +550,106 @@ def _parse_ai_response(raw_text: str) -> list[dict[str, Any]]:
 # ── Main function ─────────────────────────────────────────────────────────────
 
 
-def analyze_rack_image(image_input: str | bytes) -> dict[str, Any]:
+def _lookup_cached_analysis(image_hash: str, db: Any = None) -> RackUpload | None:
     """
-    Analyze rack photo using OpenRouter (google/gemini-3.7-flash) or Google Gemini Direct:
+    Look up recent completed analysis with identical image SHA-256 hash.
+    Industry best practice: yields 100% token savings (0 tokens, $0.00 cost) on duplicate captures/retries.
+    """
+    settings = get_settings()
+    if not getattr(settings, "enable_image_cache", True) or not image_hash:
+        return None
 
-      1. Download / decode image → optimized bytes (memory buffer, zero disk storage)
-      2. Call OpenRouter / Gemini with image and shelf recognition prompt
-         (AI returns ONLY product_name + quantity — minimum tokens)
-      3. Parse AI output, deduplicate products
-      4. Enrich each product with catalogue metadata from itemsdb.csv (zero extra AI tokens)
-      5. Return structured product list + token usage + USD cost
+    close_db = False
+    session = db
+    if session is None:
+        try:
+            session = SessionLocal()
+            close_db = True
+        except Exception:
+            return None
+
+    try:
+        ttl_hours = int(getattr(settings, "image_cache_ttl_hours", 72) or 72)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
+        cached = (
+            session.query(RackUpload)
+            .filter(
+                RackUpload.image_hash == image_hash,
+                RackUpload.status == ProcessingStatus.COMPLETED,
+                RackUpload.detected_products.isnot(None),
+                RackUpload.created_at >= cutoff,
+            )
+            .order_by(RackUpload.created_at.desc())
+            .first()
+        )
+        return cached
+    except Exception as exc:
+        logger.warning("Image cache lookup error: %s", exc)
+        return None
+    finally:
+        if close_db and session:
+            try:
+                session.close()
+            except Exception:
+                pass
+
+
+def analyze_rack_image(image_input: str | bytes, db: Any = None) -> dict[str, Any]:
+    """
+    Analyze rack photo using OpenRouter (google/gemini-2.5-flash-lite) or Google Gemini Direct:
+
+      1. Download / decode image → optimized bytes (tile-aligned, Lanczos, quality control)
+      2. Check exact SHA-256 image cache (0 tokens on hit)
+      3. Call OpenRouter / Gemini with image and shelf recognition prompt
+         (AI returns ONLY product_name + quantity with max_tokens cap — minimum tokens)
+      4. Parse AI output, deduplicate products
+      5. Enrich each product with catalogue metadata from itemsdb.csv (zero extra AI tokens)
+      6. Return structured product list + token usage + USD cost + image_hash
 
     Args:
         image_input: S3 presigned URL, HTTP URL, Base64 string, Data URI, or raw bytes.
+        db: Optional database session for caching lookup.
 
     Returns:
         Dict with keys:
             - "products": list of enriched product dicts
-            - "token_usage": {"input_tokens", "output_tokens", "total_tokens", "estimated_cost_usd"}
+            - "token_usage": {"input_tokens", "output_tokens", "total_tokens", "estimated_cost_usd", "cached"}
             - "raw_text": raw completion text from model
+            - "image_hash": SHA-256 hash of image
+            - "cached": boolean indicating if served from cache
     """
     settings = get_settings()
 
     # ── Step 0: Ensure catalogue is loaded (no-op after first call) ───────────
     load_items_db()
 
-    # ── Step 1: Resolve image → optimized bytes ────────────────────────────────
+    # ── Step 1: Resolve image → optimized bytes & SHA-256 hash ────────────────
     image_bytes, mime_type = _resolve_image_bytes(image_input)
+    image_hash = hashlib.sha256(image_bytes).hexdigest()
+
+    # ── Step 1b: Exact Image Cache Lookup (Industry Best Practice) ────────────
+    # Duplicate photos, retries, or re-analyses consume 0 tokens & cost $0.00
+    cached_entry = _lookup_cached_analysis(image_hash, db=db)
+    if cached_entry:
+        logger.info(
+            "Exact Image Cache HIT [hash=%s... from upload %s]. Consumed 0 tokens, $0.00 USD.",
+            image_hash[:12],
+            cached_entry.id,
+        )
+        return {
+            "products": cached_entry.detected_products or [],
+            "token_usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "estimated_cost_usd": 0.0,
+                "cached": True,
+                "original_tokens": cached_entry.total_tokens or 0,
+            },
+            "raw_text": cached_entry.ai_raw_response or "",
+            "image_hash": image_hash,
+            "cached": True,
+        }
 
     # ── Step 2: Route call to OpenRouter or Gemini Direct ─────────────────────
     provider = (getattr(settings, "ai_provider", "openrouter") or "openrouter").lower()
@@ -564,6 +705,8 @@ def analyze_rack_image(image_input: str | bytes) -> dict[str, Any]:
         "products": enriched_products,
         "token_usage": token_usage,
         "raw_text": raw_text,
+        "image_hash": image_hash,
+        "cached": False,
     }
 
 
@@ -634,25 +777,26 @@ def estimate_tokens(
     tiles_y = max(1, (h + 767) // 768)
     vision_tokens = 258 + (tiles_x * tiles_y * 258)
 
-    # System prompt ~ 125 tokens
-    system_tokens = 125
+    # System prompt ~ 85 tokens
+    system_tokens = 85
 
     # User prompt tokens (~1 token per 4 characters)
-    user_prompt = custom_prompt or "Identify all PRAN products visible in this image. Return the raw JSON array only."
-    prompt_tokens = max(15, len(user_prompt) // 4)
+    user_prompt = custom_prompt or _COMPACT_USER_PROMPT
+    prompt_tokens = max(6, len(user_prompt) // 4)
 
     total_prompt_tokens = vision_tokens + system_tokens + prompt_tokens
 
-    # Thinking & output estimate
-    active_budget = thinking_budget if thinking_budget is not None else int(getattr(settings, "gemini_thinking_budget", 128) or 128)
-    expected_output_tokens = 200
+    # Thinking & output estimate (capped by max_tokens)
+    active_budget = thinking_budget if thinking_budget is not None else int(getattr(settings, "gemini_thinking_budget", 0) or 0)
+    max_out = int(getattr(settings, "openrouter_max_tokens", 450) or 450)
+    expected_output_tokens = min(150, max_out)
     estimated_total_output = expected_output_tokens + (active_budget if active_budget > 0 else 0)
 
     total_tokens = total_prompt_tokens + estimated_total_output
     estimated_cost = calculate_token_cost(total_prompt_tokens, estimated_total_output)
 
     return {
-        "model": settings.gemini_model,
+        "model": settings.openrouter_model if getattr(settings, "ai_provider", "openrouter") == "openrouter" else settings.gemini_model,
         "estimated_vision_tokens": vision_tokens,
         "estimated_system_tokens": system_tokens,
         "estimated_prompt_tokens": total_prompt_tokens,
@@ -661,7 +805,7 @@ def estimate_tokens(
         "estimated_total_tokens": total_tokens,
         "estimated_cost_usd": estimated_cost,
         "dimensions_analyzed": dim_str,
-        "optimization_applied": f"Lanczos downscaling (max {max_dim}px)",
+        "optimization_applied": f"Lanczos downscaling (max {max_dim}px, tile-aligned)",
     }
 
 

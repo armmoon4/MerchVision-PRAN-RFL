@@ -38,6 +38,7 @@ class Base(DeclarativeBase):
 
 def init_db() -> None:
     """Create all DB tables and automatically migrate missing columns."""
+    import app.models  # noqa: F401
     Base.metadata.create_all(bind=engine)
     _auto_migrate()
 
@@ -54,6 +55,7 @@ def _auto_migrate() -> None:
         is_postgres = engine.dialect.name == "postgresql"
 
         column_defs = [
+            ("image_hash", "VARCHAR(64)"),
             ("input_tokens", "INTEGER"),
             ("output_tokens", "INTEGER"),
             ("total_tokens", "INTEGER"),

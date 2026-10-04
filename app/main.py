@@ -193,10 +193,11 @@ def process_upload(upload_id: str, image_input: str | bytes, image_ref: str = ""
 
         # ── Call Gemini In-Memory ──────────────────────────────────────────────
         try:
-            ai_result = analyze_rack_image(image_input)
+            ai_result = analyze_rack_image(image_input, db=db)
             products = ai_result.get("products", [])
             usage = ai_result.get("token_usage", {})
 
+            upload.image_hash = ai_result.get("image_hash")
             upload.detected_products = products
             upload.input_tokens = usage.get("input_tokens", 0)
             upload.output_tokens = usage.get("output_tokens", 0)
@@ -429,10 +430,11 @@ async def analyze_image_direct(
 
     # ── Download → temp file → Gemini → delete → result ───────────────────────
     try:
-        ai_res = await run_in_threadpool(analyze_rack_image, image_input)
+        ai_res = await run_in_threadpool(analyze_rack_image, image_input, db)
         products = ai_res.get("products", [])
         usage = ai_res.get("token_usage", {})
 
+        db_row.image_hash = ai_res.get("image_hash")
         db_row.detected_products = products
         db_row.input_tokens = usage.get("input_tokens", 0)
         db_row.output_tokens = usage.get("output_tokens", 0)
@@ -524,10 +526,11 @@ async def analyze_file_direct(
     db.commit()
 
     try:
-        ai_res = await run_in_threadpool(analyze_rack_image, image_bytes)
+        ai_res = await run_in_threadpool(analyze_rack_image, image_bytes, db)
         products = ai_res.get("products", [])
         usage = ai_res.get("token_usage", {})
 
+        db_row.image_hash = ai_res.get("image_hash")
         db_row.detected_products = products
         db_row.input_tokens = usage.get("input_tokens", 0)
         db_row.output_tokens = usage.get("output_tokens", 0)

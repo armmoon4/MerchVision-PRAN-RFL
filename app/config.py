@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # Setting to "none" prevents Gemini 3.7 Flash from wasting 1,000+ reasoning tokens per image (~4s latency savings)
     openrouter_reasoning_effort: str = "none"
     openrouter_reasoning_max_tokens: int = 0
+    openrouter_temperature: float = 0.1
+    openrouter_max_tokens: int = 600
 
     # ── Google Gemini Direct ──────────────────────────────────────────────────
     gemini_api_key: str = ""

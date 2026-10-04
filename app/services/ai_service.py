@@ -240,14 +240,18 @@ def _call_openrouter(
     retry_delay = 3.0
     last_exc: Exception | None = None
 
+    effort = str(getattr(settings, "openrouter_reasoning_effort", "none") or "none").lower()
+    max_r_tokens = getattr(settings, "openrouter_reasoning_max_tokens", 0)
+    # Models like google/gemini-3.7-flash mandate reasoning on OpenRouter and reject effort='none'
+    # with "Reasoning is mandatory for this endpoint and cannot be disabled."
+    # Using effort='minimal' satisfies OpenRouter while yielding 0 reasoning tokens.
+    if "gemini-3.7" in model_name.lower() and effort == "none":
+        effort = "minimal"
+
     for attempt in range(1, max_retries + 1):
         try:
             extra_body: dict[str, Any] = {}
-            effort = str(getattr(settings, "openrouter_reasoning_effort", "none") or "none").lower()
-            max_r_tokens = getattr(settings, "openrouter_reasoning_max_tokens", 0)
-            # OpenRouter requires either effort OR max_tokens (not both).
-            # Setting effort='none' or max_tokens=0 disables runaway thinking output tokens (cutting 1000+ tokens to ~150).
-            if effort in ("none", "low", "medium", "high"):
+            if effort in ("none", "minimal", "low", "medium", "high"):
                 extra_body["reasoning"] = {"effort": effort}
             elif max_r_tokens is not None and max_r_tokens >= 0:
                 extra_body["reasoning"] = {"max_tokens": int(max_r_tokens)}
@@ -269,7 +273,11 @@ def _call_openrouter(
                         ]
                     }
                 ],
-                "temperature": 0.2,
+                "temperature": float(getattr(settings, "openrouter_temperature", 0.1)),
+                # Penalise repetition so the model can't loop on the same line (e.g. 55x 'PRAN Hot Snacks|1')
+                "frequency_penalty": 0.2,
+                # Hard ceiling; pipe format needs ~250 tokens even for a full rack
+                "max_tokens": int(getattr(settings, "openrouter_max_tokens", 600)),
             }
             if extra_body:
                 create_kwargs["extra_body"] = extra_body
@@ -278,10 +286,16 @@ def _call_openrouter(
             raw_text = response.choices[0].message.content or ""
             usage = response.usage
             prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0) if usage else 0
+            # Actual output/completion tokens billed by OpenRouter (visible text + reasoning)
             output_tokens = int(getattr(usage, "completion_tokens", 0) or 0) if usage else 0
             total_tokens = int(getattr(usage, "total_tokens", 0) or 0) if usage else (prompt_tokens + output_tokens)
 
-            cost = calculate_token_cost(prompt_tokens, output_tokens)
+            # Use OpenRouter's exact billed USD cost if provided directly in usage
+            direct_cost = getattr(usage, "cost", None)
+            if direct_cost is not None and isinstance(direct_cost, (int, float)) and direct_cost >= 0:
+                cost = round(float(direct_cost), 6)
+            else:
+                cost = calculate_token_cost(prompt_tokens, output_tokens)
 
             logger.info(
                 "OpenRouter Token usage: in=%d, out=%d, total=%d, cost=$%.6f",
@@ -295,6 +309,10 @@ def _call_openrouter(
                 "estimated_cost_usd": cost,
             }
         except OpenAIError as exc:
+            if "Reasoning is mandatory" in str(exc) and effort != "minimal":
+                logger.warning("Endpoint mandates reasoning, retrying with effort='minimal'...")
+                effort = "minimal"
+                continue
             logger.warning("OpenRouter API error on attempt %d/%d: %s", attempt, max_retries, exc)
             last_exc = exc
             if attempt < max_retries:

@@ -153,7 +153,11 @@ def chat_with_openrouter(payload: OpenRouterChatRequest) -> OpenRouterChatRespon
         prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0) if usage else 0
         output_tokens = int(getattr(usage, "completion_tokens", 0) or 0) if usage else 0
         total_tokens = int(getattr(usage, "total_tokens", 0) or 0) if usage else (prompt_tokens + output_tokens)
-        cost = calculate_token_cost(prompt_tokens, output_tokens)
+        direct_cost = getattr(usage, "cost", None)
+        if direct_cost is not None and isinstance(direct_cost, (int, float)) and direct_cost >= 0:
+            cost = round(float(direct_cost), 6)
+        else:
+            cost = calculate_token_cost(prompt_tokens, output_tokens)
 
         return OpenRouterChatResponse(
             provider="openrouter",

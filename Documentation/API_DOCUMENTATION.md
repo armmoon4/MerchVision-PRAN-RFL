@@ -10,10 +10,32 @@ The Prism API processes shelf and rack photos provided as **S3 Presigned URLs**,
 
 It identifies PRAN-RFL product SKUs, calculates visible unit quantities, and returns exact **input tokens**, **output tokens**, **total tokens**, and **estimated USD cost** using Google Gemini 3.7 Flash vision models.
 
-### Key Architectural Highlights:
-- **Zero Local Disk Footprint**: Images are processed directly in RAM (`io.BytesIO`) and streamed to Google Gemini without downloading, caching, or saving image files locally.
-- **Flexible Image Inputs**: Supports pure Base64 strings (e.g. `/9j/4AAQ...`), Data URIs (`data:image/jpeg;base64,...`), S3 URLs, and direct file uploads.
-- **In-Memory Optimization**: Resizes images in memory to optimize Gemini vision tile tokens before transmission.
+### Key Architectural Highlights & Pipeline:
+
+```
+[ Uploaded Shelf Image (e.g. 4000x3000) ]
+                   │
+                   ▼  (1. Auto-Crop & Lanczos 768px: raw 6,000+ vision tokens cut to ~516–700)
+    [ Downscaled to 768px ]
+                   │
+                   ▼  (1b. Exact Image Cache: if duplicate photo → 0 tokens, $0.00 cost)
+    [ Cache Check ]
+                   │
+                   ▼  (2. Thinking Suppressed: effort="none" / budget=0 eliminates 1,000+ reasoning tokens)
+    [ Call Gemini 2.5 Flash-Lite / 3.7 Flash ]
+                   │
+                   ▼  (3. Pipe Syntax: ~10 tokens/item → total actual output is ONLY ~50–70 TOKENS)
+    [ Raw Text: "Frooto 250ml|6" (~50–70 tokens) ]
+                   │
+                   ▼  (4. Zero AI Tokens: SentenceTransformer + BM25 local enrichment)
+    [ Enriched Output: SKU, Category, Sub-Category, Confidence, Qty ]
+```
+
+- **1. Auto-Crop & Lanczos 768px**: 4000x3000 photos raw 6,000+ vision tokens cut to ~516–700 tokens in RAM.
+- **1b. Exact Image Cache**: Duplicate photos trigger 0 AI tokens and $0.00 cost.
+- **2. Thinking Suppressed**: `reasoning_effort="none"` / `thinking_budget=0` eliminates 1,000+ reasoning tokens and 3–5s latency.
+- **3. Pipe Syntax**: `product name|quantity` output consumes only ~10 tokens/item (total actual output ~50–70 tokens vs 300+ JSON tokens).
+- **4. Zero AI Tokens**: Local semantic hybrid search (`SentenceTransformer` + `BM25Okapi` + Cross-Encoder) enriches detected items against `itemsdb.csv` (1,954 SKUs).
 
 | Environment | Base URL | Notes |
 |---|---|---|
@@ -27,13 +49,13 @@ It identifies PRAN-RFL product SKUs, calculates visible unit quantities, and ret
 
 ## 2. Token Pricing & Cost Calculation
 
-For every image processed by Gemini 3.7 Flash, the system tracks token usage directly from the LLM completion response and calculates estimated costs:
+For every image processed by Gemini 3.7 Flash or 2.5 Flash-Lite, the system tracks token usage directly from the completion response and calculates estimated costs:
 
 $$\text{Estimated Cost (USD)} = \left(\frac{\text{Input Tokens}}{1,000,000} \times \text{Rate}_{\text{input}}\right) + \left(\frac{\text{Output Tokens}}{1,000,000} \times \text{Rate}_{\text{output}}\right)$$
 
 ### Default Configured Rates:
-- **Input (Prompt) Rate:** `$0.10` per 1,000,000 tokens
-- **Output (Completion) Rate:** `$0.40` per 1,000,000 tokens
+- **Input (Prompt) Rate:** `$0.75` per 1,000,000 tokens (OpenRouter `google/gemini-3.7-flash`)
+- **Output (Completion) Rate:** `$3.75` per 1,000,000 tokens
 - Configurable in `.env` via `TOKEN_COST_INPUT_PER_MILLION` and `TOKEN_COST_OUTPUT_PER_MILLION`.
 
 ---
@@ -61,7 +83,7 @@ Liveness probe to verify server availability.
 ### 3.2. Single-Call Direct Analysis (1 API Request, Download-Then-Delete)
 
 #### `POST /analyze` (or `/analyze/url`)
-Analyzes a rack image from an **S3 URL, HTTP/HTTPS URL, or Base64 string** directly in **one single synchronous API call**. The server downloads the image to a secure temp file, runs Gemini AI vision recognition, deletes the temp file immediately, and returns the analysis results.
+Analyzes a rack image from an **S3 URL, HTTP/HTTPS URL, or Base64 string** directly in **one single synchronous API call**. The server processes the image in RAM, runs Gemini AI vision recognition using compact pipe syntax, performs zero-AI-token local catalogue enrichment against `itemsdb.csv`, and returns the analysis results.
 
 - **URL:** `/analyze` (Aliases: `/api/analyze`, `/analyze/url`, `/uploads/analyze`)
 - **Method:** `POST`
@@ -89,7 +111,7 @@ Analyzes a rack image from an **S3 URL, HTTP/HTTPS URL, or Base64 string** direc
 }
 ```
 
-**Response `200 OK`:**
+**Response `200 OK` (With Zero-AI-Token Local Enrichment):**
 ```json
 {
   "upload_id": "f0051207-7e9f-4f5d-a8a1-8b1fed212103",
@@ -98,29 +120,49 @@ Analyzes a rack image from an **S3 URL, HTTP/HTTPS URL, or Base64 string** direc
   "detected_products": [
     {
       "product_name": "PRAN Mango Juice 250ml",
-      "quantity_visible": 6
+      "quantity_visible": 6,
+      "matched": true,
+      "catalogue_suggestions": [
+        {
+          "sub_category_name": "Juice",
+          "sub_category_code": "SC012",
+          "category_name": "Beverage",
+          "category_code": "CAT004",
+          "item_name": "PRAN Frooto Mango Juice 250ml",
+          "item_code": "PRAN-MJ-250",
+          "confidence": 0.942
+        }
+      ]
     },
     {
       "product_name": "PRAN Lassi 200ml",
-      "quantity_visible": 4
-    },
-    {
-      "product_name": "RFL Water Bottle 1L",
-      "quantity_visible": 2
+      "quantity_visible": 4,
+      "matched": true,
+      "catalogue_suggestions": [
+        {
+          "sub_category_name": "Dairy",
+          "sub_category_code": "SC005",
+          "category_name": "Dairy & Milk",
+          "category_code": "CAT003",
+          "item_name": "PRAN Lassi Mango 200ml",
+          "item_code": "PRAN-LS-200",
+          "confidence": 0.918
+        }
+      ]
     }
   ],
   "token_usage": {
-    "input_tokens": 1280,
-    "output_tokens": 94,
-    "total_tokens": 1374,
-    "estimated_cost_usd": 0.000166
+    "input_tokens": 586,
+    "output_tokens": 58,
+    "total_tokens": 644,
+    "estimated_cost_usd": 0.000657
   },
-  "input_tokens": 1280,
-  "output_tokens": 94,
-  "total_tokens": 1374,
-  "estimated_cost_usd": 0.000166,
+  "input_tokens": 586,
+  "output_tokens": 58,
+  "total_tokens": 644,
+  "estimated_cost_usd": 0.000657,
   "error_message": null,
-  "created_at": "2026-09-22T09:30:00Z"
+  "created_at": "2026-10-06T12:00:00Z"
 }
 ```
 

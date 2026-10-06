@@ -52,14 +52,13 @@ from app.services.items_db_service import enrich_products, load_items_db
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """You are a retail shelf auditor for PRAN and RFL products.
+SYSTEM_PROMPT = """You are a retail shelf auditor for PRAN products.
 
-Your job: analyze the provided image of a product rack and identify every PRAN or RFL product that is visible.
+Your job: analyze the provided image of a product rack and identify every PRAN product that is visible.
 
-PRAN and RFL brands include (but are not limited to):
+PRAN brands include (but are not limited to):
 - PRAN juices, drinks, Frooto, Drinko, flavored water, dairy, Lassi, Moo, snacks, noodles, Mr. Noodles,
   chips, biscuits, Bisk Club, spices, sauces, pickles/achar, Fit Crackers, All Time, Potata
-- RFL plastics, housewares, and any RFL-branded consumer goods visible on shelf
 
 Return your answer as **plain text only** — one product per line in this exact format:
   product name|quantity
@@ -208,7 +207,7 @@ def _resolve_image_bytes(image_input: str | bytes) -> tuple[bytes, str]:
 # ── Main function ─────────────────────────────────────────────────────────────
 
 
-_COMPACT_USER_PROMPT = "List all PRAN and RFL products visible. One per line as: product name|quantity"
+_COMPACT_USER_PROMPT = "List all PRAN products visible. One per line as: product name|quantity"
 
 
 def _call_openrouter(

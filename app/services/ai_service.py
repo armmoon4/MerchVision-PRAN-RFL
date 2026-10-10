@@ -269,6 +269,7 @@ def _call_openrouter(
                     }
                 ],
                 "temperature": 0.2,
+                "max_tokens": int(getattr(settings, "openrouter_max_tokens", 20000) or 20000),
             }
             if extra_body:
                 create_kwargs["extra_body"] = extra_body
@@ -414,6 +415,7 @@ def openrouter_chat_completion(
     return client.chat.completions.create(
         model=model or settings.openrouter_model or "google/gemini-3.7-flash",
         messages=messages,
+        max_tokens=int(getattr(settings, "openrouter_max_tokens", 20000) or 20000),
         stream=stream,
     )
 

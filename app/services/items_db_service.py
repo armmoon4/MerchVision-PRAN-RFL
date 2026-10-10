@@ -41,7 +41,7 @@ Public API (drop-in replacement, same signatures):
 
 CSV columns expected:
     Sub Category Name, Sub Category Code, Category Name, Category Code,
-    Item Name, Item Code
+    Item Name, Item Code, Item Image URL
 
 Environment variables:
   ITEMS_DB_CSV                      -- override CSV path
@@ -350,6 +350,7 @@ def _build_and_save_embeddings(catalogue: List[CatalogueRow]) -> np.ndarray:
             "sub_category_code": row.get("Sub Category Code", ""),
             "category_name":     row.get("Category Name", ""),
             "category_code":     row.get("Category Code", ""),
+            "item_image_url":    (row.get("Item Image URL") or row.get("item_image_url") or row.get("image_url") or "").strip(),
         }
         for row in catalogue
     ]
@@ -978,13 +979,20 @@ def search_catalogue(query: str, limit: int = 20) -> List[Dict[str, Any]]:
 def _row_to_suggestion(
     row: CatalogueRow, confidence: Optional[float] = None
 ) -> Dict[str, Any]:
+    img_url = (
+        row.get("Item Image URL")
+        or row.get("item_image_url")
+        or row.get("image_url")
+        or ""
+    ).strip()
     sug: Dict[str, Any] = {
-        "sub_category_name":  row.get("Sub Category Name", ""),
-        "sub_category_code":  row.get("Sub Category Code", ""),
-        "category_name":      row.get("Category Name", ""),
-        "category_code":      row.get("Category Code", ""),
-        "item_name":          row.get("Item Name", ""),
-        "item_code":          row.get("Item Code", ""),
+        "sub_category_name":  row.get("Sub Category Name", "") or row.get("sub_category_name", ""),
+        "sub_category_code":  row.get("Sub Category Code", "") or row.get("sub_category_code", ""),
+        "category_name":      row.get("Category Name", "") or row.get("category_name", ""),
+        "category_code":      row.get("Category Code", "") or row.get("category_code", ""),
+        "item_name":          row.get("Item Name", "") or row.get("item_name", ""),
+        "item_code":          row.get("Item Code", "") or row.get("item_code", ""),
+        "item_image_url":     img_url,
     }
     if confidence is not None:
         sug["confidence"] = round(float(confidence), 4)

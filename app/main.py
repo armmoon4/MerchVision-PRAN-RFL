@@ -399,7 +399,7 @@ async def analyze_image_direct(
     | `catalogue_suggestions` | **List** of matching rows from `itemsdb.csv` with confidence scores |
 
     Each `catalogue_suggestion` contains:
-    `sub_category_name`, `sub_category_code`, `category_name`, `category_code`, `item_name`, `item_code`, `confidence`.
+    `sub_category_name`, `sub_category_code`, `category_name`, `category_code`, `item_name`, `item_code`, `item_image_url`, `confidence`.
 
     > **Zero extra AI tokens** — catalogue lookup is done locally after the AI call.
     """

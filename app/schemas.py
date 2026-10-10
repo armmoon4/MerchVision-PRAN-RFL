@@ -4,9 +4,9 @@ app/schemas.py — Pydantic request/response models.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.models import ProcessingStatus
 
@@ -23,7 +23,18 @@ class CatalogueSuggestion(BaseModel):
     category_code: str = ""
     item_name: str = ""    # exact Item Name from catalogue
     item_code: str = ""    # exact Item Code from catalogue
+    item_image_url: str = ""  # exact Item Image URL from catalogue
     confidence: Optional[float] = None  # Match confidence score (0.0 to 1.0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def sync_image_urls(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            url = data.get("item_image_url") or data.get("image_url") or data.get("Item Image URL") or ""
+            if not data.get("item_image_url") and url:
+                data["item_image_url"] = url
+        return data
+
 
 
 
@@ -201,7 +212,7 @@ class ModelInfoResponse(BaseModel):
     version: str = "Stable: gemini-3.7-flash (OpenRouter: google/gemini-3.7-flash)"
     latest_update: str = "August 2026"
     input_token_limit: int = 1_048_576
-    output_token_limit: int = 65_536
+    output_token_limit: int = 20_000
     supported_inputs: List[str] = ["Text", "Image", "Video", "Audio", "PDF"]
     supported_outputs: List[str] = ["Text"]
     capabilities: ModelCapabilities = ModelCapabilities()
@@ -311,7 +322,7 @@ class TokenRouteResponse(BaseModel):
     configured_thinking_budget: int
     configured_thinking_level: str
     max_input_limit: int = 1_048_576
-    max_output_limit: int = 65_536
+    max_output_limit: int = 20_000
     is_payload_valid: bool = True
     recommended_batch_mode: bool = False
     message: str

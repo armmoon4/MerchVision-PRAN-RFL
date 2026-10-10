@@ -82,7 +82,7 @@ def get_model_info() -> ModelInfoResponse:
         version="Stable: gemini-3.7-flash (OpenRouter: google/gemini-3.7-flash)",
         latest_update="August 2026",
         input_token_limit=getattr(settings, "max_input_tokens", 1_048_576),
-        output_token_limit=getattr(settings, "max_output_tokens", 65_536),
+        output_token_limit=getattr(settings, "max_output_tokens", 20_000),
         supported_inputs=["Text", "Image", "Video", "Audio", "PDF"],
         supported_outputs=["Text"],
         capabilities=ModelCapabilities(),
@@ -313,7 +313,7 @@ def route_token_request(payload: TokenRouteRequest) -> TokenRouteResponse:
 
     est_tokens = count_res["total_tokens"]
     max_input = getattr(settings, "max_input_tokens", 1_048_576)
-    max_output = getattr(settings, "max_output_tokens", 65_536)
+    max_output = getattr(settings, "max_output_tokens", 20_000)
 
     if est_tokens > max_input:
         return TokenRouteResponse(

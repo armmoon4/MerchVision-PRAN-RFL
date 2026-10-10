@@ -153,6 +153,7 @@ def build(csv_path: Path, out_dir: Path, model_name: str) -> None:
             "sub_category_code": r.get("Sub Category Code", ""),
             "category_name":     r.get("Category Name", ""),
             "category_code":     r.get("Category Code", ""),
+            "item_image_url":    (r.get("Item Image URL") or r.get("item_image_url") or r.get("image_url") or "").strip(),
         }
         for r in rows
     ]

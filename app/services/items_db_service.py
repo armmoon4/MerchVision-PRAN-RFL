@@ -113,8 +113,8 @@ RERANKER_MODEL: str = os.getenv(
 BM25_WEIGHT: float  = float(os.getenv("BM25_WEIGHT",  "0.35"))
 FAISS_WEIGHT: float = float(os.getenv("FAISS_WEIGHT", "0.65"))
 
-# Toggle reranker (set ENABLE_RERANKER=false to skip in resource-constrained envs)
-ENABLE_RERANKER: bool = os.getenv("ENABLE_RERANKER", "true").lower() == "true"
+# Toggle reranker (default false: pure FAISS + BM25 hybrid search runs in ~10ms vs ~1.5s on CPU)
+ENABLE_RERANKER: bool = os.getenv("ENABLE_RERANKER", "false").lower() == "true"
 
 # ---------------------------------------------------------------------------
 # Path resolution
@@ -520,6 +520,7 @@ def _hybrid_search_indices(
     top_k: int,
     threshold: float = SIMILARITY_THRESHOLD,
     q_vec: Optional[np.ndarray] = None,
+    bm25_global: Optional[np.ndarray] = None,
 ) -> List[Tuple[float, CatalogueRow]]:
     """
     Compute Hybrid (BM25 + FAISS) scores restricted to *candidate_indices*.
@@ -545,8 +546,10 @@ def _hybrid_search_indices(
     sub_emb    = _embeddings[idx_array]
     faiss_sub  = (sub_emb @ q_vec).astype(np.float32)  # shape (M,)
 
-    # --- BM25 scores for the subset ---
-    bm25_global = _bm25_scores(query, len(_catalogue))
+    # --- BM25 scores for the subset (reuse pre-computed if provided) ---
+    if bm25_global is None:
+        bm25_global = _bm25_scores(query, len(_catalogue))
+
     if bm25_global is not None:
         bm25_sub = bm25_global[idx_array]              # shape (M,)
         hybrid   = FAISS_WEIGHT * faiss_sub + BM25_WEIGHT * bm25_sub
@@ -575,6 +578,7 @@ def _hybrid_search_global(
     top_k: int,
     threshold: float = SIMILARITY_THRESHOLD,
     q_vec: Optional[np.ndarray] = None,
+    bm25_global: Optional[np.ndarray] = None,
 ) -> List[Tuple[float, CatalogueRow]]:
     """Global hybrid search across all catalogue rows (Step 3 fallback)."""
     if _embeddings is None or not _catalogue:
@@ -582,7 +586,7 @@ def _hybrid_search_global(
 
     all_indices = list(range(len(_catalogue)))
     return _hybrid_search_indices(
-        query, all_indices, top_k=top_k * 2, threshold=threshold, q_vec=q_vec
+        query, all_indices, top_k=top_k * 2, threshold=threshold, q_vec=q_vec, bm25_global=bm25_global
     )
 
 
@@ -806,7 +810,7 @@ def _priority_search(
     """
     FALLBACK_THRESHOLD = 3   # min good matches before skipping to reranker
 
-    # Pre-encode query vector once so Step 1, 2, and 3 do not re-encode redundantly
+    # Pre-encode query vector and BM25 scores once so Step 1, 2, and 3 do not re-calculate redundantly
     if q_vec is None and _embeddings is not None:
         try:
             model = _get_model()
@@ -818,6 +822,7 @@ def _priority_search(
             logger.warning("Encoding failed in _priority_search (%s)", exc)
             q_vec = None
 
+    bm25_global = _bm25_scores(product_name, len(_catalogue))
     brand_tokens = _extract_brand_tokens(product_name)
     subcat_codes = _infer_subcat_codes(product_name)
 
@@ -836,6 +841,7 @@ def _priority_search(
                 candidate_idx,
                 top_k=top_k * 2,   # fetch extra so reranker has more to work with
                 q_vec=q_vec,
+                bm25_global=bm25_global,
             )
             logger.debug(
                 "Step 1 (sub-cat+brand) for '%s': %d candidates -> %d results (codes=%s)",
@@ -861,6 +867,7 @@ def _priority_search(
                 brand_candidate_idx,
                 top_k=top_k * 2,
                 q_vec=q_vec,
+                bm25_global=bm25_global,
             )
             logger.debug(
                 "Step 2 (brand-only) for '%s': %d candidates -> %d results",
@@ -883,7 +890,7 @@ def _priority_search(
         "Step 3 (global fallback) for '%s': only %d results so far",
         product_name, len(merged),
     )
-    global_results = _hybrid_search_global(product_name, top_k=top_k * 2, q_vec=q_vec)
+    global_results = _hybrid_search_global(product_name, top_k=top_k * 2, q_vec=q_vec, bm25_global=bm25_global)
     for score, row in global_results:
         code = row.get("Item Code", "")
         if code not in seen_codes:

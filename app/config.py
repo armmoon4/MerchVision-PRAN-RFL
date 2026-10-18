@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_model: str = "google/gemini-3.7-flash"
     openrouter_timeout_seconds: int = 45
-    openrouter_max_tokens: int = 20_000
+    openrouter_max_tokens: int = 2000
     # OpenRouter reasoning control ("none", "low", "medium", "high"):
     # Setting to "none" prevents Gemini 3.7 Flash from wasting 1,000+ reasoning tokens per image (~4s latency savings)
     openrouter_reasoning_effort: str = "none"
@@ -41,11 +41,11 @@ class Settings(BaseSettings):
     gemini_timeout_seconds: int = 30
     gemini_thinking_budget: int = 0  # 0 disables reasoning latency for pure shelf extraction
     gemini_thinking_level: str = "low"  # low, medium, or high
-    max_image_dimension: int = 1600  # Default max dimension for Lanczos downscaling
+    max_image_dimension: int = 768  # 768px matches Gemini's native 1-tile size (516 tokens vs 1290+ tokens)
 
     # ── Token Limits (Gemini 3.7 Flash) ───────────────────────────────────────
     max_input_tokens: int = 1_048_576
-    max_output_tokens: int = 20_000
+    max_output_tokens: int = 2000
 
     # ── Token Pricing (USD per 1M tokens) ─────────────────────────────────────
     # OpenRouter listed rates for google/gemini-3.7-flash: $0.75/1M input, $3.75/1M output

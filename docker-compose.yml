@@ -32,6 +32,8 @@ services:
       - ./testui.html:/app/testui.html
       # itemsdb.csv — mounting allows you to update the CSV without rebuilding
       - ./itemsdb.csv:/app/itemsdb.csv
+      # Mount .env so changes are reflected without container rebuild
+      - ./.env:/app/.env
       # Persist uploaded images across restarts
       - ./media:/app/media
       # Persist embeddings across restarts so they are not regenerated on every start.
@@ -45,7 +47,15 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/pran_rfl
       STORAGE_BASE_URL: /
+      # Single-tile Gemini vision resolution (cuts vision tokens from 1290 to 516)
+      MAX_IMAGE_DIMENSION: "768"
+      OPENROUTER_MODEL: "google/gemini-2.5-flash"
+      OPENROUTER_REASONING_EFFORT: "none"
+      OPENROUTER_REASONING_MAX_TOKENS: "0"
+      OPENROUTER_MAX_TOKENS: "500"
+      GEMINI_THINKING_BUDGET: "0"
       # Semantic search tuning (optional overrides)
+      ENABLE_RERANKER: "false"
       EMBEDDING_MODEL: "all-MiniLM-L6-v2"
       CATALOGUE_SIMILARITY_THRESHOLD: "0.30"
       EMBEDDINGS_DIR: "/app/embeddings"

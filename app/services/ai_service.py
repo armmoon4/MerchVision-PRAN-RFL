@@ -1133,12 +1133,14 @@ def analyze_shelf_audit(
     raw_pran_share = raw_metrics.get("pran_shelf_share_pct")
     raw_comp_share = raw_metrics.get("competitor_shelf_share_pct")
 
-    if raw_pran_share is not None and float(raw_pran_share) > 0:
+    if pran_facings == 0:
+        pran_share = 0.0
+    elif raw_pran_share is not None and float(raw_pran_share) > 0:
         pran_share = float(raw_pran_share)
     elif total_facings > 0 and pran_facings > 0:
         pran_share = round((pran_facings / total_facings * 100.0), 1)
     else:
-        pran_share = float(raw_pran_share or 0.0)
+        pran_share = 0.0
 
     if raw_comp_share is not None and float(raw_comp_share) > 0:
         comp_share = float(raw_comp_share)

@@ -474,19 +474,92 @@ $$\text{SkuStatus} \in \{\text{MATCHED}, \text{CANDIDATE}, \text{UNKNOWN\_PRAN},
 
 ### 2. Six Image-Provable RES Scoring Pillars
 
-All outside dependencies (such as assumed store planograms, manual SKU lists, or pre-entered price lists) are removed. The Retail Execution Score evaluates only what can be proven from the photograph:
+All outside assumptions (such as assumed store planograms, manual SKU lists, or pre-entered price lists) are removed. The Retail Execution Score evaluates only what can be proven from the photograph:
 
-| Pillar | Metric Evaluated | Max Points | Formula |
-|---|---|---|---|
-| **Presence** | PRAN detected at all; number of distinct products & variety | 20.0 | $\min(20.0, 8.0 + (\text{distinct\_skus} \times 3.0))$ |
-| **Visibility / SOS** | PRAN linear share of shelf vs configurable benchmark (default: 30%) | 25.0 | $\min\left(25.0, \frac{\text{pran\_sos}}{\text{benchmark\_sos}} \times 25.0\right)$ |
-| **Placement** | PRAN facings at eye level (Golden Zone) vs top / bottom | 20.0 | $\left(\frac{\text{pran\_eye\_facings}}{\max(\text{pran\_facings}, 1)}\right) \times 20.0$ |
-| **Arrangement** | Front-facing labels, variant clustering, no stacking mess | 15.0 | $\left(\frac{\text{arrangement\_score}}{100.0}\right) \times 15.0$ |
-| **Stock Health** | Visible voids and empty shelf percentage around PRAN items | 10.0 | $\max(0.0, 10.0 - \min(\text{empty\_pct} \times 0.2, 5.0) - \min(\text{gaps} \times 2.0, 5.0))$ |
-| **Price & Promo** | Visible shelf price tags near PRAN items; wobblers/talkers present | 10.0 | $(\text{price\_tag\_ratio} \times 7.0) + (3.0 \text{ if promo visible else } 0.0)$ |
+| Pillar | Metric Evaluated | Max Points | Exact Formula | Deduction Threshold |
+|---|---|---|---|---|
+| **1. Presence** | PRAN detected at all; number of distinct products & variety | 20.0 | $\min(20.0, 8.0 + (\text{distinct\_skus} \times 3.0))$ | Deduction if score < 14.0 pts: `[-] -X pts: Low PRAN product variety (N distinct SKU(s) visible)` |
+| **2. Visibility / SOS** | PRAN linear share of shelf vs configurable benchmark (default: 30%) | 25.0 | $\min\left(25.0, \frac{\text{pran\_sos}}{\text{benchmark\_sos}} \times 25.0\right)$ | Deduction if SOS < 15.0%: `[-] -X pts: Low PRAN shelf share (X% vs reference benchmark 30.0%)` |
+| **3. Placement** | PRAN facings at eye level (Golden Zone) vs top / bottom | 20.0 | $\left(\frac{\text{pran\_eye\_facings}}{\max(\text{pran\_facings}, 1)}\right) \times 20.0$ | Deduction if eye ratio < 35%: `[-] -X pts: Weak Golden Zone placement (X% of PRAN items at eye level)` |
+| **4. Arrangement** | Front-facing labels, variant clustering, no stacking mess | 15.0 | $\left(\frac{\text{arrangement\_score}}{100.0}\right) \times 15.0$ | Deduction if arrangement < 70/100: `[-] -X pts: Product facings misaligned or irregular grouping` |
+| **5. Stock Health** | Visible voids and empty shelf percentage around PRAN items | 10.0 | $\max(0.0, 10.0 - \min(\text{empty\_pct} \times 0.2, 5.0) - \min(\text{gaps} \times 2.0, 5.0))$ | Deduction if gaps > 0 or empty space > 5%: `[-] -X pts: Stock health penalty (N gap(s), X% empty space)` |
+| **6. Price & Promo** | Visible shelf price tags near PRAN items; wobblers/talkers present | 10.0 | $(\text{price\_tag\_ratio} \times 7.0) + (3.0 \text{ if promo visible else } 0.0)$ | Deduction if no price tags (-7.0 pts) or no promo wobblers (-3.0 pts) |
 
-#### Normalization:
-$$\text{RES Score} = \frac{\sum \text{Earned Points}}{\sum \text{Evaluated Possible Points}} \times 100.0$$
+---
+
+### 3. Step-by-Step Scoring Mechanics
+
+#### Case A: PRAN Products Visible on Shelf (`pran_facings > 0`)
+
+1. **Pillar 1: Presence (Max 20.0 pts)**
+   - Awarded base **8.0 points** for PRAN brand presence on the fixture.
+   - Earns **+3.0 points** for each distinct PRAN SKU identified in frame (`pran_summary.distinct_products`).
+   - Capped at **20.0 points** ($\ge 4$ distinct SKUs earns full points).
+   - If earned score is below 14.0 points, logs deduction: `[-] -X pts: Low PRAN product variety`.
+
+2. **Pillar 2: Visibility / Share of Shelf (Max 25.0 pts)**
+   - Measures PRAN linear width percentage (`shelf_metrics.pran_shelf_share_pct`) against the category benchmark (`settings.sos_benchmark_pct`, default: `30.0%`).
+   - Formula: $\text{score} = \min\left(25.0, \frac{\text{pran\_sos}}{30.0} \times 25.0\right)$. Reaching 30.0% SOS earns full 25.0 points.
+   - If actual SOS falls below 15.0%, logs deduction: `[-] -X pts: Low PRAN shelf share` and generates a LOW severity issue.
+
+3. **Pillar 3: Golden Zone Placement (Max 20.0 pts)**
+   - Evaluates the proportion of PRAN facings positioned at eye level (`eye_level` shelf tier) vs. bottom or top tiers:
+     $$\text{eye\_ratio} = \frac{\text{pran\_eye\_facings}}{\text{total\_pran\_facings}}$$
+     $$\text{score} = \text{round}(\text{eye\_ratio} \times 20.0, 1)$$
+   - If eye-level ratio is below 35%, logs deduction: `[-] -X pts: Weak Golden Zone placement` and flags a MEDIUM severity recommendation to relocate SKUs to eye level.
+
+4. **Pillar 4: Shelf Arrangement (Max 15.0 pts)**
+   - The Vision AI evaluates front-facing labels, packaging orientation, and flavor variant clustering on a 0–100 scale (`arrangement_score`).
+   - Formula: $\text{score} = \text{round}\left(\frac{\text{arrangement\_score}}{100.0} \times 15.0, 1\right)$.
+   - If arrangement is below 70/100, logs deduction: `[-] -X pts: Product facings misaligned or irregular grouping`.
+
+5. **Pillar 5: Stock Health (Max 10.0 pts)**
+   - Starts at **10.0 points**. Deducts points for visible voids and empty linear shelf space:
+     $$\text{deduction} = \min(\text{empty\_shelf\_pct} \times 0.2, 5.0) + \min(\text{visible\_gaps\_count} \times 2.0, 5.0)$$
+     $$\text{score} = \max(0.0, 10.0 - \text{deduction})$$
+   - If gaps > 0 or empty space > 5.0%, logs deduction: `[-] -X pts: Stock health penalty`.
+
+6. **Pillar 6: Price & Promo Visibility (Max 10.0 pts)**
+   - Up to **7.0 points** for shelf price tag coverage near PRAN products ($\text{price\_tag\_ratio} \times 7.0$).
+   - **+3.0 points** for active promotional talkers, wobblers, shelf strips, or contest tags (e.g. `'BELI & MENANG'`).
+   - If no price tags are detected, deducts 7.0 pts. If no promotional wobblers are present, deducts 3.0 pts.
+
+7. **Composite Score & Normalization**:
+   $$\text{Earned Points} = \sum_{p \in \text{evaluated}} p.\text{score}$$
+   $$\text{Possible Points} = \sum_{p \in \text{evaluated}} p.\text{max\_pts}$$
+   $$\text{Retail Execution Score} = \text{round}\left(\frac{\text{Earned Points}}{\text{Possible Points}} \times 100.0, 1\right)$$
+
+---
+
+#### Case B: Special Case — Zero PRAN Products Detected (`pran_facings == 0`)
+
+When a captured photo contains only competitor products, empty shelves, or non-PRAN grocery sections (such as in shopkeeper scenes or competitor-only fixtures):
+
+1. **Why Retail Execution Score is `null` (Displayed as `N/A`)**:
+   - Awarding a numerical score (e.g. 35/100) would be misleading because it implies PRAN execution was partially performed.
+   - PRAN cannot score points for competitor price tags, competitor stock health, or competitor arrangement.
+   - Therefore, `retail_execution_score.score = null` (rendered as **`N/A`** in the UI) and `grade = "No PRAN Detected"`.
+
+2. **Why All 6 Pillars are `0.0`**:
+   - `presence = 0.0 / 20.0` (zero PRAN SKUs)
+   - `visibility_sos = 0.0 / 25.0` (0% PRAN linear share)
+   - `placement = 0.0 / 20.0` (zero PRAN facings at eye level)
+   - `arrangement = 0.0 / 15.0` (zero PRAN facings to arrange)
+   - `stock_health = 0.0 / 10.0` (no PRAN inventory present to evaluate)
+   - `price_promo = 0.0 / 10.0` (no PRAN price tags or PRAN promotional wobblers)
+
+3. **Why `Shelf Arrangement Index` (e.g. 40/100) is Still Displayed**:
+   - The arrangement index (`shelf_metrics.arrangement_score`) measures the general physical neatness and alignment of the entire visible shelf structure (even if it contains competitor products).
+   - This provides perceptual context to supervisors without granting any unearned PRAN execution score points.
+
+4. **Deductions & Audit Summary**:
+   - `deductions`: Explicitly lists `["No PRAN products visible on shelf fixture"]`.
+   - `audit_summary.status`: Set to `"no_pran_detected"`.
+   - `pran_summary.pran_detected`: Set to `false`.
+   - `shelf_metrics.pran_shelf_share_pct`: Locked to `0.0%`.
+   - `recommended_actions`: Generates directive: `Verify shelf section and capture a photo containing PRAN inventory.`
+
+---
 
 #### Grade Thresholds:
 $$\text{Grade} = \begin{cases}

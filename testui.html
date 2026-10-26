@@ -1585,10 +1585,10 @@
 
       // 4. Share of Shelf & Facings
       const metrics = report.shelf_metrics || {};
-      const pranSos = Math.round(metrics.pran_shelf_share_pct != null ? metrics.pran_shelf_share_pct : 0);
-      const compSos = Math.round(metrics.competitor_shelf_share_pct != null ? metrics.competitor_shelf_share_pct : Math.max(0, 100 - pranSos));
       const pranFacings = metrics.pran_facing_count != null ? metrics.pran_facing_count : 0;
       const compFacings = metrics.competitor_facing_count != null ? metrics.competitor_facing_count : 0;
+      const pranSos = (pranFacings === 0) ? 0 : Math.round(metrics.pran_shelf_share_pct != null ? metrics.pran_shelf_share_pct : 0);
+      const compSos = Math.round(metrics.competitor_shelf_share_pct != null ? metrics.competitor_shelf_share_pct : Math.max(0, 100 - pranSos));
 
       const pranSosEl = document.getElementById('mPranSos');
       if (pranSosEl) pranSosEl.textContent = pranSos + "%";

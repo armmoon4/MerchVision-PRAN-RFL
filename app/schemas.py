@@ -4,11 +4,28 @@ app/schemas.py — Pydantic request/response models.
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.models import ProcessingStatus
+
+
+# ── Brand & SKU Classification Enums (Image-Only Mode) ─────────────────────────
+
+
+class BrandClass(str, Enum):
+    PRAN = "pran"
+    COMPETITOR = "competitor"
+    UNKNOWN = "unknown"
+
+
+class SkuStatus(str, Enum):
+    MATCHED = "matched"            # high confidence + margin
+    CANDIDATE = "candidate"        # plausible, show top-3
+    UNKNOWN_PRAN = "unknown_pran"  # PRAN brand, not in catalogue
+    NOT_APPLICABLE = "n/a"         # competitor
 
 
 # ── Sub-models ────────────────────────────────────────────────────────────────
@@ -364,15 +381,25 @@ class ShelfMetrics(BaseModel):
 
 class DetectedProductDetail(BaseModel):
     brand: Optional[str] = "PRAN"
+    brand_class: BrandClass = BrandClass.UNKNOWN
+    brand_evidence: str = ""
+    brand_confidence: float = 0.0
     product_name: Optional[str] = None
     variant: Optional[str] = None
     sku: Optional[str] = None
+    sku_code: Optional[str] = None
+    sku_status: SkuStatus = SkuStatus.UNKNOWN_PRAN
     facing_count: Optional[int] = 1
     shelf_level: Optional[str] = "eye_level"  # eye_level | top | bottom | unknown
     bounding_box_normalized: Optional[List[float]] = None
     confidence: Optional[str] = "high"  # high | medium | low
     catalogue_suggestions: Optional[List[CatalogueSuggestion]] = None
+    candidates: Optional[List[CatalogueSuggestion]] = None
     matched: Optional[bool] = None
+
+
+# Alias for clean parity with design specification
+Detection = DetectedProductDetail
 
 
 class IssueDetected(BaseModel):
@@ -405,14 +432,53 @@ class PricingAndPromotions(BaseModel):
     confidence: str = "high"
 
 
+# ── Image-Only Structured Sub-Models ──────────────────────────────────────────
+
+
+class ImageQualityDetail(BaseModel):
+    score: float = 0.85
+    issues: List[str] = []
+
+
+class SkuBreakdownItem(BaseModel):
+    product_name: str
+    sku_status: SkuStatus = SkuStatus.UNKNOWN_PRAN
+    sku_code: Optional[str] = None
+    facings: int = 1
+    levels: List[str] = []
+
+
+class PranSummary(BaseModel):
+    pran_detected: bool = False
+    distinct_products: int = 0
+    total_facings: int = 0
+    sos_pct: float = 0.0
+    eye_level_share_pct: float = 0.0
+    sku_breakdown: List[SkuBreakdownItem] = []
+
+
+class CatalogueCoverage(BaseModel):
+    pran_facings_total: int = 0
+    matched: int = 0
+    candidate: int = 0
+    unknown_pran: int = 0
+
+
+class CompetitorSummary(BaseModel):
+    brand: str
+    facings: int = 1
+
+
 class RetailExecutionScore(BaseModel):
-    score: float = 75.0
-    grade: str = "Needs Attention"  # Excellent, Good, Needs Attention, Critical
-    availability_score: float = 80.0
-    planogram_score: float = 75.0
-    sos_score: float = 70.0
-    pricing_score: float = 90.0
-    promotion_score: float = 85.0
+    score: Optional[float] = None
+    grade: str = "Needs Attention"  # Excellent, Good, Needs Attention, Critical Action Required, No PRAN Detected
+    mode: str = "image_only"
+    pillars: Dict[str, float] = {}
+    availability_score: Optional[float] = None
+    planogram_score: Optional[float] = None
+    sos_score: Optional[float] = None
+    pricing_score: Optional[float] = None
+    promotion_score: Optional[float] = None
     deductions: List[str] = []
 
 
@@ -422,6 +488,12 @@ class ShelfAuditReport(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     audit_id: str
+    input_context: str = "image_only"
+    image_quality: Optional[ImageQualityDetail] = None
+    fixture_category: str = "general"
+    pran_summary: Optional[PranSummary] = None
+    competitors: List[CompetitorSummary] = []
+    catalogue_coverage: Optional[CatalogueCoverage] = None
     visit_id: Optional[str] = None
     outlet_id: Optional[str] = None
     outlet_name: Optional[str] = None

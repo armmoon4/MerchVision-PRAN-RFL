@@ -54,17 +54,26 @@ from google.genai.errors import APIError
 from openai import OpenAI, OpenAIError
 import httpx
 
+from app.brands import build_brand_registry, is_known_pran_token
 from app.config import get_settings
 from app.schemas import (
     AuditSummary,
     AvailabilityAlerts,
+    BrandClass,
+    CatalogueCoverage,
     CatalogueSuggestion,
+    CompetitorSummary,
     DetectedProductDetail,
+    Detection,
+    ImageQualityDetail,
     IssueDetected,
     PricingAndPromotions,
+    PranSummary,
     RetailExecutionScore,
     ShelfAuditReport,
     ShelfMetrics,
+    SkuBreakdownItem,
+    SkuStatus,
     TokenUsage,
 )
 from app.services.items_db_service import enrich_product, enrich_products, load_items_db
@@ -83,19 +92,35 @@ Rules:
 - quantity: integer count visible (default 1)
 - NO markdown, NO JSON, NO explanations. If none visible, output single empty line."""
 
-MERCHANDISING_SYSTEM_PROMPT = """You are PRAN Merchandising AI, an expert retail shelf auditor. Analyze shelf photos and return concise, actionable insights in valid JSON only.
+MERCHANDISING_SYSTEM_PROMPT = """You are PRAN Merchandising AI, an expert retail shelf auditor in image-only mode.
+Your core task is: "What PRAN products are on this shelf and how much space do they take?"
 
 DETECTION RULES:
-1. Product detection: Identify PRAN and competitor brands, product names, variants, and facing counts.
-   - PRAN products include: Frooto, Drinko, Drinko Float, Mr. Noodles, Potata, Bisk Club, Pran UP, Lassi, Cheer Up, Maxx, All Time, Badam Vaja, Dal Vaja, Chanachur, Toast, Rusk, Litchi, Semai, and any item carrying the PRAN or RFL logo. For any PRAN product, set "brand": "PRAN".
-   - For competitor products, identify their specific brand name (e.g., Julie's, Nabati, Jacker, Coca-Cola, Pepsi, Sprite, Maggi, Knorr, Nestle, Olympic).
-2. Shelf Share (SOS): Estimate PRAN and competitor shelf share percentage (0-100) by visible shelf width.
-3. Shelf Levels: Assign shelf_level as "top", "eye_level" (golden zone, 1.2m-1.6m high), "middle", or "bottom".
-4. Pricing & Promotions: Extract readable prices and promotional wobblers/signage. Only include entries for products with readable prices, promotional tags, or missing price issues.
-5. Conciseness: Keep sentences tight (1 sentence per finding/action). Omit filler text. Keep bounding_box_normalized as null.
+1. Product Detection:
+   - Identify every visible product on the shelf.
+   - Set "brand_class":
+     * "pran": PRAN, RFL, Frooto, Drinko, Mr. Noodles, Potata, Bisk Club, Pran UP, Lassi, Cheer Up, Maxx, All Time, Badam/Dal Vaja, Chanachur, Toast, Rusk, Litchi, Semai, Mama Cube, or any product carrying the PRAN or RFL logo/branding.
+     * "competitor": Any non-PRAN commercial brand (e.g. Julie's, Nabati, Jacker, Oreo, Coca-Cola, Pepsi, Sprite, Maggi, Knorr, Nestle, Olympic).
+     * "unknown": Unidentifiable package or brand.
+   - Set "brand_evidence": Specific visual evidence observed (e.g., "logo: PRAN", "text: 'Frooto'", "pack design: Potata", "text: 'Julie's Love Letters'").
+   - Set "brand_confidence": Float between 0.0 and 1.0.
+   - Set "brand": Brand name (e.g., "PRAN", "Julie's", "Nabati", "Unknown").
+   - Set "product_name": Full product name with variant/flavor and size if readable.
+   - Set "facing_count": Integer count of front-facing packages.
+   - Set "shelf_level": "top", "eye_level" (golden zone, 1.2m-1.6m high), "middle", or "bottom".
+2. Fixture Category: Set "fixture_category" to one of: "biscuit", "beverage", "noodles", "culinary", "confectionery", or "general".
+3. Image Quality: Provide "image_quality": {"score": float 0.0-1.0, "issues": ["glare | blur | partial_view"]}.
+4. Shelf Share (SOS): Estimate pran_shelf_share_pct and competitor_shelf_share_pct (0-100) by visible linear shelf width.
+5. Pricing & Promotions: Extract visible price tags and promotional talkers/wobblers (e.g., 'BELI & MENANG' contest wobblers).
+6. Conciseness: Keep sentences tight. Omit filler text. Bounding boxes are not required (set to null).
 
 Return JSON adhering strictly to this structure:
 {
+  "fixture_category": "biscuit | beverage | noodles | culinary | confectionery | general",
+  "image_quality": {
+    "score": 0.85,
+    "issues": []
+  },
   "audit_summary": {
     "status": "needs_attention | acceptable | unable_to_determine",
     "image_quality": "good | fair | poor",
@@ -108,11 +133,14 @@ Return JSON adhering strictly to this structure:
     "pran_facing_count": null,
     "competitor_facing_count": null,
     "arrangement_score": null,
-    "measurement_type": "measured | estimated | unavailable"
+    "measurement_type": "estimated"
   },
   "detected_products": [
     {
       "brand": "PRAN or competitor brand",
+      "brand_class": "pran | competitor | unknown",
+      "brand_evidence": "text: 'Frooto' or logo: PRAN",
+      "brand_confidence": 0.95,
       "product_name": "Full product name",
       "variant": "Flavor or pack type or null",
       "sku": null,
@@ -140,7 +168,7 @@ Return JSON adhering strictly to this structure:
       "product": "Product or display group name",
       "visible_price": null,
       "promotion_detected": false,
-      "pricing_violation": "confirmed | suspected | not_detected | not_evaluated",
+      "pricing_violation": "not_evaluated",
       "confidence": "high | medium | low"
     }
   ],
@@ -901,7 +929,9 @@ def analyze_shelf_audit(
 
     # ── Step 1b: Exact Image Cache Check (<1ms response for repeat audits) ─────
     image_hash = hashlib.sha256(image_bytes).hexdigest()
-    cache_key = f"{image_hash}:{outlet_id or ''}:{audit_stage}:{target_pran_sos}:{expected_skus or ''}"
+    prompt_version = getattr(settings, "prompt_version", "v3_image_only")
+    rules_version = getattr(settings, "rules_version", "v3_image_only")
+    cache_key = f"{image_hash}:{prompt_version}:{rules_version}"
     cached_report = _SHELF_AUDIT_CACHE.get(cache_key)
     if cached_report is not None:
         logger.info("ShelfAuditCache hit for hash %s... returning cached report (<1ms)", image_hash[:12])
@@ -914,38 +944,10 @@ def analyze_shelf_audit(
     raw_text: str = ""
     token_usage_dict: dict[str, Any] = {}
 
-    prompt_context_lines = [
-        "Audit this retail shelf photo. Return concise, high-precision results in valid JSON.",
-        "",
-        "DETECTION OBJECTIVES:",
-        "1. Product Detection:",
-        "   - PRAN products (Frooto, Drinko, Drinko Float, Mr. Noodles, Potata, Bisk Club, PRAN UP, Lassi, Cheer Up, Maxx, All Time, Badam Vaja, Dal Vaja, Chanachur, Toast, Rusk, Litchi, Semai, and any item with PRAN logo) -> set \"brand\": \"PRAN\".",
-        "   - Competitors: Specify exact brand name (e.g., Julie's, Nabati, Jacker, Muzic, Coca-Cola, Pepsi, Sprite, Maggi, Knorr, Nestle, Olympic).",
-        "2. Facings & Levels:",
-        "   - Count visible front facings. Identify shelf level: 'top', 'eye_level' (golden zone, 1.2m-1.6m), 'middle', or 'bottom'.",
-        "3. Share of Shelf (SOS):",
-        "   - Estimate horizontal shelf width %: pran_shelf_share_pct and competitor_shelf_share_pct.",
-        "4. Availability & Gaps:",
-        "   - Detect empty shelf voids or stockout gaps where products are missing.",
-        "5. Pricing & Promotions:",
-        "   - Extract readable shelf price tags and promotional materials (wobblers, discount stickers, banners).",
-        "6. Corrective Actions:",
-        "   - Provide concrete, prioritized 1-sentence actions for merchandisers (HIGH, MEDIUM, LOW).",
-        "7. Conciseness:",
-        "   - Keep findings tight (1 sentence each). Omit filler text. Keep bounding_box_normalized null.",
-    ]
-
-    if expected_skus:
-        prompt_context_lines.append(f"Store Assortment / Expected SKUs: {', '.join(expected_skus)}")
-    if target_pran_sos:
-        prompt_context_lines.append(f"Agreed Target PRAN Share of Shelf: {target_pran_sos}%")
-    if approved_prices:
-        prompt_context_lines.append(f"Approved Price Reference: {json.dumps(approved_prices)}")
-    if planogram_rules:
-        prompt_context_lines.append(f"Planogram Guidelines: {json.dumps(planogram_rules)}")
-
-    prompt_context_lines.append("Return valid JSON only adhering strictly to the requested schema.")
-    user_audit_prompt = "\n".join(prompt_context_lines)
+    user_audit_prompt = (
+        "Audit this retail shelf photo in image-only mode. Identify all PRAN products and visible competitor items.\n"
+        "Return concise, high-precision results in valid JSON strictly adhering to the schema."
+    )
 
     if provider == "openrouter" and has_openrouter_key:
         raw_text, token_usage_dict = _call_openrouter(
@@ -984,91 +986,128 @@ def analyze_shelf_audit(
 
     parsed_json = _parse_merchandising_json(raw_text)
 
-    # 1. Parse raw detected products & enrich PRAN items with catalogue
+    # 1. Parse raw detected products & brand classification
     raw_products = parsed_json.get("detected_products") or []
     detected_products_list: list[DetectedProductDetail] = []
+
+    sim_threshold = float(getattr(settings, "catalogue_similarity_threshold", 0.55))
+    match_threshold = float(getattr(settings, "catalogue_match_threshold", 0.78))
+    margin_min = float(getattr(settings, "catalogue_margin_min", 0.05))
 
     for item in raw_products:
         if not isinstance(item, dict):
             continue
         p_name = str(item.get("product_name") or item.get("name") or "").strip()
         raw_brand = str(item.get("brand") or "").strip()
+        raw_bclass = str(item.get("brand_class") or "").strip().lower()
+        brand_evidence = str(item.get("brand_evidence") or "").strip()
+        try:
+            brand_confidence = float(item.get("brand_confidence") or 0.85)
+        except (ValueError, TypeError):
+            brand_confidence = 0.85
+
         variant = item.get("variant")
-        sku = item.get("sku")
         facing = item.get("facing_count") or item.get("facings") or 1
-        shelf_level = item.get("shelf_level") or "eye_level"
-        confidence = item.get("confidence") or "high"
+        facing_int = int(facing) if isinstance(facing, (int, float)) and facing > 0 else 1
+        shelf_level = str(item.get("shelf_level") or "eye_level").lower()
+        confidence = str(item.get("confidence") or "high")
         bbox = item.get("bounding_box_normalized") or item.get("bbox")
 
-        # Zero-token local catalogue enrichment for PRAN products
-        suggestions = []
+        # Split brand identity from SKU identity
+        is_pran_token = is_known_pran_token(p_name) or is_known_pran_token(raw_brand)
+
+        if raw_bclass == "pran" or (not raw_bclass and is_pran_token):
+            brand_class = BrandClass.PRAN
+            # Guardrail: If model says PRAN but evidence is only "colour" or vague without text/logo/subbrand, downgrade to UNKNOWN
+            ev_lower = brand_evidence.lower()
+            is_weak_evidence = (
+                ("colour" in ev_lower or "color" in ev_lower)
+                and not any(k in ev_lower for k in ["logo", "text", "name", "pack", "font", "label", "pran", "bisk", "frooto"])
+                and not is_pran_token
+            )
+            if is_weak_evidence or (brand_confidence < 0.40 and not is_pran_token):
+                brand_class = BrandClass.UNKNOWN
+                brand_evidence = f"{brand_evidence} (downgraded to unknown: insufficient text/logo evidence)"
+                brand = "Unknown"
+            else:
+                brand = "PRAN"
+        elif raw_bclass == "competitor" or (raw_brand.lower() not in ["", "unknown", "pran"] and not is_pran_token):
+            brand_class = BrandClass.COMPETITOR
+            brand = raw_brand or "Competitor"
+        else:
+            brand_class = BrandClass.UNKNOWN
+            brand = "Unknown"
+
+        # Catalogue enrichment with SkuStatus (MATCHED, CANDIDATE, UNKNOWN_PRAN, NOT_APPLICABLE)
+        suggestions: list[CatalogueSuggestion] = []
+        candidates: list[CatalogueSuggestion] = []
+        sku_code: str | None = None
         matched = False
-        pran_sub_brands = [
-            "PRAN", "FROOTO", "DRINKO", "MR. NOODLES", "MR NOODLES", "NOODLE", "POTATA",
-            "BISK CLUB", "LASSI", "PRAN UP", "CHEER UP", "MAXX", "ALL TIME", "BADAM VAJA",
-            "DAL VAJA", "CHANACHUR", "TOAST", "RUSK", "MISTER NOODLE", "LITCHI DRINK",
-            "CHIA SEED", "LAVILA", "MAMA CUBE"
-        ]
-        competitor_keywords = [
-            "JULIE", "NABATI", "JACKER", "MUZIC", "COCOPIE", "CHOCO PIE", "OREO", "MUNCHY",
-            "HUP SENG", "ROMA", "COCA-COLA", "COKE", "PEPSI", "FANTA", "SPRITE", "7UP",
-            "MOUNTAIN DEW", "MIRINDA", "STING", "MAGGI", "KNORR", "BOMBAY SWEETS", "OLYMPIC",
-            "NESTLE", "DANONE", "TWISTER", "DUTCH LADY", "MILO", "TIGER"
-        ]
 
-        has_competitor_indicator = (
-            any(cw in raw_brand.upper() for cw in competitor_keywords)
-            or any(cw in p_name.upper() for cw in competitor_keywords)
-        )
-
-        has_pran_indicator = (
-            "PRAN" in raw_brand.upper()
-            or any(pw in raw_brand.upper() for pw in pran_sub_brands)
-            or any(pw in p_name.upper() for pw in pran_sub_brands)
-        )
-
-        is_pran = has_pran_indicator and not has_competitor_indicator
-        brand = "PRAN" if is_pran else (raw_brand or "Competitor")
-
-        # Only enrich with PRAN master catalogue if it is confirmed/plausible PRAN
-        if is_pran or (not has_competitor_indicator and not raw_brand):
+        if brand_class == BrandClass.PRAN:
             try:
                 matches = enrich_product(p_name, top_k=3)
                 if matches:
-                    top_conf, _ = matches[0]
-                    if top_conf >= 0.55 or (is_pran and top_conf >= 0.40):
-                        is_pran = True
+                    top_conf, top_row = matches[0]
+                    second_conf = matches[1][0] if len(matches) > 1 else 0.0
+                    margin = top_conf - second_conf
+
+                    formatted_matches = [
+                        CatalogueSuggestion(
+                            sub_category_name=row.get("Sub Category Name", ""),
+                            sub_category_code=row.get("Sub Category Code", ""),
+                            category_name=row.get("Category Name", ""),
+                            category_code=row.get("Category Code", ""),
+                            item_name=row.get("Item Name", ""),
+                            item_code=row.get("Item Code", ""),
+                            item_image_url=row.get("Item Image URL", ""),
+                            confidence=round(float(conf), 3),
+                        )
+                        for conf, row in matches
+                    ]
+
+                    if top_conf >= match_threshold and margin >= margin_min:
+                        sku_status = SkuStatus.MATCHED
+                        sku_code = str(top_row.get("Item Code", ""))
                         matched = True
-                        brand = "PRAN"
-                        for conf, row in matches:
-                            suggestions.append(
-                                CatalogueSuggestion(
-                                    sub_category_name=row.get("Sub Category Name", ""),
-                                    sub_category_code=row.get("Sub Category Code", ""),
-                                    category_name=row.get("Category Name", ""),
-                                    category_code=row.get("Category Code", ""),
-                                    item_name=row.get("Item Name", ""),
-                                    item_code=row.get("Item Code", ""),
-                                    item_image_url=row.get("Item Image URL", ""),
-                                    confidence=round(float(conf), 3),
-                                )
-                            )
-                        if not sku and suggestions:
-                            sku = suggestions[0].item_code
+                        suggestions = formatted_matches[:1]
+                    elif top_conf >= sim_threshold:
+                        sku_status = SkuStatus.CANDIDATE
+                        sku_code = str(top_row.get("Item Code", ""))
+                        candidates = formatted_matches[:3]
+                        suggestions = formatted_matches[:3]
+                        matched = False
+                    else:
+                        sku_status = SkuStatus.UNKNOWN_PRAN
+                        matched = False
+                else:
+                    sku_status = SkuStatus.UNKNOWN_PRAN
+                    matched = False
             except Exception as e:
                 logger.warning("Catalogue enrichment lookup error for %s: %s", p_name, e)
+                sku_status = SkuStatus.UNKNOWN_PRAN
+                matched = False
+        else:
+            sku_status = SkuStatus.NOT_APPLICABLE
+            matched = False
 
         detected_products_list.append(
             DetectedProductDetail(
                 brand=brand,
+                brand_class=brand_class,
+                brand_evidence=brand_evidence,
+                brand_confidence=brand_confidence,
                 product_name=p_name or "Unknown Item",
                 variant=variant,
-                sku=sku,
-                facing_count=int(facing) if isinstance(facing, (int, float)) and facing > 0 else 1,
-                shelf_level=str(shelf_level).lower(),
+                sku=sku_code,
+                sku_code=sku_code,
+                sku_status=sku_status,
+                facing_count=facing_int,
+                shelf_level=shelf_level,
                 bounding_box_normalized=bbox if isinstance(bbox, list) else None,
                 confidence=confidence,
                 catalogue_suggestions=suggestions if suggestions else None,
+                candidates=candidates if candidates else None,
                 matched=matched,
             )
         )
@@ -1083,16 +1122,17 @@ def analyze_shelf_audit(
         inventory_status=str(raw_avail.get("inventory_status") or "unverified"),
     )
 
-    # 3. Extract metrics
+    # 3. Facings depend strictly on brand_class (split brand from SKU matching)
+    pran_facings = sum(d.facing_count or 1 for d in detected_products_list if d.brand_class == BrandClass.PRAN)
+    comp_facings = sum(d.facing_count or 1 for d in detected_products_list if d.brand_class == BrandClass.COMPETITOR)
+    unknown_facings = sum(d.facing_count or 1 for d in detected_products_list if d.brand_class == BrandClass.UNKNOWN)
+    total_facings = pran_facings + comp_facings + unknown_facings
+
+    # Extract metrics
     raw_metrics = parsed_json.get("shelf_metrics") or {}
     raw_pran_share = raw_metrics.get("pran_shelf_share_pct")
     raw_comp_share = raw_metrics.get("competitor_shelf_share_pct")
 
-    pran_facings = sum(p.facing_count or 1 for p in detected_products_list if (p.brand or "").upper() == "PRAN" or p.matched)
-    comp_facings = sum(p.facing_count or 1 for p in detected_products_list if (p.brand or "").upper() != "PRAN" and not p.matched)
-    total_facings = pran_facings + comp_facings
-
-    # If raw_pran_share is provided and > 0, respect it; otherwise compute from facings
     if raw_pran_share is not None and float(raw_pran_share) > 0:
         pran_share = float(raw_pran_share)
     elif total_facings > 0 and pran_facings > 0:
@@ -1156,8 +1196,8 @@ def analyze_shelf_audit(
                 )
             )
 
-    # 5. Evaluate Business Rules & Retail Execution Score
-    res_score, final_issues, final_actions, final_insights = evaluate_retail_execution(
+    # 5. Evaluate Business Rules & Retail Execution Score in image-only mode
+    res_score, final_issues, final_actions, final_insights, overall_status = evaluate_retail_execution(
         detected_products=detected_products_list,
         shelf_metrics=shelf_metrics,
         availability_alerts=availability_alerts,
@@ -1170,10 +1210,92 @@ def analyze_shelf_audit(
     # 6. Audit summary
     raw_summary = parsed_json.get("audit_summary") or {}
     audit_summary = AuditSummary(
-        status="needs_attention" if res_score.score < 80.0 else "acceptable",
+        status=overall_status,
         image_quality=str(raw_summary.get("image_quality") or "good"),
         key_findings=list(raw_summary.get("key_findings") or final_insights[:2]),
     )
+
+    # 7. Check SOS vs Facing ratio consistency
+    facing_ratio = (pran_facings / max(total_facings, 1)) * 100.0
+    sos_mismatch = False
+    if abs(pran_share - facing_ratio) > 12.0 and pran_facings > 0:
+        sos_mismatch = True
+        final_insights.append(
+            f"Linear shelf share ({pran_share:.1f}%) diverges from facing ratio ({facing_ratio:.1f}%); wide package sizes or shelf edge spacing may be present."
+        )
+
+    # 8. Build Image-Only Sub-Models (pran_summary, catalogue_coverage, competitors, image_quality)
+    fixture_category = str(parsed_json.get("fixture_category") or "general").lower()
+
+    raw_iq = parsed_json.get("image_quality") or {}
+    if isinstance(raw_iq, dict):
+        iq_score = float(raw_iq.get("score") or 0.85)
+        iq_issues = list(raw_iq.get("issues") or [])
+    else:
+        iq_score = 0.85
+        iq_issues = []
+    image_quality_obj = ImageQualityDetail(score=iq_score, issues=iq_issues)
+
+    breakdown_map: dict[str, dict[str, Any]] = {}
+    for d in detected_products_list:
+        if d.brand_class == BrandClass.PRAN:
+            name = d.product_name or "PRAN Product"
+            if name not in breakdown_map:
+                breakdown_map[name] = {
+                    "product_name": name,
+                    "sku_status": d.sku_status,
+                    "sku_code": d.sku_code,
+                    "facings": 0,
+                    "levels": set(),
+                }
+            breakdown_map[name]["facings"] += (d.facing_count or 1)
+            if d.shelf_level:
+                breakdown_map[name]["levels"].add(d.shelf_level)
+
+    sku_breakdown_items = [
+        SkuBreakdownItem(
+            product_name=item["product_name"],
+            sku_status=item["sku_status"],
+            sku_code=item["sku_code"],
+            facings=item["facings"],
+            levels=sorted(list(item["levels"])),
+        )
+        for item in breakdown_map.values()
+    ]
+
+    pran_eye_facings = sum(d.facing_count or 1 for d in detected_products_list if d.brand_class == BrandClass.PRAN and d.shelf_level == "eye_level")
+    eye_share = round((pran_eye_facings / max(pran_facings, 1)) * 100.0, 1) if pran_facings > 0 else 0.0
+
+    pran_summary = PranSummary(
+        pran_detected=bool(pran_facings > 0),
+        distinct_products=len(breakdown_map),
+        total_facings=pran_facings,
+        sos_pct=float(pran_share),
+        eye_level_share_pct=eye_share,
+        sku_breakdown=sku_breakdown_items,
+    )
+
+    matched_facings = sum(d.facing_count or 1 for d in detected_products_list if d.brand_class == BrandClass.PRAN and d.sku_status == SkuStatus.MATCHED)
+    candidate_facings = sum(d.facing_count or 1 for d in detected_products_list if d.brand_class == BrandClass.PRAN and d.sku_status == SkuStatus.CANDIDATE)
+    unknown_pran_facings = sum(d.facing_count or 1 for d in detected_products_list if d.brand_class == BrandClass.PRAN and d.sku_status == SkuStatus.UNKNOWN_PRAN)
+
+    catalogue_coverage = CatalogueCoverage(
+        pran_facings_total=pran_facings,
+        matched=matched_facings,
+        candidate=candidate_facings,
+        unknown_pran=unknown_pran_facings,
+    )
+
+    comp_brand_map: dict[str, int] = {}
+    for d in detected_products_list:
+        if d.brand_class == BrandClass.COMPETITOR:
+            b_name = d.brand or "Competitor"
+            comp_brand_map[b_name] = comp_brand_map.get(b_name, 0) + (d.facing_count or 1)
+
+    competitors_list = [
+        CompetitorSummary(brand=b, facings=f)
+        for b, f in sorted(comp_brand_map.items(), key=lambda x: -x[1])
+    ]
 
     token_usage = TokenUsage(
         input_tokens=int(token_usage_dict.get("input_tokens") or 0),
@@ -1183,9 +1305,20 @@ def analyze_shelf_audit(
     )
 
     audit_id = str(uuid.uuid4())
+    human_verification_required = bool(
+        parsed_json.get("human_verification_required")
+        or sos_mismatch
+        or (res_score.score is not None and res_score.score < 55.0)
+    )
 
     report = ShelfAuditReport(
         audit_id=audit_id,
+        input_context="image_only",
+        image_quality=image_quality_obj,
+        fixture_category=fixture_category,
+        pran_summary=pran_summary,
+        competitors=competitors_list,
+        catalogue_coverage=catalogue_coverage,
         visit_id=visit_id,
         outlet_id=outlet_id,
         outlet_name=f"Outlet {outlet_id}" if outlet_id else None,
@@ -1200,7 +1333,7 @@ def analyze_shelf_audit(
         recommended_actions=final_actions,
         management_insights=final_insights,
         limitations=list(parsed_json.get("limitations") or []),
-        human_verification_required=bool(parsed_json.get("human_verification_required") or (res_score.score < 60.0)),
+        human_verification_required=human_verification_required,
         token_usage=token_usage,
         image_url=image_input if isinstance(image_input, str) and image_input.startswith("http") else "",
         created_at=datetime.now(timezone.utc),

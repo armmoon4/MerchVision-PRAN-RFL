@@ -69,26 +69,32 @@ The platform decouples generative visual perception from business execution rule
 
 ## Key Capabilities
 
-### Standalone Shelf AI Audit
-- **Zero Configuration Required**: Does not require pre-registered store IDs or manual shelf mapping. Merchandisers or supervisors simply upload a shelf photo.
-- **Share of Shelf (SOS)**: Automatically computes PRAN shelf share percentage vs. competitor shelf share percentage.
+### Standalone Shelf AI Audit (Image-Only Mode)
+- **Zero Planogram Dependency**: Answers *"What PRAN products are on this shelf and how much space do they take?"* without requiring pre-configured expected SKU lists.
+- **Decoupled Brand & SKU Identity**: Classifies every facing into `BrandClass` (`pran`, `competitor`, `unknown`) before catalogue matching, preventing catalogue misses from corrupting facing counts or Share of Shelf.
+- **Master Catalogue Enrichment**: Matches PRAN detections into `SkuStatus` (`matched`, `candidate`, `unknown_pran`). Items missing from `itemsdb.csv` are preserved as `unknown_pran` and still counted as PRAN facings.
+- **Share of Shelf (SOS)**: Automatically computes PRAN shelf share percentage vs. competitor shelf share percentage by visible linear shelf width.
+- **Placement & Golden Zone**: Evaluates proportion of PRAN facings placed at prime eye level vs. top/bottom shelves.
 - **Arrangement Score**: Normalized 0–100 scale evaluating facing grouping, label forward alignment, and shelf neatness.
 - **Pricing & POSM Wobbler Detection**: Detects shelf price tags (e.g. PRAN RM 3.90 vs. Competitor RM 5.50) and active promotional talkers/wobblers (e.g. contest tags `'BELI & MENANG'`).
-- **Availability & Out-of-Stock**: Identifies empty shelf gaps and missing planogram SKUs.
+- **Stock Health & Gaps**: Identifies visible shelf voids and gaps around product facings.
 
 ### Retail Execution Score (RES) Breakdown
 
-The Retail Execution Score is evaluated deterministically out of **100 points**:
+The Retail Execution Score is evaluated deterministically out of **100 points** across **6 image-provable pillars**:
 
-$$\text{RES} = \text{Availability} (40) + \text{Planogram} (15) + \text{SOS} (25) + \text{Pricing} (10) + \text{Promotion} (10) - \text{Deductions}$$
+$$\text{RES} = \text{Presence} (20) + \text{SOS} (25) + \text{Placement} (20) + \text{Arrangement} (15) + \text{Stock Health} (10) + \text{Price \& Promo} (10)$$
 
-| Metric | Max Weight | Evaluation Criteria |
+| Pillar | Max Weight | Evaluation Criteria |
 |---|---|---|
-| **Product Availability** | 40 pts | Core SKU presence and absence of visible shelf out-of-stock voids. |
-| **Planogram Compliance** | 15 pts | Proper arrangement on assigned shelf tiers (`top`, `middle`, `bottom`) and alignment. |
-| **Share of Shelf (SOS)** | 25 pts | PRAN visible facing share relative to the agreed category target (e.g. 45%). |
-| **Pricing Display** | 10 pts | Verified shelf price tags present and readable on shelf edge. |
-| **POSM & Promotion** | 10 pts | Active presence of promotional talkers, wobblers, shelf strips, or contest material. |
+| **1. Presence** | 20 pts | PRAN products detected at all; points scale with number of distinct PRAN SKUs (variety). |
+| **2. Visibility (SOS)** | 25 pts | PRAN linear shelf share percentage compared against reference category benchmark (default: 30%). |
+| **3. Placement** | 20 pts | Golden Zone ratio: percentage of PRAN facings positioned at prime eye level. |
+| **4. Shelf Arrangement** | 15 pts | Facing alignment, front-facing orientation, and variant grouping neatness (0–100 scale). |
+| **5. Stock Health** | 10 pts | Absence of visible shelf gaps and out-of-stock voids around products. |
+| **6. Price & Promo** | 10 pts | Verified shelf price tags present (up to 7 pts) + promotional wobblers/POSM present (3 pts). |
+
+> **Special Case (No PRAN Detected):** When zero PRAN facings are identified on a fixture, the API returns `score: null` with grade `"No PRAN Detected"`.
 
 ### Executive Management Dashboard
 - **Executive Overview KPIs**: Real-time aggregated metrics across audits (Avg SOS, Avg Execution Score, Resolution Rate).
@@ -177,39 +183,96 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```json
 {
   "audit_id": "041b7223-9fd2-4d53-ab59-8e232beaa69d",
+  "input_context": "image_only",
+  "fixture_category": "Wafer Biscuit Section",
+  "image_quality": {
+    "score": 0.94,
+    "issues": []
+  },
   "audit_stage": "STANDALONE",
   "audit_summary": {
     "status": "needs_attention",
     "image_quality": "good",
     "key_findings": [
-      "PRAN Bisk Club Mama Cube Wafers detected on multiple shelf levels.",
-      "Competitor snack brands occupy significant shelf space.",
-      "PRAN Share of Shelf estimated at ~22%, falling short of agreed target of 45.0%.",
+      "PRAN Bisk Club Mama Cube Wafers detected across multiple shelf levels.",
+      "Competitor snack brands occupy significant shelf width.",
+      "PRAN Share of Shelf estimated at ~22.0%, below reference benchmark of 30.0%.",
       "Promotional talker/wobbler present on shelf edge promoting Mama wafer contest ('BELI & MENANG')."
     ]
   },
   "retail_execution_score": {
-    "score": 74.6,
+    "score": 72.1,
     "grade": "Needs Attention",
-    "availability_score": 35.0,
-    "planogram_score": 11.1,
-    "sos_score": 8.5,
+    "mode": "image_only",
+    "pillars": {
+      "presence": 17.0,
+      "visibility_sos": 18.3,
+      "placement": 13.3,
+      "arrangement": 11.2,
+      "stock_health": 10.0,
+      "price_promo": 10.0
+    },
+    "availability_score": 17.0,
+    "planogram_score": 13.3,
+    "sos_score": 18.3,
     "pricing_score": 10.0,
     "promotion_score": 10.0,
     "deductions": [
-      "[-] -14 pts: Product facings misaligned or grouping irregular",
-      "[-] -12 pts: Shelf share (22.0%) is below agreed target (45%)"
+      "[-] -6.7 pts: Weak Golden Zone placement (67% of PRAN items at eye level)",
+      "[-] -3.8 pts: Product facings misaligned or irregular grouping"
     ]
   },
   "shelf_metrics": {
     "pran_shelf_share_pct": 22.0,
     "competitor_shelf_share_pct": 78.0,
     "empty_shelf_share_pct": 0.0,
-    "pran_facing_count": 12,
-    "competitor_facing_count": 6,
+    "pran_facing_count": 6,
+    "competitor_facing_count": 11,
     "arrangement_score": 75.0,
     "measurement_type": "estimated"
   },
+  "pran_summary": {
+    "pran_detected": true,
+    "distinct_products": 3,
+    "total_facings": 6,
+    "sos_pct": 22.0,
+    "eye_level_share_pct": 66.7,
+    "sku_breakdown": [
+      {
+        "product_name": "Bisk Club Mama Cube Wafer Biscuits Chocolate",
+        "sku_status": "matched",
+        "sku_code": "102210",
+        "facings": 2,
+        "levels": ["eye_level"]
+      },
+      {
+        "product_name": "Bisk Club Mama Cube Wafer Biscuits Strawberry",
+        "sku_status": "matched",
+        "sku_code": "102210",
+        "facings": 2,
+        "levels": ["eye_level"]
+      },
+      {
+        "product_name": "Mama Cube Wafer Milk Vanilla",
+        "sku_status": "matched",
+        "sku_code": "107785",
+        "facings": 2,
+        "levels": ["top"]
+      }
+    ]
+  },
+  "catalogue_coverage": {
+    "pran_facings_total": 6,
+    "matched": 6,
+    "candidate": 0,
+    "unknown_pran": 0
+  },
+  "competitors": [
+    { "brand": "Julie's", "facings": 2 },
+    { "brand": "Nabati", "facings": 5 },
+    { "brand": "Muzic", "facings": 1 },
+    { "brand": "Cocopie", "facings": 3 }
+  ],
   "pricing_and_promotions": [
     {
       "product": "PRAN Bisk Club Mama Cube Wafer Biscuits",
@@ -227,9 +290,11 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
   "detected_products": [
     {
       "brand": "PRAN",
+      "brand_class": "pran",
       "product_name": "Bisk Club Mama Cube Wafer Biscuits",
       "variant": "Chocolate",
       "sku": "102210",
+      "sku_status": "matched",
       "facing_count": 2,
       "shelf_level": "top",
       "matched": true,
@@ -300,11 +365,15 @@ Returns aggregated shelf performance data across territories and categories.
 
 ## Interactive Web UI Dashboard
 
-The frontend dashboard is served directly from `testui.html` at `http://localhost:8000/`. It provides a clean, emoji-free, corporate interface designed for both field merchandisers and executive leadership:
+The frontend dashboard is served directly from `testui.html` at `http://localhost:8000/`. It provides a clean, emoji-free, corporate interface designed for data-first testing and executive review:
 
-1. **Shelf AI Audit (Image to Insights)**:
-   - **Handheld Smartphone Simulator**: Simulates on-the-ground mobile experience showing Retail Execution Score, arrangement score, deductions, sub-score matrix, and actionable checklist.
-   - **Executive Desk Studio**: High-resolution image inspection, executive key findings, pricing and active wobbler display, and detected products explorer.
+1. **Shelf AI Audit Studio (Image-Only Testing UI)**:
+   - **Desktop Testing Studio Grid**: Full-width data testing interface (no phone mockup) with side-by-side controls, live image preview, and comprehensive metrics inspection.
+   - **6-Pillar Execution Scorecard**: Visual progress bars and numerical scores for Presence (/20), SOS (/25), Placement (/20), Arrangement (/15), Stock Health (/10), and Price & Promo (/10).
+   - **PRAN SKU Breakdown Table**: Displays detected PRAN products, status badges (`Matched`, `Candidate`, `Unknown PRAN`), canonical SKU codes, facings, and shelf levels.
+   - **Competitor Brands Summary**: Real-time tags displaying competitor commercial brands and facing counts.
+   - **Key Metrics Chips**: PRAN Facings, Competitor Facings, Distinct PRAN SKUs, Golden Zone Share %, Empty Shelf Gaps, and Catalogue Coverage (`M / C / U`).
+   - **Perception Telemetry**: Token usage breakdown, estimated cost in USD, and fixture category classification.
    - **Instant Demo**: One-click **Wafer Audit Demo** button instantly loads real wafer gondola audit data (`041b7223-9fd2-4d53-ab59-8e232beaa69d`) for testing.
 2. **Management Dashboard**:
    - Executive overview KPI cards, Share of Shelf gauges, category share breakdown table, OSA stockout tracking, and exception-first urgency ranking.
@@ -322,23 +391,24 @@ The frontend dashboard is served directly from `testui.html` at `http://localhos
 ```
 MerchVision-PRAN-RFL/
 ├── app/
-│   ├── config.py                 # Settings (.env, Gemini 3.7 Flash, token rates)
+│   ├── brands.py                 # Brand registry (PRAN tokens, generic category word filter, competitor brands)
+│   ├── config.py                 # Settings (.env, Gemini 3.7 Flash, SOS benchmarks, token rates)
 │   ├── database.py               # Database engine (PostgreSQL 16 / SQLite)
 │   ├── main.py                   # FastAPI routing, middleware, and lifecycle hooks
 │   ├── models.py                 # SQLAlchemy ORM models (AuditSession, RackUpload)
-│   ├── schemas.py                # Pydantic validation schemas
+│   ├── schemas.py                # Pydantic schemas (BrandClass, SkuStatus, 6-pillar RES, PranSummary)
 │   ├── routers/
 │   │   ├── audit_router.py       # V2 Auditing & Management Dashboard endpoints
 │   │   └── token_router.py       # Token routing, estimation, and telemetry
 │   └── services/
-│       ├── ai_service.py         # Gemini 3.7 Flash vision, in-RAM Lanczos, competitor isolation
-│       ├── rules_engine.py       # Deterministic Retail Execution Scoring (RES) & deductions
+│       ├── ai_service.py         # Gemini 3.7 Flash vision, in-RAM Lanczos, decoupled brand detection
+│       ├── rules_engine.py       # Deterministic 6-pillar Retail Execution Scoring (RES) & deductions
 │       ├── items_db_service.py   # Hybrid catalogue search (BM25 + SentenceTransformer)
 │       └── storage_service.py    # Zero-disk in-memory byte stream handlers
 ├── Documentation/
 │   └── API_DOCUMENTATION.md      # Comprehensive API specification & payload guide
 ├── itemsdb.csv                   # Official PRAN-RFL master product catalogue (1,954 SKUs)
-├── testui.html                   # Web dashboard & interactive studio (emoji-free)
+├── testui.html                   # Web dashboard & interactive desktop studio (emoji-free)
 ├── docker-compose.yml            # Production container configuration
 ├── Dockerfile                    # Container build specification
 ├── requirements.txt              # Production Python dependencies

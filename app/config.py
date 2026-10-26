@@ -51,6 +51,18 @@ class Settings(BaseSettings):
     token_cost_input_per_million: float = 0.75
     token_cost_output_per_million: float = 3.75
 
+    # ── Image-Only Mode Benchmarks & Catalogue Thresholds ────────────────────
+    sos_benchmark_pct: float = 30.0
+    sos_benchmark_source: str = "default"
+    sos_issue_threshold_pct: float = 15.0
+
+    catalogue_similarity_threshold: float = 0.55
+    catalogue_match_threshold: float = 0.78
+    catalogue_margin_min: float = 0.05
+
+    prompt_version: str = "v3_image_only"
+    rules_version: str = "v3_image_only"
+
     # ── Local Storage ─────────────────────────────────────────────────────────
     # Base URL used to construct public image_url (e.g. http://localhost:8000)
     storage_base_url: str = ""

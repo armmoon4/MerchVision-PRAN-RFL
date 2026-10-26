@@ -185,52 +185,87 @@
       margin-bottom: 20px;
     }
 
-    /* ── Mobile Merchandiser Screen Simulator ── */
-    .mobile-simulator-wrap {
+    /* ── Shelf Audit Studio Desktop Grid (Testing UI) ── */
+    .audit-studio-grid {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    @media (max-width: 1100px) {
+      .audit-studio-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .studio-panel-left {
       display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      gap: 24px;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .studio-panel-right {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .sku-breakdown-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-top: 6px;
+    }
+
+    .sku-breakdown-table th {
+      text-align: left;
+      padding: 8px 10px;
+      color: var(--text-muted);
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sku-breakdown-table td {
+      padding: 9px 10px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.3);
+      vertical-align: middle;
+    }
+
+    .sku-breakdown-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .competitor-chips-wrap {
+      display: flex;
       flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
     }
 
-    .mobile-frame {
-      width: 440px;
-      max-width: 100%;
-      background: #0d1322;
-      border: 2px solid rgba(56, 189, 248, 0.4);
-      border-radius: 36px;
-      padding: 18px;
-      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 25px rgba(56, 189, 248, 0.15);
-      position: relative;
-    }
-
-    .mobile-notch {
-      width: 130px;
-      height: 18px;
-      background: #030712;
-      margin: 0 auto 14px;
-      border-radius: 0 0 12px 12px;
-      display: flex;
-      justify-content: center;
+    .competitor-tag {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(51, 65, 85, 0.45);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
     }
 
-    .notch-camera {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: #334155;
+    .pill-purple {
+      background: rgba(168, 85, 247, .15);
+      color: #c084fc;
+      border: 1px solid rgba(168, 85, 247, .3);
     }
 
-    .mobile-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-      border-bottom: 1px solid rgba(51, 65, 85, 0.4);
-      padding-bottom: 8px;
+    .pill-cyan {
+      background: rgba(6, 182, 212, .15);
+      color: #22d3ee;
+      border: 1px solid rgba(6, 182, 212, .3);
     }
 
     .store-badge {
@@ -768,170 +803,16 @@
     </div>
 
     <!-- ===================================================================== -->
-    <!-- VIEW 1: MERCHANDISER MOBILE SCREEN (Step 3: What merchandiser sees)   -->
+    <!-- VIEW 1: SHELF AI AUDIT STUDIO (Image-Only Testing UI - No Phone Frame)-->
     <!-- ===================================================================== -->
     <div id="merchandiserView">
-      <div class="mobile-simulator-wrap">
+      <div class="audit-studio-grid">
 
-        <!-- Phone Handheld Container -->
-        <div class="mobile-frame">
-          <div class="mobile-notch">
-            <div class="notch-camera"></div>
-          </div>
+        <!-- LEFT COLUMN: Input, Controls, Image Preview, Pricing & Observations -->
+        <div class="studio-panel-left">
 
-          <div class="mobile-header">
-            <div>
-              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">SHELF AI AUDIT</div>
-              <div class="store-badge" id="mStoreName">Live Shelf Analysis</div>
-            </div>
-            <span class="pill pill-blue" id="mAuditStageBadge">INTELLIGENCE</span>
-          </div>
-
-          <!-- Shelf Image Preview -->
-          <div id="mPhotoPreviewContainer" style="display:none; margin-bottom:12px; border-radius:12px; overflow:hidden; border:1px solid var(--border); max-height:200px; position:relative; background:#000;">
-            <img id="mPhotoPreviewImg" src="" alt="Shelf Photo" style="width:100%; height:180px; object-fit:cover; display:block;">
-            <span style="position:absolute; bottom:6px; right:8px; background:rgba(0,0,0,0.75); font-size:10px; color:#38bdf8; padding:3px 7px; border-radius:4px; font-weight:700;">Captured Photo</span>
-          </div>
-
-          <!-- Scorecard Banner -->
-          <div class="scorecard-banner">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div style="font-size:13px; font-weight:800; color:#fff;" id="mStatusTitle">
-                <span class="status-dot-acceptable" id="mStatusDot" style="background:#38bdf8; box-shadow:none;"></span>
-                <span id="mStatusText">Ready for Image</span>
-              </div>
-              <span style="font-size:11px; color:var(--text-muted);" id="mOutletMeta">Upload a photo to start AI audit</span>
-            </div>
-
-            <div class="score-dial-row">
-              <div>
-                <div style="font-size:11px; color:var(--text-muted);">Retail Execution Score</div>
-                <div class="score-dial-value" id="mScoreVal">--<span style="font-size:18px; color:var(--text-muted);">/100</span></div>
-              </div>
-              <div style="text-align:right;">
-                <div style="font-size:11px; color:var(--text-muted);">Arrangement</div>
-                <div style="font-size:20px; font-weight:800; color:var(--text-muted);" id="mArrScore">--/100</div>
-              </div>
-            </div>
-
-            <!-- Deductions Warning Box -->
-            <div id="mDeductionsContainer" class="deductions-wrap"></div>
-
-            <!-- Sub-scores Matrix Breakdown -->
-            <div class="subscore-box" id="mSubscoresBox">
-              <div class="subscore-title">
-                <span>Score Breakdown Matrix</span>
-                <span style="font-weight:600; color:#38bdf8; text-transform:none;">Max 100 pts</span>
-              </div>
-              <div class="subscore-row">
-                <span style="width:90px; color:#94a3b8;">Availability</span>
-                <div class="subscore-bar-bg"><div id="barSubAvail" class="subscore-bar-fill" style="width:0%;"></div></div>
-                <span id="subscoreAvail" style="width:50px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/40</span>
-              </div>
-              <div class="subscore-row">
-                <span style="width:90px; color:#94a3b8;">Planogram</span>
-                <div class="subscore-bar-bg"><div id="barSubPlano" class="subscore-bar-fill" style="width:0%;"></div></div>
-                <span id="subscorePlano" style="width:50px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/15</span>
-              </div>
-              <div class="subscore-row">
-                <span style="width:90px; color:#94a3b8;">Share of Shelf</span>
-                <div class="subscore-bar-bg"><div id="barSubSos" class="subscore-bar-fill" style="width:0%;"></div></div>
-                <span id="subscoreSos" style="width:50px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/25</span>
-              </div>
-              <div class="subscore-row">
-                <span style="width:90px; color:#94a3b8;">Pricing Display</span>
-                <div class="subscore-bar-bg"><div id="barSubPrice" class="subscore-bar-fill" style="width:0%;"></div></div>
-                <span id="subscorePrice" style="width:50px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/10</span>
-              </div>
-              <div class="subscore-row">
-                <span style="width:90px; color:#94a3b8;">POSM &amp; Promo</span>
-                <div class="subscore-bar-bg"><div id="barSubPromo" class="subscore-bar-fill" style="width:0%;"></div></div>
-                <span id="subscorePromo" style="width:50px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/10</span>
-              </div>
-            </div>
-
-            <!-- Share of Shelf Width Gauge -->
-            <div style="margin-top:12px;">
-              <div style="display:flex; justify-content:space-between; font-size:11.5px; font-weight:700;">
-                <span style="color:#f87171;">PRAN Share: <strong id="mPranSos">0%</strong></span>
-                <span style="color:#94a3b8;">Competitor: <strong id="mCompSos">0%</strong></span>
-              </div>
-              <div class="sos-track">
-                <div class="sos-fill-pran" id="mSosFillPran" style="width:0%;"></div>
-                <div class="sos-fill-comp" id="mSosFillComp" style="width:0%;"></div>
-              </div>
-              <div style="font-size:10px; color:var(--text-muted); text-align:right;">By visible shelf width</div>
-            </div>
-
-            <!-- Chips (4 metrics) -->
-            <div class="metrics-bar-grid" style="grid-template-columns: repeat(2, 1fr); margin-top:12px;">
-              <div class="metric-chip">
-                <div class="metric-chip-label">PRAN Facings</div>
-                <div class="metric-chip-val" style="color:#ef4444;" id="mPranFacingsChip">0</div>
-              </div>
-              <div class="metric-chip">
-                <div class="metric-chip-label">Competitor Facings</div>
-                <div class="metric-chip-val" style="color:#94a3b8;" id="mCompFacingsChip">0</div>
-              </div>
-              <div class="metric-chip">
-                <div class="metric-chip-label">Missing Expected SKUs</div>
-                <div class="metric-chip-val" style="color:#fbbf24;" id="mMissingCount">0</div>
-              </div>
-              <div class="metric-chip">
-                <div class="metric-chip-label">Empty Shelf Gaps</div>
-                <div class="metric-chip-val" style="color:#f87171;" id="mGapsCount">0</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Executive Key Vision Findings -->
-          <div class="findings-card" id="mMobileKeyFindingsWrap">
-            <div style="font-size:12px; font-weight:800; color:#38bdf8; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
-              <span>Vision AI Perception Findings</span>
-            </div>
-            <div id="mKeyFindingsList">
-              <div style="color:var(--text-muted); font-size:12px; padding:6px 0;">Upload or capture a photo to view key shelf perception findings.</div>
-            </div>
-          </div>
-
-          <!-- Detected Shelf Pricing & Wobblers -->
-          <div class="findings-card" id="mMobilePricingWrap">
-            <div style="font-size:12px; font-weight:800; color:#34d399; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
-              <span>Shelf Pricing &amp; POSM Wobblers</span>
-            </div>
-            <div id="mPricingList">
-              <div style="color:var(--text-muted); font-size:12px; padding:6px 0;">No visible price tags or promotional talkers detected yet.</div>
-            </div>
-          </div>
-
-          <!-- Issues Detected Section -->
-          <div style="font-size:12px; font-weight:800; color:#fff; margin:14px 0 8px; text-transform:uppercase; letter-spacing:0.4px;">
-            Issues Detected
-          </div>
-          <div id="mIssuesList">
-            <div style="color:var(--text-muted); font-size:12px; padding:16px; text-align:center; background:rgba(255,255,255,0.02); border-radius:8px; border:1px dashed var(--border);">
-              No photo analyzed yet. Upload or capture a shelf photo to detect issues.
-            </div>
-          </div>
-
-          <!-- Interactive Action Checklist -->
-          <div class="checklist-wrap">
-            <div class="checklist-title">
-              <span>Recommended Actions</span>
-            </div>
-            <div id="mChecklist">
-              <div style="color:var(--text-muted); font-size:12px; padding:12px; text-align:center;">
-                Recommended action items will appear here after shelf photo analysis.
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Controls & Executive Studio Panel -->
-        <div id="deskStudioPanel" style="flex:1; min-width:340px; max-width:880px;">
-          
           <!-- Shelf Photo Input Card -->
-          <div class="card" style="margin-bottom:20px;">
+          <div class="card">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
               <h2 style="font-size:16px; color:#fff; font-weight:800;">
                 Shelf Photo Input &amp; Studio
@@ -939,7 +820,7 @@
               <span class="pill pill-green">Gemini 3.7 Vision Live</span>
             </div>
             <p style="font-size:12.5px; color:var(--text-muted); line-height:1.45; margin-bottom:14px;">
-              Upload or capture any retail shelf photo. The AI automatically extracts Share of Shelf (SOS), missing items, facings, arrangement, wobblers, and Retail Execution Score (RES).
+              Upload or paste any retail shelf photo. The AI automatically detects all PRAN and competitor products, computes linear Share of Shelf (SOS), Golden Zone placement, and scores the shelf across 6 image-provable pillars without requiring pre-defined expected planograms.
             </p>
 
             <div style="margin-bottom:14px;">
@@ -951,21 +832,62 @@
             <!-- In-page Error Banner -->
             <div id="mAuditErrorBanner" style="display:none; color:#f87171; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); padding:10px 12px; border-radius:8px; font-size:12px; margin-bottom:12px; line-height:1.45;"></div>
 
-            <div style="display:flex; gap:10px; margin-bottom:6px; flex-wrap:wrap;">
-              <button class="btn-action-primary" id="btnRunAudit" onclick="runMerchandiserAudit()" style="margin-top:0; flex:1; min-width:200px;">
+            <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+              <button class="btn-action-primary" id="btnRunAudit" onclick="runMerchandiserAudit()" style="margin-top:0; flex:1; min-width:180px;">
                 Analyze Shelf Photo
               </button>
-              <button onclick="loadSampleScenario()" style="background:rgba(255,255,255,0.08); border:1px solid var(--border); color:#fff; border-radius:12px; padding:0 16px; font-size:13px; font-weight:700; cursor:pointer;" title="Load sample image and test analysis">
-                Sample Image
-              </button>
-              <button onclick="loadSampleWaferAudit()" style="background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.4); color:#38bdf8; border-radius:12px; padding:0 16px; font-size:13px; font-weight:700; cursor:pointer;" title="Load real Gemini 3.7 wafer biscuit audit data instantly">
+              <button onclick="loadSampleWaferAudit()" style="background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.4); color:#38bdf8; border-radius:12px; padding:0 14px; font-size:12.5px; font-weight:700; cursor:pointer;" title="Load real Gemini 3.7 wafer biscuit audit data instantly">
                 Wafer Audit Demo
               </button>
+              <button onclick="loadSampleScenario()" style="background:rgba(255,255,255,0.08); border:1px solid var(--border); color:#fff; border-radius:12px; padding:0 12px; font-size:12.5px; font-weight:700; cursor:pointer;" title="Load sample image and test analysis">
+                Sample
+              </button>
+              <button onclick="resetAuditForm()" style="background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); color:#fca5a5; border-radius:12px; padding:0 12px; font-size:12.5px; font-weight:700; cursor:pointer;" title="Reset test audit inputs">
+                Reset
+              </button>
+            </div>
+
+            <!-- Shelf Image Preview -->
+            <div id="mPhotoPreviewContainer" style="display:none; margin-top:14px; border-radius:12px; overflow:hidden; border:1px solid var(--border); max-height:260px; position:relative; background:#000;">
+              <img id="mPhotoPreviewImg" src="" alt="Shelf Photo" style="width:100%; height:240px; object-fit:cover; display:block;">
+              <div style="position:absolute; bottom:8px; left:8px; right:8px; display:flex; justify-content:space-between; align-items:center;">
+                <span class="store-badge" id="mStoreName" style="background:rgba(0,0,0,0.75); padding:4px 8px; border-radius:6px;">Live Shelf Analysis</span>
+                <span class="pill pill-blue" id="mAuditStageBadge">STANDALONE</span>
+              </div>
             </div>
           </div>
 
-          <!-- Executive Intelligence & Strategic Directives Card -->
-          <div class="card" style="margin-bottom:20px;">
+          <!-- Vision Perception Telemetry & Fixture Card -->
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <h3 style="font-size:14px; color:#fff; font-weight:700;">
+                Shelf Context &amp; Fixture Details
+              </h3>
+              <span class="pill pill-cyan" id="mFixtureCategoryBadge">Fixture: General Shelf</span>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+              <span class="pill pill-blue" id="mImageQualityBadge">Quality: 85%</span>
+              <span class="pill pill-green" id="mAuditModeBadge">Mode: Image-Only</span>
+            </div>
+            <!-- Token Usage Banner -->
+            <div id="mAuditTokensBanner" style="display:none;"></div>
+          </div>
+
+          <!-- Detected Shelf Pricing & Wobblers Card -->
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <h3 style="font-size:14px; color:#34d399; font-weight:700;">
+                Shelf Pricing &amp; POSM Wobblers
+              </h3>
+              <span class="pill pill-green">Visible Price Tags</span>
+            </div>
+            <div id="mPricingList">
+              <div style="color:var(--text-muted); font-size:12px; padding:6px 0;">No visible price tags or promotional talkers detected yet.</div>
+            </div>
+          </div>
+
+          <!-- Executive Directives & Strategic Directives Card -->
+          <div class="card">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
               <h3 style="font-size:14px; color:#fff; font-weight:700;">
                 Executive Directives &amp; Shelf Observations
@@ -977,8 +899,215 @@
             </div>
           </div>
 
+        </div>
+
+        <!-- RIGHT COLUMN: Scorecard, 6 Pillars, Key Metrics, SKU Breakdown, Competitors, Findings, Actions, JSON -->
+        <div class="studio-panel-right">
+
+          <!-- Scorecard Banner -->
+          <div class="scorecard-banner">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+              <div style="font-size:14px; font-weight:800; color:#fff;" id="mStatusTitle">
+                <span class="status-dot-acceptable" id="mStatusDot" style="background:#38bdf8; box-shadow:none;"></span>
+                <span id="mStatusText">Ready for Image</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:11.5px; color:var(--text-muted);" id="mOutletMeta">Upload a photo to start AI audit</span>
+                <span class="pill pill-blue">6-Pillar Image-Only RES</span>
+              </div>
+            </div>
+
+            <div class="score-dial-row" style="margin-top:14px;">
+              <div>
+                <div style="font-size:11.5px; color:var(--text-muted); font-weight:600;">Retail Execution Score (RES)</div>
+                <div class="score-dial-value" id="mScoreVal">--<span style="font-size:18px; color:var(--text-muted);">/100</span></div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:11.5px; color:var(--text-muted); font-weight:600;">Shelf Arrangement Index</div>
+                <div style="font-size:24px; font-weight:800; color:var(--text-muted);" id="mArrScore">--/100</div>
+              </div>
+            </div>
+
+            <!-- Deductions Warning Box -->
+            <div id="mDeductionsContainer" class="deductions-wrap"></div>
+
+            <!-- 6 Image-Provable Pillars Breakdown Matrix -->
+            <div class="subscore-box" id="mSubscoresBox" style="margin-top:16px;">
+              <div class="subscore-title" style="margin-bottom:10px;">
+                <span style="color:#fff; font-size:12px;">Score Breakdown Matrix (6 Image-Provable Pillars)</span>
+                <span style="font-weight:700; color:#38bdf8; text-transform:none;">Max 100 pts</span>
+              </div>
+              
+              <!-- Pillar 1: Presence (20 pts) -->
+              <div class="subscore-row">
+                <span style="width:160px; color:#cbd5e1; font-weight:600;">1. Presence (Variety)</span>
+                <div class="subscore-bar-bg"><div id="barSubPresence" class="subscore-bar-fill" style="width:0%;"></div></div>
+                <span id="subscorePresence" style="width:65px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/20</span>
+              </div>
+
+              <!-- Pillar 2: Visibility / SOS (25 pts) -->
+              <div class="subscore-row">
+                <span style="width:160px; color:#cbd5e1; font-weight:600;">2. Visibility (Share of Shelf)</span>
+                <div class="subscore-bar-bg"><div id="barSubSos" class="subscore-bar-fill" style="width:0%;"></div></div>
+                <span id="subscoreSos" style="width:65px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/25</span>
+              </div>
+
+              <!-- Pillar 3: Placement (20 pts) -->
+              <div class="subscore-row">
+                <span style="width:160px; color:#cbd5e1; font-weight:600;">3. Placement (Golden Zone)</span>
+                <div class="subscore-bar-bg"><div id="barSubPlacement" class="subscore-bar-fill" style="width:0%;"></div></div>
+                <span id="subscorePlacement" style="width:65px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/20</span>
+              </div>
+
+              <!-- Pillar 4: Arrangement (15 pts) -->
+              <div class="subscore-row">
+                <span style="width:160px; color:#cbd5e1; font-weight:600;">4. Shelf Arrangement</span>
+                <div class="subscore-bar-bg"><div id="barSubArrangement" class="subscore-bar-fill" style="width:0%;"></div></div>
+                <span id="subscoreArrangement" style="width:65px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/15</span>
+              </div>
+
+              <!-- Pillar 5: Stock Health (10 pts) -->
+              <div class="subscore-row">
+                <span style="width:160px; color:#cbd5e1; font-weight:600;">5. Stock Health (Gaps &amp; Voids)</span>
+                <div class="subscore-bar-bg"><div id="barSubStock" class="subscore-bar-fill" style="width:0%;"></div></div>
+                <span id="subscoreStock" style="width:65px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/10</span>
+              </div>
+
+              <!-- Pillar 6: Price & Promo (10 pts) -->
+              <div class="subscore-row">
+                <span style="width:160px; color:#cbd5e1; font-weight:600;">6. Price &amp; Promo Visibility</span>
+                <div class="subscore-bar-bg"><div id="barSubPricePromo" class="subscore-bar-fill" style="width:0%;"></div></div>
+                <span id="subscorePricePromo" style="width:65px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/10</span>
+              </div>
+            </div>
+
+            <!-- Share of Shelf Width Gauge -->
+            <div style="margin-top:14px; padding-top:12px; border-top:1px dashed rgba(51, 65, 85, 0.45);">
+              <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:4px;">
+                <span style="color:#f87171;">PRAN Share: <strong id="mPranSos">0%</strong></span>
+                <span style="color:#94a3b8;">Competitors: <strong id="mCompSos">0%</strong></span>
+              </div>
+              <div class="sos-track">
+                <div class="sos-fill-pran" id="mSosFillPran" style="width:0%;"></div>
+                <div class="sos-fill-comp" id="mSosFillComp" style="width:0%;"></div>
+              </div>
+              <div style="font-size:10.5px; color:var(--text-muted); text-align:right;">Calculated by visible linear shelf width</div>
+            </div>
+
+            <!-- Key Metrics Grid (6 chips) -->
+            <div class="metrics-bar-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-top:14px;">
+              <div class="metric-chip">
+                <div class="metric-chip-label">PRAN Facings</div>
+                <div class="metric-chip-val" style="color:#ef4444;" id="mPranFacingsChip">0</div>
+              </div>
+              <div class="metric-chip">
+                <div class="metric-chip-label">Competitor Facings</div>
+                <div class="metric-chip-val" style="color:#94a3b8;" id="mCompFacingsChip">0</div>
+              </div>
+              <div class="metric-chip">
+                <div class="metric-chip-label">Distinct PRAN SKUs</div>
+                <div class="metric-chip-val" style="color:#38bdf8;" id="mDistinctPranChip">0</div>
+              </div>
+              <div class="metric-chip">
+                <div class="metric-chip-label">Golden Zone Share</div>
+                <div class="metric-chip-val" style="color:#34d399;" id="mEyeLevelShareChip">0%</div>
+              </div>
+              <div class="metric-chip">
+                <div class="metric-chip-label">Empty Shelf Gaps</div>
+                <div class="metric-chip-val" style="color:#fbbf24;" id="mGapsCount">0</div>
+              </div>
+              <div class="metric-chip">
+                <div class="metric-chip-label">Catalogue Coverage</div>
+                <div class="metric-chip-val" style="font-size:12.5px; color:#a5b4fc;" id="mCatalogueCoverageChip">0 / 0 / 0</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- PRAN SKU Breakdown Table Card -->
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <div>
+                <h3 style="font-size:14px; color:#fff; font-weight:700;">
+                  PRAN SKU Breakdown &amp; Catalogue Status
+                </h3>
+                <div style="font-size:11.5px; color:var(--text-muted);">Decoupled brand identity enriched with canonical ItemsDB catalogue items</div>
+              </div>
+              <span class="pill pill-blue" id="mSkuBreakdownBadge">0 PRAN Products</span>
+            </div>
+            <div style="overflow-x:auto;">
+              <table class="sku-breakdown-table">
+                <thead>
+                  <tr>
+                    <th>Product Detected</th>
+                    <th>Catalogue SKU</th>
+                    <th>Status</th>
+                    <th style="text-align:center;">Facings</th>
+                    <th>Shelf Levels</th>
+                  </tr>
+                </thead>
+                <tbody id="mSkuBreakdownBody">
+                  <tr>
+                    <td colspan="5" style="color:var(--text-muted); text-align:center; padding:16px;">
+                      No shelf image analyzed yet. Upload or capture a shelf photo to view PRAN SKU breakdown.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Competitor Brands Observed Card -->
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <h3 style="font-size:14px; color:#fff; font-weight:700;">
+                Competitor Brands Observed
+              </h3>
+              <span class="pill pill-amber" id="mCompBrandsBadge">Competitor Overview</span>
+            </div>
+            <div id="mCompetitorsList" class="competitor-chips-wrap">
+              <span style="color:var(--text-muted); font-size:12px;">Competitor brand presence will appear here upon shelf perception.</span>
+            </div>
+          </div>
+
+          <!-- Vision AI Perception Findings Card -->
+          <div class="findings-card" style="margin-top:0;">
+            <div style="font-size:13px; font-weight:800; color:#38bdf8; margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+              <span>Vision AI Perception Findings</span>
+            </div>
+            <div id="mKeyFindingsList">
+              <div style="color:var(--text-muted); font-size:12px; padding:6px 0;">Upload or capture a photo to view key shelf perception findings.</div>
+            </div>
+          </div>
+
+          <!-- Issues Detected Section -->
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <h3 style="font-size:14px; color:#fff; font-weight:700; text-transform:uppercase; letter-spacing:0.4px;">
+                Issues Detected
+              </h3>
+              <span class="pill pill-red">Action Items</span>
+            </div>
+            <div id="mIssuesList">
+              <div style="color:var(--text-muted); font-size:12px; padding:16px; text-align:center; background:rgba(255,255,255,0.02); border-radius:8px; border:1px dashed var(--border);">
+                No photo analyzed yet. Upload or capture a shelf photo to detect issues.
+              </div>
+            </div>
+          </div>
+
+          <!-- Interactive Action Checklist -->
+          <div class="checklist-wrap" style="margin-top:0;">
+            <div class="checklist-title">
+              <span>Recommended Merchandiser Actions</span>
+            </div>
+            <div id="mChecklist">
+              <div style="color:var(--text-muted); font-size:12px; padding:12px; text-align:center;">
+                Recommended action items will appear here after shelf photo analysis.
+              </div>
+            </div>
+          </div>
+
           <!-- Detected Products & SKU Catalogue Explorer Card -->
-          <div class="card" style="margin-bottom:20px;">
+          <div class="card">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
               <div>
                 <h3 style="font-size:14px; color:#fff; font-weight:700;">
@@ -991,9 +1120,6 @@
             <div id="mDetectedProductsContainer" style="max-height:360px; overflow-y:auto; margin-bottom:14px; padding-right:4px;">
               <div style="color:var(--text-muted); font-size:12px; padding:8px 0;">No image analyzed yet. Click "Analyze Shelf Photo" or "Wafer Audit Demo" to view detected items.</div>
             </div>
-
-            <!-- Token Usage Banner -->
-            <div id="mAuditTokensBanner" style="display:none;"></div>
 
             <!-- Collapsible Full JSON Response with Copy Button -->
             <details style="background:var(--card-inner); border-radius:8px; padding:10px; border:1px solid var(--border); margin-top:14px;">
@@ -1011,16 +1137,17 @@
           <!-- Pipeline Architecture Card -->
           <div class="card">
             <h3 style="font-size:14px; color:#38bdf8; font-weight:700; margin-bottom:8px;">
-              Perception $\to$ Decoupled Rules Architecture
+              Perception to Decoupled Rules Architecture
             </h3>
             <div style="font-size:12px; color:var(--text-muted); line-height:1.5;">
               1. <strong>Capture:</strong> Merchandiser shelf photo downscaled in RAM to 1024px Lanczos.<br>
-              2. <strong>Vision Perception:</strong> Gemini 3.7 Flash extracts PRAN &amp; competitor facings, shelf levels, readable prices, wobblers, and voids.<br>
+              2. <strong>Vision Perception:</strong> Gemini 3.7 Flash extracts PRAN and competitor facings, shelf levels, readable prices, wobblers, and voids.<br>
               3. <strong>Catalogue Link:</strong> SentenceTransformer + BM25 matches noisy detections to 1,954 canonical PRAN SKUs.<br>
               4. <strong>Business Rules:</strong> Calculates Retail Execution Score (RES) &amp; compiles priority checklist.<br>
               5. <strong>Single Submission:</strong> Instant execution score, checklist, and share breakdown calculated from first photo.
             </div>
           </div>
+
         </div>
 
       </div>
@@ -1410,21 +1537,41 @@
       const stageBadge = document.getElementById('mAuditStageBadge');
       if (stageBadge) stageBadge.textContent = report.audit_stage || "STANDALONE";
 
+      // Context: Fixture Category & Image Quality
+      const fixtureBadge = document.getElementById('mFixtureCategoryBadge');
+      if (fixtureBadge) {
+        fixtureBadge.textContent = 'Fixture: ' + (report.fixture_category || 'General Shelf');
+      }
+      const qualityBadge = document.getElementById('mImageQualityBadge');
+      if (qualityBadge && report.image_quality) {
+        qualityBadge.textContent = 'Quality: ' + Math.round((report.image_quality.score || 0.85) * 100) + '%';
+      }
+
       // 2. Retail Execution Score & Grade
       const resObj = report.retail_execution_score || {};
-      const score = (resObj.score != null) ? Number(resObj.score) : 0;
-      const grade = resObj.grade || (score >= 80 ? "Acceptable" : "Needs Attention");
-      const isNeedsAttn = (score < 80);
-
       const statusTextEl = document.getElementById('mStatusText');
       const statusDotEl = document.getElementById('mStatusDot');
-      if (statusTextEl) statusTextEl.textContent = grade;
-      if (statusDotEl) statusDotEl.className = isNeedsAttn ? "status-dot-needs-attention" : "status-dot-acceptable";
-
       const scoreValEl = document.getElementById('mScoreVal');
-      if (scoreValEl) {
-        scoreValEl.innerHTML = `${Math.round(score)}<span style="font-size:18px; color:var(--text-muted); font-weight:600;">/100</span>`;
-        scoreValEl.style.color = isNeedsAttn ? "#f59e0b" : "#34d399";
+
+      if (resObj.score === null || resObj.score === undefined) {
+        if (scoreValEl) {
+          scoreValEl.innerHTML = `N/A`;
+          scoreValEl.style.color = "#94a3b8";
+        }
+        if (statusTextEl) statusTextEl.textContent = resObj.grade || "No PRAN Detected";
+        if (statusDotEl) statusDotEl.className = "status-dot-needs-attention";
+      } else {
+        const score = Number(resObj.score);
+        const grade = resObj.grade || (score >= 80 ? "Acceptable" : "Needs Attention");
+        const isNeedsAttn = (score < 80);
+
+        if (statusTextEl) statusTextEl.textContent = grade;
+        if (statusDotEl) statusDotEl.className = isNeedsAttn ? "status-dot-needs-attention" : "status-dot-acceptable";
+
+        if (scoreValEl) {
+          scoreValEl.innerHTML = `${Math.round(score)}<span style="font-size:18px; color:var(--text-muted); font-weight:600;">/100</span>`;
+          scoreValEl.style.color = (score >= 80) ? "#34d399" : (score >= 60) ? "#fbbf24" : "#f87171";
+        }
       }
 
       // 3. Arrangement Score (Scale 0-10 or 0-100 normalization)
@@ -1443,23 +1590,41 @@
       const pranFacings = metrics.pran_facing_count != null ? metrics.pran_facing_count : 0;
       const compFacings = metrics.competitor_facing_count != null ? metrics.competitor_facing_count : 0;
 
-      document.getElementById('mPranSos').textContent = pranSos + "%";
-      document.getElementById('mCompSos').textContent = compSos + "%";
-      document.getElementById('mSosFillPran').style.width = pranSos + "%";
-      document.getElementById('mSosFillComp').style.width = compSos + "%";
+      const pranSosEl = document.getElementById('mPranSos');
+      if (pranSosEl) pranSosEl.textContent = pranSos + "%";
+      const compSosEl = document.getElementById('mCompSos');
+      if (compSosEl) compSosEl.textContent = compSos + "%";
+      const pranFillEl = document.getElementById('mSosFillPran');
+      if (pranFillEl) pranFillEl.style.width = pranSos + "%";
+      const compFillEl = document.getElementById('mSosFillComp');
+      if (compFillEl) compFillEl.style.width = compSos + "%";
 
       const pranFacingsEl = document.getElementById('mPranFacingsChip');
       if (pranFacingsEl) pranFacingsEl.textContent = pranFacings;
       const compFacingsEl = document.getElementById('mCompFacingsChip');
       if (compFacingsEl) compFacingsEl.textContent = compFacings;
 
-      // 5. Missing SKUs & Gaps
-      const missingCount = (report.availability_alerts && report.availability_alerts.missing_expected_skus) 
-        ? report.availability_alerts.missing_expected_skus.length : 0;
+      // 5. PRAN Summary, Golden Zone & Gaps
+      const pranSummary = report.pran_summary || {};
+      const distinctPran = pranSummary.distinct_products != null ? pranSummary.distinct_products : 0;
+      const distinctEl = document.getElementById('mDistinctPranChip');
+      if (distinctEl) distinctEl.textContent = distinctPran;
+
+      const eyeLevelPct = pranSummary.eye_level_share_pct != null ? Math.round(pranSummary.eye_level_share_pct) : 0;
+      const eyeEl = document.getElementById('mEyeLevelShareChip');
+      if (eyeEl) eyeEl.textContent = eyeLevelPct + "%";
+
       const gapsCount = (report.availability_alerts && report.availability_alerts.visible_gaps) 
         ? report.availability_alerts.visible_gaps.length : 0;
-      document.getElementById('mMissingCount').textContent = missingCount;
-      document.getElementById('mGapsCount').textContent = gapsCount;
+      const gapsEl = document.getElementById('mGapsCount');
+      if (gapsEl) gapsEl.textContent = gapsCount;
+
+      const catCov = report.catalogue_coverage || {};
+      const covEl = document.getElementById('mCatalogueCoverageChip');
+      if (covEl) {
+        covEl.textContent = `${catCov.matched || 0} M / ${catCov.candidate || 0} C / ${catCov.unknown_pran || 0} U`;
+        covEl.title = `Matched: ${catCov.matched || 0}, Candidate: ${catCov.candidate || 0}, Unknown PRAN: ${catCov.unknown_pran || 0}`;
+      }
 
       // 6. Score Deductions Breakdown
       const deductions = resObj.deductions || [];
@@ -1477,38 +1642,108 @@
         }
       }
 
-      // 7. Sub-scores Matrix Breakdown
-      const subscoresBox = document.getElementById('mSubscoresBox');
-      if (subscoresBox) {
-        const avail = resObj.availability_score != null ? resObj.availability_score : 40;
-        const plano = resObj.planogram_score != null ? resObj.planogram_score : 15;
-        const sosSc = resObj.sos_score != null ? resObj.sos_score : 25;
-        const priceSc = resObj.pricing_score != null ? resObj.pricing_score : 10;
-        const promoSc = resObj.promotion_score != null ? resObj.promotion_score : 10;
-        
-        const elAvail = document.getElementById('subscoreAvail');
-        const elPlano = document.getElementById('subscorePlano');
-        const elSos = document.getElementById('subscoreSos');
-        const elPrice = document.getElementById('subscorePrice');
-        const elPromo = document.getElementById('subscorePromo');
+      // 7. Sub-scores Matrix Breakdown (6 Image-Provable Pillars)
+      const pillars = resObj.pillars || {};
+      const pPresence = (pillars.presence != null) ? Number(pillars.presence) : (resObj.availability_score != null ? Math.min(20, resObj.availability_score / 2) : 0);
+      const pSos = (pillars.visibility_sos != null) ? Number(pillars.visibility_sos) : (resObj.sos_score != null ? Number(resObj.sos_score) : 0);
+      const pPlacement = (pillars.placement != null) ? Number(pillars.placement) : (resObj.planogram_score != null ? Math.min(20, resObj.planogram_score * 1.33) : 0);
+      const pArr = (pillars.arrangement != null) ? Number(pillars.arrangement) : 0;
+      const pStock = (pillars.stock_health != null) ? Number(pillars.stock_health) : 10.0;
+      const pPricePromo = (pillars.price_promo != null) ? Number(pillars.price_promo) : (resObj.pricing_score != null ? Number(resObj.pricing_score) : 0);
 
-        if (elAvail) elAvail.textContent = `${avail}/40`;
-        if (elPlano) elPlano.textContent = `${plano}/15`;
-        if (elSos) elSos.textContent = `${sosSc}/25`;
-        if (elPrice) elPrice.textContent = `${priceSc}/10`;
-        if (elPromo) elPromo.textContent = `${promoSc}/10`;
+      const elPresence = document.getElementById('subscorePresence');
+      if (elPresence) elPresence.textContent = `${pPresence.toFixed(1)}/20`;
+      const barPresence = document.getElementById('barSubPresence');
+      if (barPresence) barPresence.style.width = `${Math.min(100, (pPresence / 20) * 100)}%`;
 
-        const barAvail = document.getElementById('barSubAvail');
-        const barPlano = document.getElementById('barSubPlano');
-        const barSos = document.getElementById('barSubSos');
-        const barPrice = document.getElementById('barSubPrice');
-        const barPromo = document.getElementById('barSubPromo');
+      const elSos = document.getElementById('subscoreSos');
+      if (elSos) elSos.textContent = `${pSos.toFixed(1)}/25`;
+      const barSos = document.getElementById('barSubSos');
+      if (barSos) barSos.style.width = `${Math.min(100, (pSos / 25) * 100)}%`;
 
-        if (barAvail) barAvail.style.width = `${Math.min(100, (avail / 40) * 100)}%`;
-        if (barPlano) barPlano.style.width = `${Math.min(100, (plano / 15) * 100)}%`;
-        if (barSos) barSos.style.width = `${Math.min(100, (sosSc / 25) * 100)}%`;
-        if (barPrice) barPrice.style.width = `${Math.min(100, (priceSc / 10) * 100)}%`;
-        if (barPromo) barPromo.style.width = `${Math.min(100, (promoSc / 10) * 100)}%`;
+      const elPlacement = document.getElementById('subscorePlacement');
+      if (elPlacement) elPlacement.textContent = `${pPlacement.toFixed(1)}/20`;
+      const barPlacement = document.getElementById('barSubPlacement');
+      if (barPlacement) barPlacement.style.width = `${Math.min(100, (pPlacement / 20) * 100)}%`;
+
+      const elArr = document.getElementById('subscoreArrangement');
+      if (elArr) elArr.textContent = `${pArr.toFixed(1)}/15`;
+      const barArr = document.getElementById('barSubArrangement');
+      if (barArr) barArr.style.width = `${Math.min(100, (pArr / 15) * 100)}%`;
+
+      const elStock = document.getElementById('subscoreStock');
+      if (elStock) elStock.textContent = `${pStock.toFixed(1)}/10`;
+      const barStock = document.getElementById('barSubStock');
+      if (barStock) barStock.style.width = `${Math.min(100, (pStock / 10) * 100)}%`;
+
+      const elPricePromo = document.getElementById('subscorePricePromo');
+      if (elPricePromo) elPricePromo.textContent = `${pPricePromo.toFixed(1)}/10`;
+      const barPricePromo = document.getElementById('barSubPricePromo');
+      if (barPricePromo) barPricePromo.style.width = `${Math.min(100, (pPricePromo / 10) * 100)}%`;
+
+      // 8. PRAN SKU Breakdown Table
+      const skuBody = document.getElementById('mSkuBreakdownBody');
+      const skuBadge = document.getElementById('mSkuBreakdownBadge');
+      const skuItems = pranSummary.sku_breakdown || [];
+      if (skuBadge) skuBadge.textContent = `${skuItems.length} PRAN Products`;
+      if (skuBody) {
+        if (skuItems.length > 0) {
+          skuBody.innerHTML = skuItems.map(item => {
+            let pillClass = 'pill-purple';
+            let statusLabel = item.sku_status || 'unknown_pran';
+            if (statusLabel === 'matched') {
+              pillClass = 'pill-green';
+              statusLabel = 'Matched';
+            } else if (statusLabel === 'candidate') {
+              pillClass = 'pill-blue';
+              statusLabel = 'Candidate';
+            } else {
+              pillClass = 'pill-purple';
+              statusLabel = 'Unknown PRAN';
+            }
+            const skuCodeHtml = item.sku_code 
+              ? `<span style="font-family:'JetBrains Mono'; color:#a5b4fc; background:rgba(99,102,241,0.15); padding:2px 6px; border-radius:4px; font-weight:700;">${escapeHtml(item.sku_code)}</span>`
+              : `<span style="color:#64748b; font-size:11px;">Uncatalogued</span>`;
+            const levelsHtml = (item.levels && item.levels.length > 0)
+              ? item.levels.map(l => `<span class="pill pill-cyan" style="font-size:10px; padding:1px 5px;">${escapeHtml(l)}</span>`).join(' ')
+              : '<span style="color:#64748b; font-size:11px;">eye_level</span>';
+            return `
+              <tr>
+                <td style="font-weight:700; color:#fff;">${escapeHtml(item.product_name)}</td>
+                <td>${skuCodeHtml}</td>
+                <td><span class="pill ${pillClass}">${escapeHtml(statusLabel)}</span></td>
+                <td style="text-align:center; font-family:'JetBrains Mono'; font-weight:800; color:#38bdf8;">${item.facings}</td>
+                <td>${levelsHtml}</td>
+              </tr>
+            `;
+          }).join('');
+        } else {
+          skuBody.innerHTML = `
+            <tr>
+              <td colspan="5" style="color:var(--text-muted); text-align:center; padding:16px;">
+                No PRAN products identified on this shelf.
+              </td>
+            </tr>
+          `;
+        }
+      }
+
+      // 9. Competitors Summary
+      const compList = document.getElementById('mCompetitorsList');
+      const compBadge = document.getElementById('mCompBrandsBadge');
+      const comps = report.competitors || [];
+      if (compBadge) compBadge.textContent = `${comps.length} Competitor Brands`;
+      if (compList) {
+        if (comps.length > 0) {
+          compList.innerHTML = comps.map(c => `
+            <div class="competitor-tag">
+              <strong style="color:#fff;">${escapeHtml(c.brand)}</strong>
+              <span style="color:#fbbf24; font-family:'JetBrains Mono'; font-weight:700;">${c.facings} facings</span>
+            </div>
+          `).join('');
+        } else {
+          compList.innerHTML = `<span style="color:var(--text-muted); font-size:12px;">No competitor brands identified on shelf.</span>`;
+        }
       }
 
       // 8. Key Findings (Vision AI Perception Narrative)
@@ -1727,6 +1962,12 @@
 
       const sampleData = {
         "audit_id": "041b7223-9fd2-4d53-ab59-8e232beaa69d",
+        "input_context": "image_only",
+        "fixture_category": "Wafer Biscuit Section",
+        "image_quality": {
+          "score": 0.94,
+          "issues": []
+        },
         "visit_id": null,
         "outlet_id": null,
         "outlet_name": "Metro Retail Gondola (Wafer Biscuit Section)",
@@ -1735,34 +1976,85 @@
           "status": "needs_attention",
           "image_quality": "good",
           "key_findings": [
-            "PRAN Bisk Club Mama Cube Wafers (Strawberry, Chocolate, Milk/Vanilla) detected on multiple shelf levels.",
-            "Competitor snack brands (Julie's Love Letters, Nabati Bites, Nabati Rolls, Jacker Wafer Cube, Muzic, Cocopie) occupy significant shelf space.",
-            "PRAN Share of Shelf estimated at ~22%, falling short of the agreed target of 45.0%.",
-            "Promotional talker/wobbler present on shelf edge promoting Mama wafer contest/raffle ('BELI & MENANG')."
+            "PRAN Bisk Club Mama Cube Wafers (Strawberry, Chocolate, Milk/Vanilla) detected across multiple shelf levels.",
+            "Competitor snack brands (Julie's Love Letters, Nabati Bites, Nabati Rolls, Muzic, Cocopie) occupy significant shelf width.",
+            "PRAN Share of Shelf estimated at ~22.0%, below reference benchmark of 30.0%.",
+            "Promotional talker/wobbler present on shelf edge promoting Mama wafer contest ('BELI & MENANG')."
           ]
         },
         "retail_execution_score": {
-          "score": 74.6,
+          "score": 72.1,
           "grade": "Needs Attention",
-          "availability_score": 35.0,
-          "planogram_score": 11.1,
-          "sos_score": 8.5,
+          "mode": "image_only",
+          "pillars": {
+            "presence": 17.0,
+            "visibility_sos": 18.3,
+            "placement": 13.3,
+            "arrangement": 11.2,
+            "stock_health": 10.0,
+            "price_promo": 10.0
+          },
+          "availability_score": 17.0,
+          "planogram_score": 13.3,
+          "sos_score": 18.3,
           "pricing_score": 10.0,
           "promotion_score": 10.0,
           "deductions": [
-            "[-] -14 pts: Product facings misaligned or grouping irregular",
-            "[-] -12 pts: Shelf share (22.0%) is below agreed target (45%)"
+            "[-] -6.7 pts: Weak Golden Zone placement (67% of PRAN items at eye level)",
+            "[-] -3.8 pts: Product facings misaligned or irregular grouping"
           ]
         },
         "shelf_metrics": {
           "pran_shelf_share_pct": 22.0,
           "competitor_shelf_share_pct": 78.0,
           "empty_shelf_share_pct": 0.0,
-          "pran_facing_count": 12,
-          "competitor_facing_count": 6,
+          "pran_facing_count": 6,
+          "competitor_facing_count": 11,
           "arrangement_score": 75.0,
           "measurement_type": "estimated"
         },
+        "pran_summary": {
+          "pran_detected": true,
+          "distinct_products": 3,
+          "total_facings": 6,
+          "sos_pct": 22.0,
+          "eye_level_share_pct": 66.7,
+          "sku_breakdown": [
+            {
+              "product_name": "Bisk Club Mama Cube Wafer Biscuits Chocolate",
+              "sku_status": "matched",
+              "sku_code": "102210",
+              "facings": 2,
+              "levels": ["eye_level"]
+            },
+            {
+              "product_name": "Bisk Club Mama Cube Wafer Biscuits Strawberry",
+              "sku_status": "matched",
+              "sku_code": "102210",
+              "facings": 2,
+              "levels": ["eye_level"]
+            },
+            {
+              "product_name": "Mama Cube Wafer Milk Vanilla",
+              "sku_status": "matched",
+              "sku_code": "107785",
+              "facings": 2,
+              "levels": ["top"]
+            }
+          ]
+        },
+        "catalogue_coverage": {
+          "pran_facings_total": 6,
+          "matched": 6,
+          "candidate": 0,
+          "unknown_pran": 0
+        },
+        "competitors": [
+          { "brand": "Julie's", "facings": 2 },
+          { "brand": "Nabati", "facings": 5 },
+          { "brand": "Muzic", "facings": 1 },
+          { "brand": "Cocopie", "facings": 3 }
+        ],
         "detected_products": [
           {
             "brand": "PRAN",
@@ -2000,6 +2292,30 @@
       if (fileInput) fileInput.value = "";
       handleUrlEntered(urlInput);
       runMerchandiserAudit();
+    }
+
+    function resetAuditForm() {
+      const fileInput = document.getElementById('mFileInput');
+      const urlInput = document.getElementById('mUrlInput');
+      const previewWrap = document.getElementById('mPhotoPreviewContainer');
+      const previewImg = document.getElementById('mPhotoPreviewImg');
+      const errBanner = document.getElementById('mAuditErrorBanner');
+      if (fileInput) fileInput.value = '';
+      if (urlInput) urlInput.value = '';
+      if (previewWrap) previewWrap.style.display = 'none';
+      if (previewImg) previewImg.src = '';
+      if (errBanner) errBanner.style.display = 'none';
+      const outletMeta = document.getElementById('mOutletMeta');
+      if (outletMeta) outletMeta.textContent = 'Upload a photo to start AI audit';
+      const statusText = document.getElementById('mStatusText');
+      if (statusText) statusText.textContent = 'Ready for Image';
+      const scoreVal = document.getElementById('mScoreVal');
+      if (scoreVal) {
+        scoreVal.innerHTML = '--<span style="font-size:18px; color:var(--text-muted);">/100</span>';
+        scoreVal.style.color = '#38bdf8';
+      }
+      const arrScore = document.getElementById('mArrScore');
+      if (arrScore) arrScore.textContent = '--/100';
     }
 
     function checkAllTasks() {

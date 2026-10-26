@@ -83,7 +83,9 @@ The platform decouples generative visual perception from business execution rule
 
 The Retail Execution Score is evaluated deterministically out of **100 points** across **6 image-provable pillars**:
 
-$$\text{RES} = \text{Presence} (20) + \text{SOS} (25) + \text{Placement} (20) + \text{Arrangement} (15) + \text{Stock Health} (10) + \text{Price \& Promo} (10)$$
+```
+RES (100 pts) = Presence (20) + SOS (25) + Placement (20) + Arrangement (15) + Stock Health (10) + Price & Promo (10)
+```
 
 | Pillar | Max Weight | Evaluation Criteria |
 |---|---|---|
@@ -100,7 +102,7 @@ $$\text{RES} = \text{Presence} (20) + \text{SOS} (25) + \text{Placement} (20) + 
 - **Executive Overview KPIs**: Real-time aggregated metrics across audits (Avg SOS, Avg Execution Score, Resolution Rate).
 - **Category Share Breakdown**: Side-by-side PRAN vs. Competitor share across Beverages, Noodles, Biscuits, and Culinary.
 - **On-Shelf Availability (OSA)**: Network-wide stockout frequency tracking highlighting top missing SKUs.
-- **Exception-First Ranking**: Stores ranked by an **Urgency Index** ($\text{Missing SKUs} \times \text{Tier} + \text{Competitor Domination}$) requiring immediate distributor replenishment.
+- **Exception-First Ranking**: Stores ranked by an **Urgency Index** (`Missing SKUs * Store Tier + Competitor Domination`) requiring immediate distributor replenishment.
 
 ---
 

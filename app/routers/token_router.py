@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import ProcessingStatus, RackUpload
+from app.models import ProcessingStatus, RackUpload, ShelfAudit
 from app.schemas import (
     ModelCapabilities,
     ModelInfoResponse,
@@ -189,26 +189,24 @@ def chat_with_openrouter(payload: OpenRouterChatRequest) -> OpenRouterChatRespon
 )
 def get_token_stats(db: Session = Depends(get_db)) -> TokenStatsResponse:
     """
-    Aggregates global token consumption, USD expenditure, and scan averages.
+    Aggregates global token consumption, USD expenditure, and scan averages from both shelf audits and rack uploads.
     """
     settings = get_settings()
-    total_scans = db.query(RackUpload).count()
-    completed_scans = (
-        db.query(RackUpload)
-        .filter(RackUpload.status == ProcessingStatus.COMPLETED)
-        .count()
-    )
 
-    completed_rows = (
+    rack_completed = (
         db.query(RackUpload)
         .filter(RackUpload.status == ProcessingStatus.COMPLETED)
         .all()
     )
+    shelf_audits = db.query(ShelfAudit).all()
 
-    total_in = sum((r.input_tokens or 0) for r in completed_rows)
-    total_out = sum((r.output_tokens or 0) for r in completed_rows)
-    total_tok = sum((r.total_tokens or 0) for r in completed_rows)
-    total_cost = sum((r.estimated_cost_usd or 0.0) for r in completed_rows)
+    total_scans = db.query(RackUpload).count() + len(shelf_audits)
+    completed_scans = len(rack_completed) + len(shelf_audits)
+
+    total_in = sum((r.input_tokens or 0) for r in rack_completed) + sum((s.input_tokens or 0) for s in shelf_audits)
+    total_out = sum((r.output_tokens or 0) for r in rack_completed) + sum((s.output_tokens or 0) for s in shelf_audits)
+    total_tok = sum((r.total_tokens or 0) for r in rack_completed) + sum((s.total_tokens or 0) for s in shelf_audits)
+    total_cost = sum((r.estimated_cost_usd or 0.0) for r in rack_completed) + sum((s.estimated_cost_usd or 0.0) for s in shelf_audits)
 
     avg_tokens = round(total_tok / completed_scans, 2) if completed_scans > 0 else 0.0
     avg_cost = round(total_cost / completed_scans, 6) if completed_scans > 0 else 0.0
@@ -375,23 +373,44 @@ def get_token_history(
     """
     Returns recent scans with granular token breakdown (input, output, total, USD cost).
     """
-    rows = (
+    shelf_rows = (
+        db.query(ShelfAudit)
+        .order_by(ShelfAudit.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    rack_rows = (
         db.query(RackUpload)
         .order_by(RackUpload.created_at.desc())
         .limit(limit)
         .all()
     )
 
-    return [
-        {
+    combined = []
+    for s in shelf_rows:
+        combined.append({
+            "upload_id": s.id,
+            "status": "COMPLETED",
+            "source": "shelf_audit",
+            "input_tokens": s.input_tokens or 0,
+            "output_tokens": s.output_tokens or 0,
+            "total_tokens": s.total_tokens or 0,
+            "estimated_cost_usd": s.estimated_cost_usd or 0.0,
+            "product_count": (s.pran_facing_count or 0) + (s.competitor_facing_count or 0),
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+        })
+    for r in rack_rows:
+        combined.append({
             "upload_id": r.id,
             "status": r.status.value if hasattr(r.status, "value") else str(r.status),
+            "source": "rack_upload",
             "input_tokens": r.input_tokens or 0,
             "output_tokens": r.output_tokens or 0,
             "total_tokens": r.total_tokens or 0,
             "estimated_cost_usd": r.estimated_cost_usd or 0.0,
             "product_count": len(r.detected_products) if isinstance(r.detected_products, list) else 0,
             "created_at": r.created_at.isoformat() if r.created_at else None,
-        }
-        for r in rows
-    ]
+        })
+
+    combined.sort(key=lambda x: x["created_at"] or "", reverse=True)
+    return combined[:limit]

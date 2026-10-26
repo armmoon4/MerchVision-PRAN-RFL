@@ -86,6 +86,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from app.routers.token_router import router as token_router
+from app.routers.audit_router import router as audit_router
 
 # ── App bootstrap ─────────────────────────────────────────────────────────────
 
@@ -106,12 +107,12 @@ _MEDIA_ROOT.mkdir(exist_ok=True)
 Path(settings.storage_media_dir).mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
-    title="PRAN-RFL Rack Recognition System",
+    title="PRAN-RFL Retail Merchandising AI System",
     description=(
-        "AI-powered retail merchandising backend with Gemini 3.7 Flash and Token Router API. "
-        "Upload a rack photo to get structured PRAN-RFL product detections, token metrics, and cost estimation."
+        "Enterprise retail shelf auditing, execution scoring (RES 0-100), Share of Shelf analytics, "
+        "planogram compliance, and Token Router intelligence powered by Google Gemini 3.7 Flash."
     ),
-    version="1.2.0",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -126,8 +127,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Token Router API ──────────────────────────────────────────────────────────
+# ── Merchandising Audit & Token Router APIs ────────────────────────────────────
 
+app.include_router(audit_router)
 app.include_router(token_router)
 app.include_router(token_router, prefix="/api", include_in_schema=False)
 app.include_router(token_router, prefix="/api/v1", include_in_schema=False)

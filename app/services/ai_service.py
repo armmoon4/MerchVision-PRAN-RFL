@@ -13,6 +13,8 @@ Design notes:
   - Smart image downscaling (Lanczos, max 1600px) cuts vision input tokens by 40-60%.
   - Retries up to 3 times with exponential backoff on 503/429 errors.
 """
+from __future__ import annotations
+
 import base64
 import io
 import json
@@ -22,7 +24,7 @@ import tempfile
 import time
 import re
 import socket
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple, Set
 
 from PIL import Image
 
@@ -41,8 +43,10 @@ def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
 socket.getaddrinfo = _ipv4_getaddrinfo
 
 from collections import OrderedDict
+from datetime import datetime, timezone
 import hashlib
 from threading import Lock
+import uuid
 
 from google import genai
 from google.genai import types
@@ -51,7 +55,20 @@ from openai import OpenAI, OpenAIError
 import httpx
 
 from app.config import get_settings
-from app.services.items_db_service import enrich_products, load_items_db
+from app.schemas import (
+    AuditSummary,
+    AvailabilityAlerts,
+    CatalogueSuggestion,
+    DetectedProductDetail,
+    IssueDetected,
+    PricingAndPromotions,
+    RetailExecutionScore,
+    ShelfAuditReport,
+    ShelfMetrics,
+    TokenUsage,
+)
+from app.services.items_db_service import enrich_product, enrich_products, load_items_db
+from app.services.rules_engine import evaluate_retail_execution
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -65,6 +82,83 @@ Rules:
 - product name: full name with brand + variant + size (e.g. PRAN Mango Juice 250ml)
 - quantity: integer count visible (default 1)
 - NO markdown, NO JSON, NO explanations. If none visible, output single empty line."""
+
+MERCHANDISING_SYSTEM_PROMPT = """You are PRAN Merchandising AI, an AI-powered retail shelf auditing system. Analyze uploaded shelf images and return actionable merchandising insights in valid JSON only.
+Analyze the following:
+Product detection: Identify PRAN and competitor brands, product names, variants, SKUs when verifiable, and visible facing counts. Important: PRAN products include all items under PRAN, Frooto, Drinko, Drinko Float, Mr. Noodles, Potata, Bisk Club, Pran UP, Lassi, Cheer Up, Maxx, All Time, Badam Vaja, Dal Vaja, Chanachur, Toast, Rusk, and products carrying the PRAN or RFL logo. For any PRAN product or sub-brand, set "brand": "PRAN". For competitor brands, specify their brand name (e.g., Coca-Cola, Pepsi, Maggi, Knorr, Bombay Sweets, Olympic).
+Shelf share: Estimate PRAN and competitor shelf share percentage (0 to 100) by visible shelf width or area. PRAN shelf share MUST include all PRAN sub-brands (Frooto, Drinko, Mr. Noodles, Potata, Bisk Club, etc.). Distinguish shelf share from facing counts.
+Shelf organization: Detect misalignment, poor grouping, and planogram violations only when reference rules are provided.
+Availability: Identify visible shelf gaps and low stock indicators. Report missing expected SKUs only when an expected assortment list is supplied.
+Pricing and promotions: Extract readable prices and promotional signage. Confirm pricing violations only against approved pricing data.
+Product placement: Assess shelf levels, visibility, and positioning.
+Recommendations: Prioritize issues as HIGH, MEDIUM, or LOW and provide specific corrective actions.
+Management insights: Summarize business opportunities and trends only when sufficient supporting data is available.
+Return JSON using this structure:
+{
+  "audit_summary": {
+    "status": "needs_attention | acceptable | unable_to_determine",
+    "image_quality": "good | fair | poor",
+    "key_findings": []
+  },
+  "shelf_metrics": {
+    "pran_shelf_share_pct": null,
+    "competitor_shelf_share_pct": null,
+    "empty_shelf_share_pct": null,
+    "pran_facing_count": null,
+    "competitor_facing_count": null,
+    "arrangement_score": null,
+    "measurement_type": "measured | estimated | unavailable"
+  },
+  "detected_products": [
+    {
+      "brand": null,
+      "product_name": null,
+      "variant": null,
+      "sku": null,
+      "facing_count": null,
+      "shelf_level": null,
+      "confidence": "high | medium | low"
+    }
+  ],
+  "issues_detected": [
+    {
+      "issue": "",
+      "evidence": "",
+      "severity": "HIGH | MEDIUM | LOW",
+      "confidence": "high | medium | low",
+      "recommended_action": ""
+    }
+  ],
+  "availability_alerts": {
+    "visible_gaps": [],
+    "missing_expected_skus": [],
+    "inventory_status": "unverified"
+  },
+  "pricing_and_promotions": [
+    {
+      "product": null,
+      "visible_price": null,
+      "promotion_detected": false,
+      "pricing_violation": "confirmed | suspected | not_detected | not_evaluated",
+      "confidence": "high | medium | low"
+    }
+  ],
+  "recommended_actions": [],
+  "management_insights": [],
+  "limitations": [],
+  "human_verification_required": false
+}
+Rules:
+Return valid JSON only. Do not include Markdown, code fences, or explanations outside the JSON.
+Use null for unknown values and empty arrays when no findings exist.
+Never invent product identities, SKUs, prices, percentages, inventory, sales, or business metrics.
+Clearly distinguish measured values from estimates.
+Do not infer warehouse inventory, actual sales, or lost revenue from shelf images.
+Do not claim planogram violations without reference rules.
+Do not report missing SKUs without an expected SKU list and adequate image coverage.
+Set human_verification_required to true when important findings are uncertain or require manual confirmation.
+If the image is unsuitable, return an unable_to_determine status and explain the reason in limitations.
+Keep all findings concise, evidence-based, and actionable."""
 
 _FENCE_PATTERN = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 _OBJECT_PATTERN = re.compile(
@@ -198,11 +292,11 @@ def _detect_mime_type(data: bytes) -> str:
     return "image/jpeg"
 
 
-def _optimize_image_bytes(raw_data: bytes, max_dim: int = 768) -> tuple[bytes, str]:
+def _optimize_image_bytes(raw_data: bytes, max_dim: int = 1600) -> tuple[bytes, str]:
     """
-    Downscale camera photos to max dimension (default 768px) using Lanczos antialiasing.
-    768px matches Gemini's native 1-tile size (516 vision tokens vs 1,290+ tokens for oversized images).
-    Preserves fine product text sharpness while cutting vision input tokens by >55% and latency.
+    Downscale camera photos to max dimension (default 1600px) using Lanczos antialiasing.
+    High-definition vision preserves fine packaging text, labels, readable prices & barcodes
+    while ensuring optimal vision processing speed.
     """
     try:
         with Image.open(io.BytesIO(raw_data)) as im:
@@ -247,7 +341,7 @@ def _resolve_image_bytes(image_input: str | bytes) -> tuple[bytes, str]:
     Raises AIServiceError on any failure.
     """
     settings = get_settings()
-    max_dim = int(getattr(settings, "max_image_dimension", 768) or 768)
+    max_dim = int(getattr(settings, "max_image_dimension", 1600) or 1600)
 
     # 1. Direct raw bytes
     if isinstance(image_input, bytes):
@@ -309,6 +403,8 @@ def _call_openrouter(
     image_bytes: bytes,
     mime_type: str,
     prompt: str = _COMPACT_USER_PROMPT,
+    system_prompt: str = SYSTEM_PROMPT,
+    response_json: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     """
     Call OpenRouter (https://openrouter.ai/api/v1) with google/gemini-3.7-flash using persistent OpenAI SDK client.
@@ -320,7 +416,7 @@ def _call_openrouter(
     data_url = f"data:{mime_type};base64,{base64_img}"
 
     model_name = settings.openrouter_model or "google/gemini-3.7-flash"
-    logger.info("Calling OpenRouter with model: %s (base_url: %s)", model_name, settings.openrouter_base_url)
+    logger.info("Calling OpenRouter with model: %s (base_url: %s, json_mode: %s)", model_name, settings.openrouter_base_url, response_json)
 
     max_retries = 3
     retry_delay = 3.0
@@ -329,19 +425,15 @@ def _call_openrouter(
     for attempt in range(1, max_retries + 1):
         try:
             extra_body: dict[str, Any] = {}
-            # Only apply reasoning configuration to thinking models (e.g. gemini-3.7-flash)
+            # Apply reasoning configuration for Gemini 3.7 Flash thinking models
             if "3.7" in model_name or "thinking" in model_name:
                 effort = str(getattr(settings, "openrouter_reasoning_effort", "low") or "low").lower()
-                max_r_tokens = getattr(settings, "openrouter_reasoning_max_tokens", 0)
-                if effort in ("none", "low"):
-                    extra_body["reasoning"] = {"effort": "low"}
-                elif effort in ("medium", "high"):
+                if effort in ("low", "medium", "high"):
                     extra_body["reasoning"] = {"effort": effort}
-                elif max_r_tokens is not None and max_r_tokens > 0:
-                    extra_body["reasoning"] = {"max_tokens": int(max_r_tokens)}
                 else:
                     extra_body["reasoning"] = {"effort": "low"}
 
+            max_tokens_val = int(getattr(settings, "openrouter_max_tokens", 6000) or 6000)
             create_kwargs: dict[str, Any] = {
                 "model": model_name,
                 "messages": [
@@ -350,7 +442,7 @@ def _call_openrouter(
                         "content": [
                             {
                                 "type": "text",
-                                "text": SYSTEM_PROMPT,
+                                "text": system_prompt,
                                 "cache_control": {"type": "ephemeral"},
                             }
                         ],
@@ -369,8 +461,10 @@ def _call_openrouter(
                     }
                 ],
                 "temperature": 0.2,
-                "max_tokens": min(int(getattr(settings, "openrouter_max_tokens", 2000) or 2000), 2000),
+                "max_tokens": max_tokens_val,
             }
+            if response_json:
+                create_kwargs["response_format"] = {"type": "json_object"}
             if extra_body:
                 create_kwargs["extra_body"] = extra_body
 
@@ -410,6 +504,9 @@ def _call_openrouter(
 def _call_gemini_direct(
     image_bytes: bytes,
     mime_type: str,
+    prompt: str = "List all PRAN and RFL products visible. One per line as: product name|quantity",
+    system_prompt: str = SYSTEM_PROMPT,
+    response_json: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     """
     Call Google Gemini Direct using google-genai SDK.
@@ -430,7 +527,7 @@ def _call_gemini_direct(
 
     client = genai.Client(api_key=settings.gemini_api_key)
     model_name: str = settings.gemini_model
-    logger.info("Calling Gemini direct model: %s (thinking_budget=%s)", model_name, thinking_budget)
+    logger.info("Calling Gemini direct model: %s (thinking_budget=%s, json_mode=%s)", model_name, thinking_budget, response_json)
 
     max_retries = 3
     retry_delay = 5.0
@@ -442,13 +539,12 @@ def _call_gemini_direct(
                 model=model_name,
                 contents=[
                     image_part,
-                    "List all PRAN and RFL products visible. One per line as: product name|quantity",
+                    prompt,
                 ],
                 config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                    temperature=1,
-                    # No response_mime_type: we use compact pipe-delimited plain text
-                    # (incompatible with application/json mode) which saves ~64% output tokens.
+                    system_instruction=system_prompt,
+                    temperature=0.2 if response_json else 1,
+                    response_mime_type="application/json" if response_json else None,
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                     thinking_config=thinking_config,
                 ),
@@ -668,6 +764,406 @@ def analyze_rack_image(image_input: str | bytes) -> dict[str, Any]:
     }
     _IMAGE_CACHE.set(image_hash, final_result)
     return final_result
+
+
+def _parse_merchandising_json(raw_text: str) -> dict[str, Any]:
+    """Extract and parse structured JSON from model response, repairing truncations if needed."""
+    text = (raw_text or "").strip()
+    # Strip reasoning / thinking tags if present
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    fence = _FENCE_PATTERN.search(text)
+    if fence:
+        text = fence.group(1).strip()
+
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(text[start : end + 1])
+        except Exception:
+            pass
+
+    # Try repairing truncated JSON by walking backwards to find last clean structure
+    if start != -1:
+        truncated = text[start:]
+        for i in range(len(truncated) - 1, 0, -1):
+            if truncated[i] in ("}", "]", ","):
+                candidate = truncated[:i] if truncated[i] == "," else truncated[:i + 1]
+                open_curlies = candidate.count("{") - candidate.count("}")
+                open_squares = candidate.count("[") - candidate.count("]")
+                if open_squares > 0:
+                    candidate += "]" * open_squares
+                if open_curlies > 0:
+                    candidate += "}" * open_curlies
+                try:
+                    repaired = json.loads(candidate)
+                    if isinstance(repaired, dict):
+                        logger.warning("Successfully repaired truncated merchandising JSON response.")
+                        return repaired
+                except Exception:
+                    continue
+
+    return {
+        "audit_summary": {
+            "status": "needs_attention",
+            "image_quality": "good",
+            "key_findings": ["Unable to fully extract shelf structure. Please verify camera angle and clarity."],
+        },
+        "shelf_metrics": {
+            "pran_shelf_share_pct": 0.0,
+            "competitor_shelf_share_pct": 0.0,
+            "empty_shelf_share_pct": 0.0,
+            "pran_facing_count": 0,
+            "competitor_facing_count": 0,
+            "arrangement_score": 0.0,
+            "measurement_type": "unavailable",
+        },
+        "detected_products": [],
+        "issues_detected": [],
+        "availability_alerts": {
+            "visible_gaps": [],
+            "missing_expected_skus": [],
+            "inventory_status": "unverified",
+        },
+        "pricing_and_promotions": [],
+        "recommended_actions": [],
+        "management_insights": [],
+        "limitations": [],
+        "human_verification_required": True,
+    }
+
+
+def analyze_shelf_audit(
+    image_input: str | bytes,
+    outlet_id: str | None = None,
+    visit_id: str | None = None,
+    audit_stage: str = "STANDALONE",
+    merchandiser_id: str | None = None,
+    merchandiser_name: str | None = None,
+    expected_skus: list[str] | None = None,
+    planogram_rules: dict[str, Any] | None = None,
+    approved_prices: dict[str, float] | None = None,
+    target_pran_sos: float = 45.0,
+) -> ShelfAuditReport:
+    """
+    Enterprise retail shelf audit:
+      1. Resolves and optimizes image (Lanczos downscaled, in-memory)
+      2. Invokes Gemini 3.7 Flash / OpenRouter with MERCHANDISING_SYSTEM_PROMPT in JSON mode
+      3. Parses multi-brand detections (PRAN and competitors, shelf levels, facings, bboxes, prices, gaps)
+      4. Local zero-token enrichment of PRAN products against itemsdb.csv catalogue
+      5. Passes raw vision insights to the Decoupled Business Rules Engine (rules_engine.py)
+      6. Computes Retail Execution Score (RES: 0-100) with explainable deductions and generates actionable checklist
+    """
+    settings = get_settings()
+    load_items_db()
+
+    image_bytes, mime_type = _resolve_image_bytes(image_input)
+
+    provider = (getattr(settings, "ai_provider", "openrouter") or "openrouter").lower()
+    has_openrouter_key = bool(settings.openrouter_api_key and "YOUR_OPENROUTER" not in settings.openrouter_api_key)
+    has_gemini_key = bool(settings.gemini_api_key and "YOUR_GEMINI" not in settings.gemini_api_key)
+
+    raw_text: str = ""
+    token_usage_dict: dict[str, Any] = {}
+
+    prompt_context_lines = [
+        "Analyze this retail shelf photograph in high detail to produce a professional merchandising audit.",
+        "",
+        "DETECTION OBJECTIVES:",
+        "1. Brand & Product Identification:",
+        "   - Inspect every product facing, label text, artwork, bottle cap, package shape, and size indicator.",
+        "   - PRAN products include: Frooto, Drinko, Drinko Float, Mr. Noodles, Potata, Bisk Club, PRAN UP, Lassi, Cheer Up, Maxx, All Time, Badam Vaja, Dal Vaja, Chanachur, Toast, Rusk, Litchi, Basil Seed, Chia Seed, Lavila, and any PRAN-branded item.",
+        "   - For ALL of these PRAN items, you MUST set \"brand\": \"PRAN\".",
+        "   - For competitor products, identify their specific brand name (e.g. Coca-Cola, Pepsi, Sprite, 7Up, Maggi, Knorr, Bombay Sweets, Olympic, Nestle, etc.).",
+        "2. Facings & Placement:",
+        "   - Count visible front facings for each product group.",
+        "   - Identify shelf vertical level: 'eye_level' (golden zone, 1.2m-1.6m high), 'top', 'middle', or 'bottom'.",
+        "3. Share of Shelf (SOS):",
+        "   - Estimate horizontal shelf width percentage occupied by PRAN items vs. Competitor items across the visible display.",
+        "4. Availability & Gaps:",
+        "   - Detect empty shelf voids or stockout gaps where products are missing.",
+        "5. Pricing & Promotions:",
+        "   - Extract readable shelf price tags and promotional materials (wobblers, discount stickers, banners).",
+        "6. Priority Corrective Actions:",
+        "   - Provide concrete, prioritized actions for merchandisers (HIGH, MEDIUM, LOW) to fix voids, misaligned facings, or competitor encroachment.",
+    ]
+
+    if expected_skus:
+        prompt_context_lines.append(f"Store Assortment / Expected SKUs: {', '.join(expected_skus)}")
+    if target_pran_sos:
+        prompt_context_lines.append(f"Agreed Target PRAN Share of Shelf: {target_pran_sos}%")
+    if approved_prices:
+        prompt_context_lines.append(f"Approved Price Reference: {json.dumps(approved_prices)}")
+    if planogram_rules:
+        prompt_context_lines.append(f"Planogram Guidelines: {json.dumps(planogram_rules)}")
+
+    prompt_context_lines.append("Return valid JSON only adhering strictly to the requested schema.")
+    user_audit_prompt = "\n".join(prompt_context_lines)
+
+    if provider == "openrouter" and has_openrouter_key:
+        raw_text, token_usage_dict = _call_openrouter(
+            image_bytes,
+            mime_type,
+            prompt=user_audit_prompt,
+            system_prompt=MERCHANDISING_SYSTEM_PROMPT,
+            response_json=True,
+        )
+    elif provider == "gemini" and has_gemini_key:
+        raw_text, token_usage_dict = _call_gemini_direct(
+            image_bytes,
+            mime_type,
+            prompt=user_audit_prompt,
+            system_prompt=MERCHANDISING_SYSTEM_PROMPT,
+            response_json=True,
+        )
+    elif has_openrouter_key:
+        raw_text, token_usage_dict = _call_openrouter(
+            image_bytes,
+            mime_type,
+            prompt=user_audit_prompt,
+            system_prompt=MERCHANDISING_SYSTEM_PROMPT,
+            response_json=True,
+        )
+    elif has_gemini_key:
+        raw_text, token_usage_dict = _call_gemini_direct(
+            image_bytes,
+            mime_type,
+            prompt=user_audit_prompt,
+            system_prompt=MERCHANDISING_SYSTEM_PROMPT,
+            response_json=True,
+        )
+    else:
+        raise AIServiceError("OPENROUTER_API_KEY (or GEMINI_API_KEY) is not set. Add your API key to .env file.")
+
+    parsed_json = _parse_merchandising_json(raw_text)
+
+    # 1. Parse raw detected products & enrich PRAN items with catalogue
+    raw_products = parsed_json.get("detected_products") or []
+    detected_products_list: list[DetectedProductDetail] = []
+
+    for item in raw_products:
+        if not isinstance(item, dict):
+            continue
+        p_name = str(item.get("product_name") or item.get("name") or "").strip()
+        raw_brand = str(item.get("brand") or "").strip()
+        variant = item.get("variant")
+        sku = item.get("sku")
+        facing = item.get("facing_count") or item.get("facings") or 1
+        shelf_level = item.get("shelf_level") or "eye_level"
+        confidence = item.get("confidence") or "high"
+        bbox = item.get("bounding_box_normalized") or item.get("bbox")
+
+        # Zero-token local catalogue enrichment for PRAN products
+        suggestions = []
+        matched = False
+        pran_sub_brands = [
+            "PRAN", "FROOTO", "DRINKO", "MR. NOODLES", "MR NOODLES", "NOODLE", "POTATA",
+            "BISK CLUB", "LASSI", "PRAN UP", "CHEER UP", "MAXX", "ALL TIME", "BADAM VAJA",
+            "DAL VAJA", "CHANACHUR", "TOAST", "RUSK", "MISTER NOODLE", "LITCHI DRINK",
+            "CHIA SEED", "LAVILA", "MAMA CUBE"
+        ]
+        competitor_keywords = [
+            "JULIE", "NABATI", "JACKER", "MUZIC", "COCOPIE", "CHOCO PIE", "OREO", "MUNCHY",
+            "HUP SENG", "ROMA", "COCA-COLA", "COKE", "PEPSI", "FANTA", "SPRITE", "7UP",
+            "MOUNTAIN DEW", "MIRINDA", "STING", "MAGGI", "KNORR", "BOMBAY SWEETS", "OLYMPIC",
+            "NESTLE", "DANONE", "TWISTER", "DUTCH LADY", "MILO", "TIGER"
+        ]
+
+        has_competitor_indicator = (
+            any(cw in raw_brand.upper() for cw in competitor_keywords)
+            or any(cw in p_name.upper() for cw in competitor_keywords)
+        )
+
+        has_pran_indicator = (
+            "PRAN" in raw_brand.upper()
+            or any(pw in raw_brand.upper() for pw in pran_sub_brands)
+            or any(pw in p_name.upper() for pw in pran_sub_brands)
+        )
+
+        is_pran = has_pran_indicator and not has_competitor_indicator
+        brand = "PRAN" if is_pran else (raw_brand or "Competitor")
+
+        # Only enrich with PRAN master catalogue if it is confirmed/plausible PRAN
+        if is_pran or (not has_competitor_indicator and not raw_brand):
+            try:
+                matches = enrich_product(p_name, top_k=3)
+                if matches:
+                    top_conf, _ = matches[0]
+                    if top_conf >= 0.55 or (is_pran and top_conf >= 0.40):
+                        is_pran = True
+                        matched = True
+                        brand = "PRAN"
+                        for conf, row in matches:
+                            suggestions.append(
+                                CatalogueSuggestion(
+                                    sub_category_name=row.get("Sub Category Name", ""),
+                                    sub_category_code=row.get("Sub Category Code", ""),
+                                    category_name=row.get("Category Name", ""),
+                                    category_code=row.get("Category Code", ""),
+                                    item_name=row.get("Item Name", ""),
+                                    item_code=row.get("Item Code", ""),
+                                    item_image_url=row.get("Item Image URL", ""),
+                                    confidence=round(float(conf), 3),
+                                )
+                            )
+                        if not sku and suggestions:
+                            sku = suggestions[0].item_code
+            except Exception as e:
+                logger.warning("Catalogue enrichment lookup error for %s: %s", p_name, e)
+
+        detected_products_list.append(
+            DetectedProductDetail(
+                brand=brand,
+                product_name=p_name or "Unknown Item",
+                variant=variant,
+                sku=sku,
+                facing_count=int(facing) if isinstance(facing, (int, float)) and facing > 0 else 1,
+                shelf_level=str(shelf_level).lower(),
+                bounding_box_normalized=bbox if isinstance(bbox, list) else None,
+                confidence=confidence,
+                catalogue_suggestions=suggestions if suggestions else None,
+                matched=matched,
+            )
+        )
+
+    # 2. Extract availability alerts & visible gaps
+    raw_avail = parsed_json.get("availability_alerts") or {}
+    visible_gaps = raw_avail.get("visible_gaps") or []
+    missing_skus = raw_avail.get("missing_expected_skus") or []
+    availability_alerts = AvailabilityAlerts(
+        visible_gaps=visible_gaps if isinstance(visible_gaps, list) else [],
+        missing_expected_skus=missing_skus if isinstance(missing_skus, list) else [],
+        inventory_status=str(raw_avail.get("inventory_status") or "unverified"),
+    )
+
+    # 3. Extract metrics
+    raw_metrics = parsed_json.get("shelf_metrics") or {}
+    raw_pran_share = raw_metrics.get("pran_shelf_share_pct")
+    raw_comp_share = raw_metrics.get("competitor_shelf_share_pct")
+
+    pran_facings = sum(p.facing_count or 1 for p in detected_products_list if (p.brand or "").upper() == "PRAN" or p.matched)
+    comp_facings = sum(p.facing_count or 1 for p in detected_products_list if (p.brand or "").upper() != "PRAN" and not p.matched)
+    total_facings = pran_facings + comp_facings
+
+    # If raw_pran_share is provided and > 0, respect it; otherwise compute from facings
+    if raw_pran_share is not None and float(raw_pran_share) > 0:
+        pran_share = float(raw_pran_share)
+    elif total_facings > 0 and pran_facings > 0:
+        pran_share = round((pran_facings / total_facings * 100.0), 1)
+    else:
+        pran_share = float(raw_pran_share or 0.0)
+
+    if raw_comp_share is not None and float(raw_comp_share) > 0:
+        comp_share = float(raw_comp_share)
+    else:
+        comp_share = round(max(0.0, 100.0 - pran_share), 1) if (total_facings > 0 or pran_share > 0) else 0.0
+
+    raw_arr = raw_metrics.get("arrangement_score")
+    if raw_arr is not None:
+        arr_score = float(raw_arr)
+        if 0 < arr_score <= 10.0:
+            arr_score = arr_score * 10.0
+    elif total_facings > 0:
+        gaps_n = len(availability_alerts.visible_gaps)
+        arr_score = max(50.0, min(95.0, 85.0 - (gaps_n * 5.0)))
+    else:
+        arr_score = 0.0
+
+    shelf_metrics = ShelfMetrics(
+        pran_shelf_share_pct=float(pran_share),
+        competitor_shelf_share_pct=float(comp_share),
+        empty_shelf_share_pct=float(raw_metrics.get("empty_shelf_share_pct") or 0.0),
+        pran_facing_count=pran_facings,
+        competitor_facing_count=comp_facings,
+        arrangement_score=arr_score,
+        measurement_type="measured" if raw_metrics.get("measurement_type") == "measured" else "estimated",
+    )
+
+    # 4. Extract pricing and promotions with currency-safe parsing
+    def _parse_safe_price(val: Any) -> Optional[float]:
+        if val is None:
+            return None
+        if isinstance(val, (int, float)):
+            return float(val)
+        if isinstance(val, str):
+            clean_str = val.replace(",", "")
+            m = re.search(r"[-+]?\d*\.?\d+", clean_str)
+            if m:
+                try:
+                    return float(m.group(0))
+                except ValueError:
+                    return None
+        return None
+
+    raw_pricing = parsed_json.get("pricing_and_promotions") or []
+    pricing_list: list[PricingAndPromotions] = []
+    for pr in raw_pricing:
+        if isinstance(pr, dict):
+            pricing_list.append(
+                PricingAndPromotions(
+                    product=pr.get("product"),
+                    visible_price=_parse_safe_price(pr.get("visible_price")),
+                    promotion_detected=bool(pr.get("promotion_detected")),
+                    pricing_violation=str(pr.get("pricing_violation") or "not_evaluated"),
+                    confidence=str(pr.get("confidence") or "high"),
+                )
+            )
+
+    # 5. Evaluate Business Rules & Retail Execution Score
+    res_score, final_issues, final_actions, final_insights = evaluate_retail_execution(
+        detected_products=detected_products_list,
+        shelf_metrics=shelf_metrics,
+        availability_alerts=availability_alerts,
+        pricing_and_promotions=pricing_list,
+        expected_skus=expected_skus,
+        target_pran_sos=target_pran_sos,
+        approved_prices=approved_prices,
+    )
+
+    # 6. Audit summary
+    raw_summary = parsed_json.get("audit_summary") or {}
+    audit_summary = AuditSummary(
+        status="needs_attention" if res_score.score < 80.0 else "acceptable",
+        image_quality=str(raw_summary.get("image_quality") or "good"),
+        key_findings=list(raw_summary.get("key_findings") or final_insights[:2]),
+    )
+
+    token_usage = TokenUsage(
+        input_tokens=int(token_usage_dict.get("input_tokens") or 0),
+        output_tokens=int(token_usage_dict.get("output_tokens") or 0),
+        total_tokens=int(token_usage_dict.get("total_tokens") or 0),
+        estimated_cost_usd=float(token_usage_dict.get("estimated_cost_usd") or 0.0),
+    )
+
+    audit_id = str(uuid.uuid4())
+
+    report = ShelfAuditReport(
+        audit_id=audit_id,
+        visit_id=visit_id,
+        outlet_id=outlet_id,
+        outlet_name=f"Outlet {outlet_id}" if outlet_id else None,
+        audit_stage=audit_stage,
+        audit_summary=audit_summary,
+        retail_execution_score=res_score,
+        shelf_metrics=shelf_metrics,
+        detected_products=detected_products_list,
+        issues_detected=final_issues,
+        availability_alerts=availability_alerts,
+        pricing_and_promotions=pricing_list,
+        recommended_actions=final_actions,
+        management_insights=final_insights,
+        limitations=list(parsed_json.get("limitations") or []),
+        human_verification_required=bool(parsed_json.get("human_verification_required") or (res_score.score < 60.0)),
+        token_usage=token_usage,
+        image_url=image_input if isinstance(image_input, str) and image_input.startswith("http") else "",
+        created_at=datetime.now(timezone.utc),
+    )
+    return report
 
 
 # ── Token Router Helpers ──────────────────────────────────────────────────────

@@ -452,20 +452,27 @@ def load_items_db(force: bool = False) -> int:
         return 0
 
     # FAISS embeddings
-    if force:
-        _embeddings = _build_and_save_embeddings(_catalogue)
-    else:
-        saved = _load_saved_embeddings()
-        if saved is None:
+    try:
+        if force:
             _embeddings = _build_and_save_embeddings(_catalogue)
         else:
-            _embeddings, saved_meta = saved
-            if len(saved_meta) != len(_catalogue):
-                logger.info(
-                    "CSV row count changed (%d -> %d) -- rebuilding embeddings.",
-                    len(saved_meta), len(_catalogue),
-                )
+            saved = _load_saved_embeddings()
+            if saved is None:
                 _embeddings = _build_and_save_embeddings(_catalogue)
+            else:
+                _embeddings, saved_meta = saved
+                if len(saved_meta) != len(_catalogue):
+                    logger.info(
+                        "CSV row count changed (%d -> %d) -- rebuilding embeddings.",
+                        len(saved_meta), len(_catalogue),
+                    )
+                    _embeddings = _build_and_save_embeddings(_catalogue)
+    except Exception as exc:
+        logger.warning(
+            "Embedding initialization skipped (%s). Using BM25 and token search fallback.",
+            exc,
+        )
+        _embeddings = None
 
     # BM25 index
     _build_bm25_index(_catalogue)
@@ -530,31 +537,50 @@ def _hybrid_search_indices(
     Returns:
         List of (hybrid_score, CatalogueRow) sorted descending, above threshold.
     """
-    if _embeddings is None or not _catalogue or not candidate_indices:
+    if not _catalogue or not candidate_indices:
         return []
 
     idx_array = np.array(candidate_indices, dtype=np.int32)
-
-    # --- FAISS scores for the subset ---
-    if q_vec is None:
-        model = _get_model()
-        expanded = _expand_abbreviations(query.strip())
-        q_vec = model.encode(
-            expanded, normalize_embeddings=True, show_progress_bar=False
-        ).astype(np.float32)
-
-    sub_emb    = _embeddings[idx_array]
-    faiss_sub  = (sub_emb @ q_vec).astype(np.float32)  # shape (M,)
 
     # --- BM25 scores for the subset (reuse pre-computed if provided) ---
     if bm25_global is None:
         bm25_global = _bm25_scores(query, len(_catalogue))
 
-    if bm25_global is not None:
-        bm25_sub = bm25_global[idx_array]              # shape (M,)
-        hybrid   = FAISS_WEIGHT * faiss_sub + BM25_WEIGHT * bm25_sub
+    if _embeddings is not None:
+        # --- FAISS scores for the subset ---
+        if q_vec is None:
+            try:
+                model = _get_model()
+                expanded = _expand_abbreviations(query.strip())
+                q_vec = model.encode(
+                    expanded, normalize_embeddings=True, show_progress_bar=False
+                ).astype(np.float32)
+            except Exception:
+                q_vec = None
+
+        if q_vec is not None:
+            sub_emb    = _embeddings[idx_array]
+            faiss_sub  = (sub_emb @ q_vec).astype(np.float32)  # shape (M,)
+            if bm25_global is not None:
+                bm25_sub = bm25_global[idx_array]              # shape (M,)
+                hybrid   = FAISS_WEIGHT * faiss_sub + BM25_WEIGHT * bm25_sub
+            else:
+                hybrid = faiss_sub
+        else:
+            hybrid = bm25_global[idx_array] if bm25_global is not None else np.zeros(len(idx_array), dtype=np.float32)
     else:
-        hybrid = faiss_sub   # BM25 unavailable, fall back to FAISS only
+        # Fallback when embeddings are not available (BM25 or token matching)
+        if bm25_global is not None:
+            hybrid = bm25_global[idx_array]
+        else:
+            q_tokens = set(_tokenize(query))
+            scores = []
+            for idx in candidate_indices:
+                it_name = _catalogue[idx].get("Item Name", "")
+                it_toks = set(_tokenize(it_name))
+                overlap = len(q_tokens & it_toks) / max(1, len(q_tokens)) if q_tokens else 0.0
+                scores.append(overlap)
+            hybrid = np.array(scores, dtype=np.float32)
 
     # Sort descending by hybrid score
     sorted_order = np.argsort(hybrid)[::-1]
@@ -562,7 +588,7 @@ def _hybrid_search_indices(
     results: List[Tuple[float, CatalogueRow]] = []
     for pos in sorted_order:
         score = float(hybrid[pos])
-        if score < threshold:
+        if score < threshold and results:
             break
         orig_idx = int(idx_array[pos])
         if orig_idx < len(_catalogue):
@@ -581,7 +607,7 @@ def _hybrid_search_global(
     bm25_global: Optional[np.ndarray] = None,
 ) -> List[Tuple[float, CatalogueRow]]:
     """Global hybrid search across all catalogue rows (Step 3 fallback)."""
-    if _embeddings is None or not _catalogue:
+    if not _catalogue:
         return []
 
     all_indices = list(range(len(_catalogue)))

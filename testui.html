@@ -4,9 +4,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TEST PANEL | MerchVision</title>
+  <title>PRAN Merchandising AI | Retail Shelf Intelligence</title>
   <meta name="description"
-    content="AI-powered retail shelf auditor for PRAN-RFL products. Detect products and match them against the full items catalogue with sub-category, category and item codes.">
+    content="AI-powered retail shelf auditing system for PRAN-RFL. Real-time Share of Shelf (SOS), planogram compliance, out-of-stock gap detection, and management intelligence.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -15,11 +15,13 @@
   <style>
     :root {
       --bg-dark: #07090e;
-      --card-bg: rgba(18, 24, 38, 0.85);
+      --card-bg: rgba(18, 24, 38, 0.88);
       --card-inner: #0b0f1c;
       --border: rgba(51, 65, 85, 0.55);
       --primary: #38bdf8;
       --primary-glow: rgba(56, 189, 248, 0.2);
+      --pran-red: #ef4444;
+      --pran-orange: #f97316;
       --token-in: #a5b4fc;
       --token-out: #34d399;
       --token-cost: #fbbf24;
@@ -28,8 +30,6 @@
       --success: #22c55e;
       --warning: #eab308;
       --danger: #ef4444;
-      --ai-name-color: #f8fafc;
-      --suggest-bg: rgba(15, 23, 42, 0.7);
     }
 
     * {
@@ -43,11 +43,11 @@
       background: radial-gradient(circle at 10% 20%, #1e1b4b 0%, #090d16 50%, #030712 100%);
       color: var(--text-main);
       min-height: 100vh;
-      padding: 24px;
+      padding: 20px;
     }
 
     .container {
-      max-width: 1360px;
+      max-width: 1400px;
       margin: 0 auto;
     }
 
@@ -56,9 +56,9 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding-bottom: 18px;
+      padding-bottom: 16px;
       border-bottom: 1px solid var(--border);
-      margin-bottom: 22px;
+      margin-bottom: 20px;
       flex-wrap: wrap;
       gap: 12px;
     }
@@ -71,7 +71,6 @@
       align-items: center;
       gap: 10px;
       letter-spacing: -0.5px;
-      flex-wrap: wrap;
     }
 
     .pill {
@@ -80,10 +79,8 @@
       gap: 5px;
       font-size: 11px;
       font-weight: 700;
-      letter-spacing: 0.4px;
       padding: 4px 10px;
       border-radius: 9999px;
-      white-space: nowrap;
     }
 
     .pill-green {
@@ -98,19 +95,16 @@
       border: 1px solid rgba(56, 189, 248, .3);
     }
 
-    .pill-purple {
-      background: rgba(168, 85, 247, .15);
-      color: #c084fc;
-      border: 1px solid rgba(168, 85, 247, .3);
+    .pill-red {
+      background: rgba(239, 68, 68, .15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, .3);
     }
 
-    .pill::before {
-      content: "";
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: currentColor;
-      box-shadow: 0 0 7px currentColor;
+    .pill-amber {
+      background: rgba(245, 158, 11, .15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, .3);
     }
 
     .links a {
@@ -126,649 +120,613 @@
       color: #fff;
     }
 
-    /* ── View Nav ── */
+    /* ── View Navigation Tabs ── */
     .view-nav {
       display: flex;
-      gap: 10px;
-      margin-bottom: 18px;
-    }
-
-    .view-btn {
-      background: rgba(15, 23, 42, .6);
-      border: 1px solid var(--border);
-      color: var(--text-muted);
-      font-weight: 700;
-      font-size: 13px;
-      padding: 10px 20px;
-      border-radius: 10px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
       gap: 8px;
-      transition: all .2s;
-    }
-
-    .view-btn.active {
-      background: rgba(56, 189, 248, .15);
-      border-color: rgba(56, 189, 248, .5);
-      color: #fff;
-      box-shadow: 0 0 16px var(--primary-glow);
-    }
-
-    /* ── Stats Grid ── */
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-
-    .stat-card {
-      background: var(--card-bg);
-      backdrop-filter: blur(16px);
-      border: 1px solid var(--border);
+      margin-bottom: 22px;
+      background: rgba(15, 23, 42, 0.7);
+      padding: 5px;
       border-radius: 12px;
-      padding: 14px 18px;
-      position: relative;
-      overflow: hidden;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, .3);
-    }
-
-    .stat-card::after {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--primary), transparent);
-      opacity: .5;
-    }
-
-    .stat-val {
-      font-size: 21px;
-      font-weight: 800;
-      font-family: 'JetBrains Mono', monospace;
-      margin-top: 4px;
-    }
-
-    .stat-label {
-      font-size: 10px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: .8px;
-      font-weight: 600;
-    }
-
-    /* ── Main Grid ── */
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1.25fr;
-      gap: 20px;
-    }
-
-    @media (max-width: 1024px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .card {
-      background: var(--card-bg);
-      backdrop-filter: blur(16px);
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 22px;
-      box-shadow: 0 10px 30px -5px rgba(0, 0, 0, .5);
-    }
-
-    /* ── Tabs ── */
-    .tabs {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 16px;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 12px;
       overflow-x: auto;
     }
 
-    .tab-btn {
+    .view-btn {
+      flex: 1;
+      min-width: 170px;
       background: transparent;
-      border: 1px solid transparent;
+      border: none;
       color: var(--text-muted);
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      padding: 7px 13px;
+      padding: 10px 14px;
       border-radius: 8px;
-      transition: all .2s;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s ease;
       white-space: nowrap;
     }
 
-    .tab-btn.active {
-      background: rgba(56, 189, 248, .12);
-      border-color: rgba(56, 189, 248, .4);
-      color: var(--primary);
-    }
-
-    /* ── Form ── */
-    .form-group {
-      margin-bottom: 14px;
-    }
-
-    label {
-      display: block;
-      font-size: 13px;
-      color: var(--text-muted);
-      margin-bottom: 6px;
-      font-weight: 500;
-    }
-
-    input[type="text"],
-    input[type="url"],
-    textarea,
-    input[type="file"] {
-      width: 100%;
-      padding: 10px 14px;
-      background: #090d16;
-      border: 1px solid var(--border);
-      border-radius: 8px;
+    .view-btn:hover {
       color: #fff;
-      font-size: 13px;
-      font-family: inherit;
-      transition: border-color .2s, box-shadow .2s;
+      background: rgba(255, 255, 255, 0.05);
     }
 
-    textarea {
-      font-family: 'JetBrains Mono', monospace;
+    .view-btn.active {
+      background: #38bdf8;
+      color: #07090e;
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.35);
+    }
+
+    /* ── Cards & Grids ── */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(12px);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    /* ── Mobile Merchandiser Screen Simulator ── */
+    .mobile-simulator-wrap {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .mobile-frame {
+      width: 440px;
+      max-width: 100%;
+      background: #0d1322;
+      border: 2px solid rgba(56, 189, 248, 0.4);
+      border-radius: 36px;
+      padding: 18px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 25px rgba(56, 189, 248, 0.15);
+      position: relative;
+    }
+
+    .mobile-notch {
+      width: 130px;
+      height: 18px;
+      background: #030712;
+      margin: 0 auto 14px;
+      border-radius: 0 0 12px 12px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .notch-camera {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #334155;
+    }
+
+    .mobile-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+      padding-bottom: 8px;
+    }
+
+    .store-badge {
       font-size: 12px;
-      resize: vertical;
-      min-height: 88px;
+      font-weight: 700;
+      color: #fff;
     }
 
-    input:focus,
-    textarea:focus {
-      outline: none;
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px var(--primary-glow);
+    /* ── Scorecard Components ── */
+    .scorecard-banner {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
     }
 
-    .api-mode-row {
+    .status-dot-needs-attention {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #ef4444;
+      box-shadow: 0 0 8px #ef4444;
+      margin-right: 6px;
+    }
+
+    .status-dot-acceptable {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 8px #22c55e;
+      margin-right: 6px;
+    }
+
+    .score-dial-row {
       display: flex;
       align-items: center;
-      gap: 10px;
-      margin-bottom: 14px;
-      padding: 10px 14px;
-      background: rgba(15, 23, 42, .7);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-size: 13px;
+      justify-content: space-between;
+      margin-top: 10px;
     }
 
-    .api-mode-row input {
-      cursor: pointer;
-      accent-color: var(--primary);
+    .score-dial-value {
+      font-size: 38px;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      color: #38bdf8;
+      letter-spacing: -1px;
     }
 
-    .submit-btn {
-      width: 100%;
-      background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
-      color: #07090e;
-      font-weight: 700;
-      padding: 12px 18px;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 14px;
-      transition: transform .15s, opacity .2s, box-shadow .2s;
-      box-shadow: 0 4px 14px rgba(56, 189, 248, .35);
-    }
-
-    .submit-btn:hover {
-      opacity: .95;
-      transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(56, 189, 248, .45);
-    }
-
-    .submit-btn:disabled {
-      opacity: .55;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    /* ── Token Chips ── */
-    .token-row {
+    .metrics-bar-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
-      margin: 10px 0 16px;
-      padding: 12px;
-      background: #080b12;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .metric-chip {
+      background: rgba(11, 15, 28, 0.85);
+      border: 1px solid rgba(51, 65, 85, 0.5);
       border-radius: 10px;
-      border: 1px solid #1e293b;
-    }
-
-    @media (max-width:600px) {
-      .token-row {
-        grid-template-columns: repeat(2, 1fr);
-      }
-    }
-
-    .token-chip {
+      padding: 10px;
       text-align: center;
     }
 
-    .token-chip-title {
-      font-size: 10px;
+    .metric-chip-label {
+      font-size: 11px;
       color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: .5px;
-      font-weight: 600;
+      margin-bottom: 3px;
     }
 
-    .token-chip-val {
-      font-family: 'JetBrains Mono', monospace;
-      font-weight: 700;
-      font-size: 14px;
-      margin-top: 3px;
-    }
-
-    /* ── Status Badge ── */
-    .status-badge {
-      display: inline-block;
-      padding: 3px 10px;
-      border-radius: 9999px;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: .5px;
-    }
-
-    .status-PENDING {
-      background: rgba(234, 179, 8, .2);
-      color: var(--warning);
-      border: 1px solid rgba(234, 179, 8, .3);
-    }
-
-    .status-PROCESSING {
-      background: rgba(56, 189, 248, .2);
-      color: var(--primary);
-      border: 1px solid rgba(56, 189, 248, .3);
-    }
-
-    .status-COMPLETED {
-      background: rgba(34, 197, 94, .2);
-      color: var(--success);
-      border: 1px solid rgba(34, 197, 94, .3);
-    }
-
-    .status-FAILED {
-      background: rgba(239, 68, 68, .2);
-      color: var(--danger);
-      border: 1px solid rgba(239, 68, 68, .3);
-    }
-
-    /* ── Product Card ── */
-    .product-list {
-      list-style: none;
-      margin-top: 12px;
-      max-height: 560px;
-      overflow-y: auto;
-      padding-right: 4px;
-    }
-
-    .product-list::-webkit-scrollbar {
-      width: 5px;
-    }
-
-    .product-list::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .product-list::-webkit-scrollbar-thumb {
-      background: #334155;
-      border-radius: 99px;
-    }
-
-    .product-card {
-      background: var(--card-inner);
-      border: 1px solid rgba(51, 65, 85, .5);
-      border-radius: 12px;
-      margin-bottom: 12px;
-      overflow: hidden;
-      transition: border-color .2s;
-    }
-
-    .product-card.has-suggestions {
-      border-color: rgba(56, 189, 248, .3);
-    }
-
-    /* ─── Top Row: AI Detected Name ─── */
-    .pc-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 14px;
-      gap: 10px;
-      background: rgba(255, 255, 255, .02);
-      border-bottom: 1px solid rgba(51, 65, 85, .3);
-    }
-
-    .pc-name-block {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex: 1;
-      min-width: 0;
-    }
-
-    .ai-icon {
-      font-size: 16px;
-      flex-shrink: 0;
-    }
-
-    .pc-name {
-      font-size: 14px;
+    .metric-chip-val {
+      font-size: 17px;
       font-weight: 800;
-      color: var(--ai-name-color);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      flex: 1;
-    }
-
-    .pc-qty {
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--primary);
-      background: rgba(56, 189, 248, .1);
-      padding: 3px 9px;
-      border-radius: 6px;
       font-family: 'JetBrains Mono', monospace;
-      border: 1px solid rgba(56, 189, 248, .25);
-      flex-shrink: 0;
     }
 
-    .no-match-pill {
-      font-size: 10px;
-      font-weight: 700;
-      padding: 2px 8px;
-      border-radius: 6px;
-      background: rgba(100, 116, 139, .12);
-      color: #64748b;
-      border: 1px solid rgba(100, 116, 139, .2);
-    }
-
-    /* ─── Other Suggestions Panel ─── */
-    .other-suggestions-section {
-      padding: 0;
-    }
-
-    .other-suggestions-header {
+    /* ── Progress bar for SOS ── */
+    .sos-track {
+      width: 100%;
+      height: 12px;
+      background: rgba(51, 65, 85, 0.4);
+      border-radius: 999px;
+      overflow: hidden;
+      margin: 10px 0 6px;
       display: flex;
-      align-items: center;
+    }
+
+    .sos-fill-pran {
+      background: linear-gradient(90deg, #ef4444, #f97316);
+      height: 100%;
+      transition: width 0.5s ease;
+    }
+
+    .sos-fill-comp {
+      background: #475569;
+      height: 100%;
+      transition: width 0.5s ease;
+    }
+
+    /* ── Issue cards ── */
+    .issue-item {
+      background: rgba(11, 15, 28, 0.8);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 10px;
+      transition: transform 0.15s ease;
+    }
+
+    .issue-item:hover {
+      transform: translateY(-2px);
+    }
+
+    .issue-item-high {
+      border-left: 4px solid #ef4444;
+    }
+
+    .issue-item-med {
+      border-left: 4px solid #f59e0b;
+    }
+
+    .issue-item-low {
+      border-left: 4px solid #38bdf8;
+    }
+
+    .issue-header {
+      display: flex;
       justify-content: space-between;
-      padding: 8px 14px;
-      cursor: pointer;
-      background: rgba(56, 189, 248, .05);
-      border-bottom: 1px solid rgba(51, 65, 85, .25);
-      user-select: none;
-      transition: background .15s;
+      align-items: center;
+      margin-bottom: 4px;
     }
 
-    .other-suggestions-header:hover {
-      background: rgba(56, 189, 248, .1);
-    }
-
-    .other-suggestions-label {
-      font-size: 11px;
+    .issue-title {
+      font-size: 13px;
       font-weight: 700;
-      color: var(--primary);
-      text-transform: uppercase;
-      letter-spacing: .5px;
+      color: #fff;
+    }
+
+    .issue-desc {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* ── Action Checklist ── */
+    .checklist-wrap {
+      background: rgba(11, 15, 28, 0.85);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      margin-top: 14px;
+    }
+
+    .checklist-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 10px;
       display: flex;
       align-items: center;
       gap: 6px;
     }
 
-    .suggestion-count-badge {
-      font-size: 10px;
-      font-weight: 700;
-      background: rgba(56, 189, 248, .15);
-      color: var(--primary);
-      border: 1px solid rgba(56, 189, 248, .3);
-      padding: 1px 6px;
-      border-radius: 9999px;
+    .check-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.3);
+      cursor: pointer;
     }
 
-    .toggle-chevron {
-      font-size: 11px;
-      color: var(--text-muted);
-      transition: transform .25s;
-    }
-
-    .toggle-chevron.open {
-      transform: rotate(180deg);
-    }
-
-    .other-suggestions-body {
-      display: block;
-      /* open by default */
-    }
-
-    .other-suggestions-body.collapsed {
-      display: none;
-    }
-
-    /* Column header inside suggestions */
-    .sug-col-header {
-      display: grid;
-      grid-template-columns: 76px 1fr 140px 110px 75px;
-      gap: 8px;
-      padding: 6px 14px 4px;
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: .5px;
-      color: var(--text-muted);
-      font-weight: 700;
-      border-bottom: 1px solid rgba(30, 41, 59, .5);
-      background: rgba(10, 14, 28, .6);
-    }
-
-    /* Each suggestion row */
-    .sug-row {
-      display: grid;
-      grid-template-columns: 76px 1fr 140px 110px 75px;
-      gap: 8px;
-      padding: 7px 14px;
-      font-size: 12px;
-      align-items: center;
-      transition: background .12s;
-      border-bottom: 1px solid rgba(30, 41, 59, .25);
-    }
-
-    .sug-row:last-child {
+    .check-row:last-child {
       border-bottom: none;
     }
 
-    .sug-row:hover {
-      background: rgba(255, 255, 255, .03);
+    .check-row input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: #38bdf8;
+      cursor: pointer;
+      margin-top: 2px;
     }
 
-    .sug-code {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
-      font-weight: 700;
-      color: #fbbf24;
-      background: rgba(251, 191, 36, .1);
-      padding: 2px 6px;
-      border-radius: 4px;
-      text-align: center;
-      border: 1px solid rgba(251, 191, 36, .2);
-    }
-
-    .sug-item-name {
-      color: #e2e8f0;
-      font-weight: 500;
+    .check-label {
+      font-size: 12px;
+      color: var(--text-main);
       line-height: 1.35;
     }
 
-    .sug-subcat {
-      color: #38bdf8;
-      font-size: 11px;
-      font-weight: 600;
-      background: rgba(56, 189, 248, .08);
-      padding: 2px 6px;
-      border-radius: 4px;
+    .btn-action-primary {
+      width: 100%;
+      background: linear-gradient(135deg, #38bdf8, #0284c7);
+      color: #07090e;
+      font-weight: 800;
+      font-size: 14px;
+      border: none;
+      border-radius: 12px;
+      padding: 13px;
+      cursor: pointer;
+      margin-top: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 8px 20px rgba(56, 189, 248, 0.3);
+      transition: transform 0.15s, box-shadow 0.15s;
     }
 
-    .sug-cat {
-      color: #c084fc;
-      font-size: 11px;
-      font-weight: 600;
-      background: rgba(168, 85, 247, .08);
-      padding: 2px 6px;
-      border-radius: 4px;
+    .btn-action-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 26px rgba(56, 189, 248, 0.45);
     }
 
-    .sug-conf {
-      font-family: 'JetBrains Mono', monospace;
+    .btn-action-verify {
+      width: 100%;
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #fff;
+      font-weight: 800;
+      font-size: 13px;
+      border: none;
+      border-radius: 12px;
+      padding: 12px;
+      cursor: pointer;
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: transform 0.15s;
+    }
+
+    .btn-action-verify:hover {
+      transform: translateY(-2px);
+    }
+
+    /* ── Sub-score Breakdown Bars ── */
+    .subscore-box {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px dashed rgba(51, 65, 85, 0.45);
+    }
+
+    .subscore-title {
       font-size: 11px;
       font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 4px;
-      text-align: center;
-    }
-
-    .conf-high {
-      color: #4ade80;
-      background: rgba(74, 222, 128, .12);
-      border: 1px solid rgba(74, 222, 128, .25);
-    }
-
-    .conf-med {
-      color: #fbbf24;
-      background: rgba(251, 191, 36, .12);
-      border: 1px solid rgba(251, 191, 36, .25);
-    }
-
-    .conf-low {
-      color: #f87171;
-      background: rgba(248, 113, 113, .12);
-      border: 1px solid rgba(248, 113, 113, .25);
-    }
-
-    @media (max-width: 640px) {
-
-      .sug-col-header,
-      .sug-row {
-        grid-template-columns: 72px 1fr;
-      }
-
-      .sug-col-header span:nth-child(3),
-      .sug-col-header span:nth-child(4),
-      .sug-row .sug-subcat,
-      .sug-row .sug-cat {
-        display: none;
-      }
-    }
-
-    /* ── Image Preview ── */
-    .image-preview {
-      width: 100%;
-      max-height: 210px;
-      object-fit: cover;
-      border-radius: 8px;
-      margin-top: 14px;
-      border: 1px solid var(--border);
-      background: #000;
-    }
-
-    /* ── History ── */
-    .history-card {
-      margin-top: 20px;
-    }
-
-    .history-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 10px;
-      font-size: 13px;
-    }
-
-    .history-table th,
-    .history-table td {
-      text-align: left;
-      padding: 10px 10px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .history-table th {
       color: var(--text-muted);
-      font-weight: 600;
-      font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: .5px;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
     }
 
-    .history-table tr:hover td {
-      background: rgba(255, 255, 255, .025);
-      cursor: pointer;
+    .subscore-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+      font-size: 11.5px;
     }
 
-    /* ── Catalogue Explorer ── */
-    #catalogueView {
+    .subscore-bar-bg {
+      flex: 1;
+      height: 6px;
+      background: rgba(51, 65, 85, 0.4);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .subscore-bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #38bdf8, #818cf8);
+      transition: width 0.4s ease;
+    }
+
+    .deductions-wrap {
+      margin-top: 12px;
       display: none;
     }
 
-    .cat-search-row {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 14px;
-    }
-
-    .cat-search-row input {
-      flex: 1;
-      font-size: 14px;
-      padding: 12px 16px;
-    }
-
-    .cat-search-row button {
-      background: var(--primary);
-      color: #07090e;
-      font-weight: 700;
-      border: none;
+    .deduction-tag {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #fca5a5;
       border-radius: 8px;
-      padding: 0 22px;
-      cursor: pointer;
-      font-size: 14px;
-      white-space: nowrap;
+      padding: 6px 10px;
+      font-size: 11.5px;
+      line-height: 1.4;
+      margin-bottom: 6px;
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
     }
 
-    .cat-result-table {
+    /* ── Key Findings & Wobbler Alerts ── */
+    .findings-card {
+      background: rgba(11, 15, 28, 0.85);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      margin-top: 14px;
+    }
+
+    .finding-item {
+      background: rgba(15, 23, 42, 0.65);
+      border-left: 3px solid #38bdf8;
+      padding: 8px 12px;
+      border-radius: 0 8px 8px 0;
+      margin-bottom: 6px;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .finding-icon {
+      font-size: 14px;
+      line-height: 1.3;
+      flex-shrink: 0;
+    }
+
+    .finding-text {
+      font-size: 12px;
+      color: #e2e8f0;
+      line-height: 1.45;
+    }
+
+    /* ── Pricing & Wobblers Card ── */
+    .pricing-item-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(51, 65, 85, 0.4);
+      border-radius: 10px;
+      padding: 9px 12px;
+      margin-bottom: 8px;
+    }
+
+    /* ── Product Detection Rows ── */
+    .product-detect-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(11, 15, 28, 0.85);
+      border: 1px solid rgba(51, 65, 85, 0.45);
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+      transition: transform 0.15s, border-color 0.15s;
+    }
+
+    .product-detect-row:hover {
+      transform: translateY(-2px);
+      border-color: rgba(56, 189, 248, 0.5);
+    }
+
+    .product-detect-pran {
+      border-left: 4px solid #ef4444;
+    }
+
+    .prod-thumb {
+      width: 42px;
+      height: 42px;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 1px solid var(--border);
+      background: #0f172a;
+      flex-shrink: 0;
+    }
+
+    .prod-thumb-placeholder {
+      width: 42px;
+      height: 42px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .insight-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      background: rgba(15, 23, 42, 0.75);
+      padding: 9px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(51, 65, 85, 0.35);
+      margin-bottom: 6px;
+    }
+
+    .copy-btn {
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #38bdf8;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .copy-btn:hover {
+      background: #38bdf8;
+      color: #07090e;
+    }
+
+    /* ── Management Dashboard Tables & Charts ── */
+    .filter-bar {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+      background: rgba(15, 23, 42, 0.7);
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .filter-select {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .mgmt-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 12px;
-      margin-top: 4px;
+      font-size: 13px;
     }
 
-    .cat-result-table th {
-      padding: 7px 10px;
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: .5px;
+    .mgmt-table th {
+      text-align: left;
+      padding: 10px 12px;
       color: var(--text-muted);
-      border-bottom: 1px solid #1e293b;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border);
     }
 
-    .cat-result-table td {
-      padding: 7px 10px;
-      border-bottom: 1px solid rgba(30, 41, 59, .4);
+    .mgmt-table td {
+      padding: 12px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.3);
       vertical-align: middle;
     }
 
-    .cat-result-table tr:hover td {
-      background: rgba(255, 255, 255, .03);
+    .mgmt-table tr:hover td {
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .urgency-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+
+    .urgency-critical {
+      background: rgba(239, 68, 68, 0.2);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+
+    .urgency-warning {
+      background: rgba(245, 158, 11, 0.2);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.4);
+    }
+
+    /* ── Verification Delta Modal ── */
+    .delta-banner {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      border-radius: 12px;
+      padding: 14px;
+      margin-top: 14px;
+      display: none;
     }
   </style>
 </head>
@@ -777,710 +735,1462 @@
   <div class="container">
 
     <!-- Header -->
-    <!-- Header -->
     <header>
       <h1>
-        TEST PANEL | MerchVision
-        <span class="pill pill-blue" id="headerHitsPill" title="Total Analysis API hits">
-          API Hits: <strong id="headerHitsCount">0</strong>
-        </span>
-        <span class="pill pill-green" id="headerSuccessPill" title="Successful Analysis Hits">
-          ✓ Completed: <strong id="headerSuccessCount">0</strong>
-        </span>
+        <span style="color:#ef4444; font-weight:900;">PRAN</span> Merchandising AI
+        <span class="pill pill-blue">V2.0 Closed-Loop</span>
+        <span class="pill pill-green">Gemini 3.7 Vision</span>
       </h1>
       <div class="links">
+        <a href="/docs" target="_blank">Swagger API</a>
+        <a href="/api/v2/management/dashboard" target="_blank">Management API JSON</a>
         <a href="/tokens/models" target="_blank">Token Router</a>
-        <a href="/uploads/summary" target="_blank">Analytics JSON</a>
-        <a href="/docs" target="_blank">Swagger Docs</a>
-        <a href="/redoc" target="_blank">ReDoc</a>
       </div>
     </header>
 
-    <!-- View Navigation -->
+    <!-- Navigation -->
     <div class="view-nav">
-      <button class="view-btn active" id="btnViewScan" onclick="switchView('scan')">
-        AI Rack Scanner &amp; Catalogue Lookup
+      <button class="view-btn active" id="btnViewMerch" onclick="switchView('merchandiser')">
+        Shelf AI Audit (Image to Insights)
+      </button>
+      <button class="view-btn" id="btnViewMgmt" onclick="switchView('management')">
+        Management Dashboard
+      </button>
+      <button class="view-btn" id="btnViewScan" onclick="switchView('scan')">
+        AI Vision Lab &amp; SKUs
       </button>
       <button class="view-btn" id="btnViewCat" onclick="switchView('catalogue')">
-        ItemsDB Catalogue Explorer
+        ItemsDB Catalogue (1,954 SKUs)
       </button>
       <button class="view-btn" id="btnViewHits" onclick="switchView('hits')">
-        Analysis API Hits &amp; Telemetry
+        API Telemetry &amp; Costs
       </button>
     </div>
 
-    <!-- Summary Stats -->
-    <div class="summary-grid" id="summaryStats">
-      <div class="stat-card" style="border-color: rgba(56, 189, 248, 0.45); cursor: pointer;"
-        onclick="switchView('hits')" title="Click to view detailed API hit breakdown">
-        <div class="stat-label">Analysis API Hits</div>
-        <div class="stat-val" id="statScans" style="color:#38bdf8;">-</div>
-        <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">
-          <span style="color:#22c55e;" id="statSuccessSub">0 ok</span> &bull;
-          <span style="color:#ef4444;" id="statFailSub">0 fail</span>
+    <!-- ===================================================================== -->
+    <!-- VIEW 1: MERCHANDISER MOBILE SCREEN (Step 3: What merchandiser sees)   -->
+    <!-- ===================================================================== -->
+    <div id="merchandiserView">
+      <div class="mobile-simulator-wrap">
+
+        <!-- Phone Handheld Container -->
+        <div class="mobile-frame">
+          <div class="mobile-notch">
+            <div class="notch-camera"></div>
+          </div>
+
+          <div class="mobile-header">
+            <div>
+              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">SHELF AI AUDIT</div>
+              <div class="store-badge" id="mStoreName">Live Shelf Analysis</div>
+            </div>
+            <span class="pill pill-blue" id="mAuditStageBadge">INTELLIGENCE</span>
+          </div>
+
+          <!-- Shelf Image Preview -->
+          <div id="mPhotoPreviewContainer" style="display:none; margin-bottom:12px; border-radius:12px; overflow:hidden; border:1px solid var(--border); max-height:200px; position:relative; background:#000;">
+            <img id="mPhotoPreviewImg" src="" alt="Shelf Photo" style="width:100%; height:180px; object-fit:cover; display:block;">
+            <span style="position:absolute; bottom:6px; right:8px; background:rgba(0,0,0,0.75); font-size:10px; color:#38bdf8; padding:3px 7px; border-radius:4px; font-weight:700;">Captured Photo</span>
+          </div>
+
+          <!-- Scorecard Banner -->
+          <div class="scorecard-banner">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="font-size:13px; font-weight:800; color:#fff;" id="mStatusTitle">
+                <span class="status-dot-acceptable" id="mStatusDot" style="background:#38bdf8; box-shadow:none;"></span>
+                <span id="mStatusText">Ready for Image</span>
+              </div>
+              <span style="font-size:11px; color:var(--text-muted);" id="mOutletMeta">Upload a photo to start AI audit</span>
+            </div>
+
+            <div class="score-dial-row">
+              <div>
+                <div style="font-size:11px; color:var(--text-muted);">Retail Execution Score</div>
+                <div class="score-dial-value" id="mScoreVal">--<span style="font-size:18px; color:var(--text-muted);">/100</span></div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:11px; color:var(--text-muted);">Arrangement</div>
+                <div style="font-size:20px; font-weight:800; color:var(--text-muted);" id="mArrScore">--/100</div>
+              </div>
+            </div>
+
+            <!-- Deductions Warning Box -->
+            <div id="mDeductionsContainer" class="deductions-wrap"></div>
+
+            <!-- Sub-scores Matrix Breakdown -->
+            <div class="subscore-box" id="mSubscoresBox">
+              <div class="subscore-title">
+                <span>Score Breakdown Matrix</span>
+                <span style="font-weight:600; color:#38bdf8; text-transform:none;">Max 100 pts</span>
+              </div>
+              <div class="subscore-row">
+                <span style="width:90px; color:#94a3b8;">Availability</span>
+                <div class="subscore-bar-bg"><div id="barSubAvail" class="subscore-bar-fill" style="width:0%;"></div></div>
+                <span id="subscoreAvail" style="width:50px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/40</span>
+              </div>
+              <div class="subscore-row">
+                <span style="width:90px; color:#94a3b8;">Planogram</span>
+                <div class="subscore-bar-bg"><div id="barSubPlano" class="subscore-bar-fill" style="width:0%;"></div></div>
+                <span id="subscorePlano" style="width:50px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/15</span>
+              </div>
+              <div class="subscore-row">
+                <span style="width:90px; color:#94a3b8;">Share of Shelf</span>
+                <div class="subscore-bar-bg"><div id="barSubSos" class="subscore-bar-fill" style="width:0%;"></div></div>
+                <span id="subscoreSos" style="width:50px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/25</span>
+              </div>
+              <div class="subscore-row">
+                <span style="width:90px; color:#94a3b8;">Pricing Display</span>
+                <div class="subscore-bar-bg"><div id="barSubPrice" class="subscore-bar-fill" style="width:0%;"></div></div>
+                <span id="subscorePrice" style="width:50px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/10</span>
+              </div>
+              <div class="subscore-row">
+                <span style="width:90px; color:#94a3b8;">POSM &amp; Promo</span>
+                <div class="subscore-bar-bg"><div id="barSubPromo" class="subscore-bar-fill" style="width:0%;"></div></div>
+                <span id="subscorePromo" style="width:50px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/10</span>
+              </div>
+            </div>
+
+            <!-- Share of Shelf Width Gauge -->
+            <div style="margin-top:12px;">
+              <div style="display:flex; justify-content:space-between; font-size:11.5px; font-weight:700;">
+                <span style="color:#f87171;">PRAN Share: <strong id="mPranSos">0%</strong></span>
+                <span style="color:#94a3b8;">Competitor: <strong id="mCompSos">0%</strong></span>
+              </div>
+              <div class="sos-track">
+                <div class="sos-fill-pran" id="mSosFillPran" style="width:0%;"></div>
+                <div class="sos-fill-comp" id="mSosFillComp" style="width:0%;"></div>
+              </div>
+              <div style="font-size:10px; color:var(--text-muted); text-align:right;">By visible shelf width</div>
+            </div>
+
+            <!-- Chips (4 metrics) -->
+            <div class="metrics-bar-grid" style="grid-template-columns: repeat(2, 1fr); margin-top:12px;">
+              <div class="metric-chip">
+                <div class="metric-chip-label">PRAN Facings</div>
+                <div class="metric-chip-val" style="color:#ef4444;" id="mPranFacingsChip">0</div>
+              </div>
+              <div class="metric-chip">
+                <div class="metric-chip-label">Competitor Facings</div>
+                <div class="metric-chip-val" style="color:#94a3b8;" id="mCompFacingsChip">0</div>
+              </div>
+              <div class="metric-chip">
+                <div class="metric-chip-label">Missing Expected SKUs</div>
+                <div class="metric-chip-val" style="color:#fbbf24;" id="mMissingCount">0</div>
+              </div>
+              <div class="metric-chip">
+                <div class="metric-chip-label">Empty Shelf Gaps</div>
+                <div class="metric-chip-val" style="color:#f87171;" id="mGapsCount">0</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Executive Key Vision Findings -->
+          <div class="findings-card" id="mMobileKeyFindingsWrap">
+            <div style="font-size:12px; font-weight:800; color:#38bdf8; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+              <span>Vision AI Perception Findings</span>
+            </div>
+            <div id="mKeyFindingsList">
+              <div style="color:var(--text-muted); font-size:12px; padding:6px 0;">Upload or capture a photo to view key shelf perception findings.</div>
+            </div>
+          </div>
+
+          <!-- Detected Shelf Pricing & Wobblers -->
+          <div class="findings-card" id="mMobilePricingWrap">
+            <div style="font-size:12px; font-weight:800; color:#34d399; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+              <span>Shelf Pricing &amp; POSM Wobblers</span>
+            </div>
+            <div id="mPricingList">
+              <div style="color:var(--text-muted); font-size:12px; padding:6px 0;">No visible price tags or promotional talkers detected yet.</div>
+            </div>
+          </div>
+
+          <!-- Issues Detected Section -->
+          <div style="font-size:12px; font-weight:800; color:#fff; margin:14px 0 8px; text-transform:uppercase; letter-spacing:0.4px;">
+            Issues Detected
+          </div>
+          <div id="mIssuesList">
+            <div style="color:var(--text-muted); font-size:12px; padding:16px; text-align:center; background:rgba(255,255,255,0.02); border-radius:8px; border:1px dashed var(--border);">
+              No photo analyzed yet. Upload or capture a shelf photo to detect issues.
+            </div>
+          </div>
+
+          <!-- Interactive Action Checklist -->
+          <div class="checklist-wrap">
+            <div class="checklist-title">
+              <span>Recommended Actions</span>
+            </div>
+            <div id="mChecklist">
+              <div style="color:var(--text-muted); font-size:12px; padding:12px; text-align:center;">
+                Recommended action items will appear here after shelf photo analysis.
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Products Detected</div>
-        <div class="stat-val" id="statProductsTotal" style="color:#a78bfa;">-</div>
-        <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">Across all rack scans</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Input Tokens</div>
-        <div class="stat-val" id="statInTokens" style="color:var(--token-in);">-</div>
-        <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">Vision prompt tokens</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Output Tokens</div>
-        <div class="stat-val" id="statOutTokens" style="color:var(--token-out);">-</div>
-        <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">Model completions</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Total Tokens</div>
-        <div class="stat-val" id="statTotalTokens" style="color:var(--primary);">-</div>
-        <div style="font-size:10px; color:var(--text-muted); margin-top:2px;" id="statAvgTokensSub">Avg: - / hit</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Total Cost (USD)</div>
-        <div class="stat-val" id="statCost" style="color:var(--token-cost);">-</div>
-        <div style="font-size:10px; color:var(--text-muted); margin-top:2px;" id="statAvgCostSub">Avg: - / hit</div>
+
+        <!-- Controls & Executive Studio Panel -->
+        <div id="deskStudioPanel" style="flex:1; min-width:340px; max-width:880px;">
+          
+          <!-- Shelf Photo Input Card -->
+          <div class="card" style="margin-bottom:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <h2 style="font-size:16px; color:#fff; font-weight:800;">
+                Shelf Photo Input &amp; Studio
+              </h2>
+              <span class="pill pill-green">Gemini 3.7 Vision Live</span>
+            </div>
+            <p style="font-size:12.5px; color:var(--text-muted); line-height:1.45; margin-bottom:14px;">
+              Upload or capture any retail shelf photo. The AI automatically extracts Share of Shelf (SOS), missing items, facings, arrangement, wobblers, and Retail Execution Score (RES).
+            </p>
+
+            <div style="margin-bottom:14px;">
+              <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:6px; font-weight:700;">Upload Shelf Image</label>
+              <input type="file" id="mFileInput" accept="image/*" style="font-size:12px; color:#fff; margin-bottom:8px; width:100%;" onchange="handleFileSelected(this)">
+              <input type="text" id="mUrlInput" placeholder="Or paste image URL (e.g. image link)..." class="filter-select" style="width:100%;" oninput="handleUrlEntered(this)">
+            </div>
+
+            <!-- In-page Error Banner -->
+            <div id="mAuditErrorBanner" style="display:none; color:#f87171; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); padding:10px 12px; border-radius:8px; font-size:12px; margin-bottom:12px; line-height:1.45;"></div>
+
+            <div style="display:flex; gap:10px; margin-bottom:6px; flex-wrap:wrap;">
+              <button class="btn-action-primary" id="btnRunAudit" onclick="runMerchandiserAudit()" style="margin-top:0; flex:1; min-width:200px;">
+                Analyze Shelf Photo
+              </button>
+              <button onclick="loadSampleScenario()" style="background:rgba(255,255,255,0.08); border:1px solid var(--border); color:#fff; border-radius:12px; padding:0 16px; font-size:13px; font-weight:700; cursor:pointer;" title="Load sample image and test analysis">
+                Sample Image
+              </button>
+              <button onclick="loadSampleWaferAudit()" style="background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.4); color:#38bdf8; border-radius:12px; padding:0 16px; font-size:13px; font-weight:700; cursor:pointer;" title="Load real Gemini 3.7 wafer biscuit audit data instantly">
+                Wafer Audit Demo
+              </button>
+            </div>
+          </div>
+
+          <!-- Executive Intelligence & Strategic Directives Card -->
+          <div class="card" style="margin-bottom:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <h3 style="font-size:14px; color:#fff; font-weight:700;">
+                Executive Directives &amp; Shelf Observations
+              </h3>
+              <span class="pill pill-blue">Management Insights</span>
+            </div>
+            <div id="mMgmtInsightsList">
+              <div style="color:var(--text-muted); font-size:12px; padding:6px 0;">Directives and gondola boundary notes will appear upon photo perception.</div>
+            </div>
+          </div>
+
+          <!-- Detected Products & SKU Catalogue Explorer Card -->
+          <div class="card" style="margin-bottom:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+              <div>
+                <h3 style="font-size:14px; color:#fff; font-weight:700;">
+                  Detected Shelf Products Explorer
+                </h3>
+                <div style="font-size:11.5px; color:var(--text-muted);">Per-facing vision detection linked to ItemsDB catalogue (1,954 SKUs)</div>
+              </div>
+              <span class="pill pill-blue" id="mDetectedCountBadge">0 Products Detected</span>
+            </div>
+            <div id="mDetectedProductsContainer" style="max-height:360px; overflow-y:auto; margin-bottom:14px; padding-right:4px;">
+              <div style="color:var(--text-muted); font-size:12px; padding:8px 0;">No image analyzed yet. Click "Analyze Shelf Photo" or "Wafer Audit Demo" to view detected items.</div>
+            </div>
+
+            <!-- Token Usage Banner -->
+            <div id="mAuditTokensBanner" style="display:none;"></div>
+
+            <!-- Collapsible Full JSON Response with Copy Button -->
+            <details style="background:var(--card-inner); border-radius:8px; padding:10px; border:1px solid var(--border); margin-top:14px;">
+              <summary style="font-size:12px; font-weight:700; color:#38bdf8; cursor:pointer; user-select:none; display:flex; justify-content:space-between; align-items:center;">
+                <span>Full AI Response Data (JSON)</span>
+                <button type="button" class="copy-btn" onclick="event.preventDefault(); copyRawJson(this)">Copy JSON</button>
+              </summary>
+              <pre id="mRawResponseJson" style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#94a3b8; max-height:280px; overflow-y:auto; margin-top:8px; white-space:pre-wrap; word-break:break-all;">{
+  "status": "ready_for_photo",
+  "message": "Upload or capture a shelf photo above to see real-time AI perception response data."
+}</pre>
+            </details>
+          </div>
+
+          <!-- Pipeline Architecture Card -->
+          <div class="card">
+            <h3 style="font-size:14px; color:#38bdf8; font-weight:700; margin-bottom:8px;">
+              Perception $\to$ Decoupled Rules Architecture
+            </h3>
+            <div style="font-size:12px; color:var(--text-muted); line-height:1.5;">
+              1. <strong>Capture:</strong> Merchandiser shelf photo downscaled in RAM to 1024px Lanczos.<br>
+              2. <strong>Vision Perception:</strong> Gemini 3.7 Flash extracts PRAN &amp; competitor facings, shelf levels, readable prices, wobblers, and voids.<br>
+              3. <strong>Catalogue Link:</strong> SentenceTransformer + BM25 matches noisy detections to 1,954 canonical PRAN SKUs.<br>
+              4. <strong>Business Rules:</strong> Calculates Retail Execution Score (RES) &amp; compiles priority checklist.<br>
+              5. <strong>Single Submission:</strong> Instant execution score, checklist, and share breakdown calculated from first photo.
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
 
     <!-- ===================================================================== -->
-    <!-- VIEW 1: SCANNER                                                        -->
+    <!-- VIEW 2: MANAGEMENT DASHBOARD (5 Modules + Exception-First Ranking)    -->
     <!-- ===================================================================== -->
-    <div id="scanView">
-      <div class="grid">
-
-        <!-- Upload Panel -->
-        <div class="card">
-          <div class="tabs">
-            <button class="tab-btn active" id="tabBase64" onclick="setMode('base64')">S3 / Base64</button>
-            <button class="tab-btn" id="tabUrl" onclick="setMode('url')">Remote URL</button>
-            <button class="tab-btn" id="tabFile" onclick="setMode('file')">Upload File</button>
-          </div>
-
-          <div class="api-mode-row">
-            <input type="checkbox" id="singleApiMode" checked>
-            <label for="singleApiMode" style="margin:0; cursor:pointer; color:var(--text-main);">
-              <strong>Single-Call Direct Mode</strong> — instant result, 0 disk writes
-            </label>
-          </div>
-
-          <form id="base64Form" onsubmit="submitBase64(event)">
-            <div class="form-group">
-              <label for="imgBase64">Base64 string or S3 URI</label>
-              <textarea id="imgBase64" placeholder="Paste base64 (/9j/...), data:image/jpeg;base64,..., or s3://..."
-                required></textarea>
-            </div>
-            <button type="submit" class="submit-btn" id="btnBase64">Analyze Base64 In-Memory</button>
-          </form>
-
-          <form id="urlForm" style="display:none;" onsubmit="submitUrl(event)">
-            <div class="form-group">
-              <label for="imgUrl">S3 Presigned URL / Public Image URL</label>
-              <input type="url" id="imgUrl" placeholder="https://bucket.s3.amazonaws.com/rack.jpg" required>
-            </div>
-            <button type="submit" class="submit-btn" id="btnUrl">Start AI Analysis (URL)</button>
-          </form>
-
-          <form id="fileForm" style="display:none;" onsubmit="submitFile(event)">
-            <div class="form-group">
-              <label for="imgFile">Rack Photo (JPG / PNG / WebP)</label>
-              <input type="file" id="imgFile" accept="image/jpeg,image/png,image/webp" required>
-            </div>
-            <button type="submit" class="submit-btn" id="btnFile">Stream &amp; Analyze In-Memory</button>
-          </form>
+    <div id="managementView" style="display:none;">
+      
+      <!-- Filters -->
+      <div class="filter-bar">
+        <div>
+          <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">Territory</label>
+          <select class="filter-select" id="filterTerritory" onchange="loadManagementDashboard()">
+            <option value="">All Territories (Nationwide)</option>
+            <option value="Dhaka North">Dhaka North</option>
+            <option value="Dhaka South">Dhaka South</option>
+            <option value="Chittagong Central">Chittagong Central</option>
+            <option value="Sylhet Metro">Sylhet Metro</option>
+          </select>
         </div>
-
-        <!-- Result Panel -->
-        <div class="card" id="resultCard">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <h2 style="font-size:15px; color:var(--text-muted); font-weight:700;">
-              Live Recognition &amp; Other Suggestions
-            </h2>
-          </div>
-          <div id="resultContent" style="color:var(--text-muted); font-size:14px; line-height:1.7;">
-            Submit a rack image to see AI-detected product names and relevant catalogue suggestions (Sub Category,
-            Category, Item Code).
-          </div>
+        <div>
+          <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">Product Category</label>
+          <select class="filter-select" id="filterCategory" onchange="loadManagementDashboard()">
+            <option value="">All Categories</option>
+            <option value="Beverages">Juices &amp; Drinks (Frooto/Drinko)</option>
+            <option value="Noodles">Noodles (Mr. Noodles)</option>
+            <option value="Biscuits">Biscuits &amp; Confectionery</option>
+            <option value="Culinary">Spices &amp; Culinary</option>
+          </select>
         </div>
-      </div>
-
-      <!-- History -->
-      <div class="card history-card">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <h2 style="font-size:15px; color:var(--text-muted); font-weight:700;">Recent Scan History</h2>
-          <button onclick="loadHistory(); loadSummaryStats();" style="background:transparent; border:1px solid var(--border); color:var(--text-muted);
-                 padding:5px 12px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;">
-            Refresh
+        <div style="margin-left:auto; display:flex; align-items:flex-end; gap:8px;">
+          <button onclick="loadManagementDashboard()" class="pill pill-blue" style="cursor:pointer; padding:8px 14px; font-size:12px;">
+            Refresh Dashboard
           </button>
         </div>
-        <div id="historyContainer" style="overflow-x:auto;">Loading...</div>
       </div>
-    </div>
 
-    <!-- ===================================================================== -->
-    <!-- VIEW 2: CATALOGUE EXPLORER                                             -->
-    <!-- ===================================================================== -->
-    <div id="catalogueView">
-      <div class="card">
-        <h2 style="font-size:16px; font-weight:800; margin-bottom:6px;">
-          ItemsDB Catalogue Search — by Item Name
-        </h2>
-        <p style="font-size:13px; color:var(--text-muted); margin-bottom:16px;">
-          Search 1,953 catalogue items. Results show Item Code, Sub-Category and Category for each match.
-        </p>
-        <form class="cat-search-row" onsubmit="runCatalogueSearch(event)">
-          <input type="text" id="catQ" placeholder="e.g. Frooto Mango, Potata Biscuit, Mr. Noodles Curry..." required>
-          <button type="submit" id="btnCatSearch">Search</button>
-        </form>
-        <div id="catResults" style="overflow-x:auto;">
-          <p style="color:var(--text-muted); font-size:13px;">Enter an item name above to search the catalogue.</p>
+      <!-- Module 1: Executive Overview KPIs -->
+      <div class="grid-4">
+        <div class="card">
+          <div style="font-size:12px; color:var(--text-muted);">Audits Conducted</div>
+          <div style="font-size:28px; font-weight:800; color:#38bdf8; font-family:'JetBrains Mono';" id="kpiTotalAudits">0</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:4px;" id="kpiTerritoryMeta">Across active territories</div>
+        </div>
+        <div class="card">
+          <div style="font-size:12px; color:var(--text-muted);">Avg PRAN Shelf Share</div>
+          <div style="font-size:28px; font-weight:800; color:#ef4444; font-family:'JetBrains Mono';" id="kpiAvgSos">0.0%</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:4px;" id="kpiSosTrend">--</div>
+        </div>
+        <div class="card">
+          <div style="font-size:12px; color:var(--text-muted);">Avg Retail Execution Score</div>
+          <div style="font-size:28px; font-weight:800; color:#a78bfa; font-family:'JetBrains Mono';" id="kpiAvgScore">--<span style="font-size:16px;">/100</span></div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:4px;" id="kpiScoreBand">No audit data</div>
+        </div>
+        <div class="card">
+          <div style="font-size:12px; color:var(--text-muted);">Issue Resolution Rate</div>
+          <div style="font-size:28px; font-weight:800; color:#34d399; font-family:'JetBrains Mono';" id="kpiResRate">0.0%</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">First-time visit fixes</div>
         </div>
       </div>
-    </div>
 
-    <!-- ===================================================================== -->
-    <!-- VIEW 3: ANALYSIS API HITS & TELEMETRY                                  -->
-    <!-- ===================================================================== -->
-    <div id="hitsView" style="display:none;">
-      <div class="grid" style="grid-template-columns: 1fr 1fr; margin-bottom: 20px;">
-
-        <!-- Hit Metrics Breakdown -->
+      <!-- Module 2 & 3: Shelf Intelligence & Product Availability -->
+      <div class="grid-2" style="margin-bottom:20px;">
+        
+        <!-- Module 2: Shelf Intelligence -->
         <div class="card">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-            <h2 style="font-size:15px; color:#fff; font-weight:700;">
-              Analysis API Call Telemetry
-            </h2>
-            <button onclick="loadSummaryStats(); loadFullHitsLog();"
-              style="background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.3); color:#38bdf8; padding:5px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;">
-              ↻ Refresh
-            </button>
+          <h2 style="font-size:15px; font-weight:800; color:#fff; margin-bottom:14px; display:flex; justify-content:space-between;">
+            <span>Shelf Intelligence &amp; Competitor Share</span>
+            <span class="pill pill-blue">Visible Width %</span>
+          </h2>
+          <div style="margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:6px;">
+              <span style="color:#ef4444;" id="txtMgmtSosPran">PRAN Overall SOS: 0.0%</span>
+              <span style="color:#94a3b8;" id="txtMgmtSosComp">Competitors: 0.0%</span>
+            </div>
+            <div class="sos-track" style="height:14px;">
+              <div class="sos-fill-pran" id="barMgmtSosPran" style="width:0%;"></div>
+              <div class="sos-fill-comp" id="barMgmtSosComp" style="width:0%;"></div>
+            </div>
           </div>
-          <table style="width:100%; font-size:13px; border-collapse:collapse;">
-            <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
-              <td style="padding:9px 0; color:var(--text-muted);">Total Analysis Requests (API Hits)</td>
-              <td
-                style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:800; font-size:15px; color:#38bdf8; text-align:right;"
-                id="teleTotalHits">-</td>
-            </tr>
-            <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
-              <td style="padding:9px 0; color:var(--text-muted);">Completed Successfully</td>
-              <td
-                style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#22c55e; text-align:right;"
-                id="teleCompletedHits">-</td>
-            </tr>
-            <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
-              <td style="padding:9px 0; color:var(--text-muted);">Processing / In-Flight</td>
-              <td
-                style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#fbbf24; text-align:right;"
-                id="teleProcessingHits">-</td>
-            </tr>
-            <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
-              <td style="padding:9px 0; color:var(--text-muted);">Failed Calls</td>
-              <td
-                style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#ef4444; text-align:right;"
-                id="teleFailedHits">-</td>
-            </tr>
-            <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
-              <td style="padding:9px 0; color:var(--text-muted);">Success Rate</td>
-              <td
-                style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#34d399; text-align:right;"
-                id="teleSuccessRate">-</td>
-            </tr>
-            <tr style="border-bottom:1px solid rgba(51,65,85,0.4);">
-              <td style="padding:9px 0; color:var(--text-muted);">Avg Tokens per API Hit</td>
-              <td style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; text-align:right;"
-                id="teleAvgTokens">-</td>
-            </tr>
-            <tr>
-              <td style="padding:9px 0; color:var(--text-muted);">Avg USD Cost per API Hit</td>
-              <td
-                style="padding:9px 0; font-family:'JetBrains Mono',monospace; font-weight:700; color:#fbbf24; text-align:right;"
-                id="teleAvgCost">-</td>
-            </tr>
+
+          <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px; font-weight:700;">CATEGORY BREAKDOWN</div>
+          <table class="mgmt-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>PRAN Share</th>
+                <th>Competitor Share</th>
+              </tr>
+            </thead>
+            <tbody id="tblCategoryShares">
+              <tr>
+                <td colspan="3" style="text-align:center; color:var(--text-muted); padding:16px;">No category audits recorded yet.</td>
+              </tr>
+            </tbody>
           </table>
         </div>
 
-        <!-- Top Detected Products Across Hits -->
+        <!-- Module 3: Product Availability & Out-of-Stock -->
         <div class="card">
-          <h2 style="font-size:15px; color:#fff; font-weight:700; margin-bottom:14px;">
-            Top Recognized Products (Across All API Hits)
+          <h2 style="font-size:15px; font-weight:800; color:#fff; margin-bottom:14px; display:flex; justify-content:space-between;">
+            <span>Product Availability &amp; Missing SKUs</span>
+            <span class="pill pill-green" id="pillOsa">OSA: --</span>
           </h2>
-          <div id="topProductsList" style="max-height:260px; overflow-y:auto;">
-            <p style="color:var(--text-muted); font-size:13px;">No data yet.</p>
-          </div>
+          <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">
+            Top PRAN SKUs frequently missing from store planograms across distributor networks:
+          </p>
+          <table class="mgmt-table">
+            <thead>
+              <tr>
+                <th>Missing Product SKU</th>
+                <th>Category</th>
+                <th>Outlets Affected</th>
+              </tr>
+            </thead>
+            <tbody id="tblMissingSkus">
+              <tr>
+                <td colspan="3" style="text-align:center; color:var(--text-muted); padding:16px;">No stockouts or missing SKUs flagged.</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
       </div>
 
-      <!-- Full Hit Audit Log -->
-      <div class="card">
+      <!-- Exception-First Ranking Table -->
+      <div class="card" style="margin-bottom:20px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-          <h2 style="font-size:15px; color:#fff; font-weight:700;">
-            Detailed API Hit Log &amp; Invocations
-          </h2>
-          <span style="font-size:12px; color:var(--text-muted);">Click any row to inspect detected SKUs in scanner
-            view</span>
+          <div>
+            <h2 style="font-size:16px; font-weight:800; color:#fff;">
+              Exception-First Outlets (High Urgency Ranking)
+            </h2>
+            <div style="font-size:12px; color:var(--text-muted);">
+              Outlets ranked by <strong>Urgency Index</strong> ($\text{Missing SKUs} \times \text{Tier} + \text{Competitor Domination}$) requiring immediate distributor intervention.
+            </div>
+          </div>
+          <span class="pill pill-red">Action Required</span>
         </div>
-        <div id="fullHitsContainer" style="overflow-x:auto;">Loading API hits...</div>
+
+        <table class="mgmt-table">
+          <thead>
+            <tr>
+              <th>Urgency</th>
+              <th>Outlet Name</th>
+              <th>Territory</th>
+              <th>Score</th>
+              <th>Missing SKUs</th>
+              <th>Comp Share</th>
+              <th>Primary Action Trigger</th>
+            </tr>
+          </thead>
+          <tbody id="tblExceptions">
+            <tr>
+              <td colspan="7" style="text-align:center; color:var(--text-muted); padding:16px;">No exception outlets requiring intervention.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- VIEW 3: SCANNER (Original Vision Lab)                                 -->
+    <!-- ===================================================================== -->
+    <div id="scanView" style="display:none;">
+      <div class="card">
+        <h2 style="font-size:16px; color:#fff; font-weight:800; margin-bottom:12px;">
+          Direct Vision &amp; Catalogue Matcher Lab
+        </h2>
+        <p style="font-size:12.5px; color:var(--text-muted); margin-bottom:16px;">
+          Direct low-latency SKU extraction with in-memory Lanczos downscaling, OpenRouter/Gemini direct invocation, and SentenceTransformer hybrid reranker.
+        </p>
+        <div style="display:flex; gap:12px; margin-bottom:14px;">
+          <input type="text" id="scanDirectUrl" placeholder="Enter image URL or Base64..." class="filter-select" style="flex:1;">
+          <button class="pill pill-blue" onclick="runDirectScan()" style="cursor:pointer; font-size:13px; padding:0 20px;">
+            Analyze
+          </button>
+        </div>
+        <div id="scanDirectResult" style="font-size:12px; color:var(--text-muted); background:#0b0f1c; padding:14px; border-radius:10px; border:1px solid var(--border);">
+          Results will appear here.
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- VIEW 4: CATALOGUE EXPLORER                                            -->
+    <!-- ===================================================================== -->
+    <div id="catalogueView" style="display:none;">
+      <div class="card">
+        <h2 style="font-size:16px; color:#fff; font-weight:800; margin-bottom:12px;">
+          PRAN ItemsDB Catalogue Explorer
+        </h2>
+        <div style="display:flex; gap:12px; margin-bottom:16px;">
+          <input type="text" id="catQuery" placeholder="Search product (e.g. Frooto, Lassi, Noodles)..." class="filter-select" style="flex:1;" onkeydown="if(event.key==='Enter') searchCat()">
+          <button class="pill pill-blue" onclick="searchCat()" style="cursor:pointer; font-size:13px; padding:0 20px;">
+            Search Catalogue
+          </button>
+        </div>
+        <div id="catResultsContainer" style="overflow-x:auto;">
+          <div style="color:var(--text-muted); font-size:12px;">Enter a query to search across 1,954 products.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- VIEW 5: HITS & TELEMETRY                                              -->
+    <!-- ===================================================================== -->
+    <div id="hitsView" style="display:none;">
+      <div class="card">
+        <h2 style="font-size:16px; color:#fff; font-weight:800; margin-bottom:12px;">
+          API Telemetry &amp; Token Economics
+        </h2>
+        <div class="grid-4" style="margin-bottom:16px;">
+          <div class="metric-chip">
+            <div class="metric-chip-label">Avg Input Tokens</div>
+            <div class="metric-chip-val" id="telemetryAvgIn" style="color:var(--token-in);">--</div>
+          </div>
+          <div class="metric-chip">
+            <div class="metric-chip-label">Avg Output Tokens</div>
+            <div class="metric-chip-val" id="telemetryAvgOut" style="color:var(--token-out);">--</div>
+          </div>
+          <div class="metric-chip">
+            <div class="metric-chip-label">Avg Cost per Scan</div>
+            <div class="metric-chip-val" id="telemetryAvgCost" style="color:var(--token-cost);">$0.00</div>
+          </div>
+          <div class="metric-chip">
+            <div class="metric-chip-label">Total Shelf Scans</div>
+            <div class="metric-chip-val" id="telemetryTotalScans" style="color:#34d399;">0</div>
+          </div>
+        </div>
+        <div style="font-size:12px; color:var(--text-muted);">
+          Lanczos 768-1024px single-tile downscaling saves 85% of vision prompt tokens. Zero reasoning tokens wasted. Local SentenceTransformer enrichment consumes 0 LLM tokens.
+        </div>
       </div>
     </div>
 
   </div>
-  <script>
-    let pollInterval = null;
 
-    /* ── View switch ─────────────────────────────────────────────────────────── */
+  <script>
+    let currentAuditId = null;
+
     function switchView(v) {
+      document.getElementById('btnViewMerch').classList.toggle('active', v === 'merchandiser');
+      document.getElementById('btnViewMgmt').classList.toggle('active', v === 'management');
       document.getElementById('btnViewScan').classList.toggle('active', v === 'scan');
       document.getElementById('btnViewCat').classList.toggle('active', v === 'catalogue');
       document.getElementById('btnViewHits').classList.toggle('active', v === 'hits');
+
+      document.getElementById('merchandiserView').style.display = v === 'merchandiser' ? 'block' : 'none';
+      document.getElementById('managementView').style.display = v === 'management' ? 'block' : 'none';
       document.getElementById('scanView').style.display = v === 'scan' ? 'block' : 'none';
       document.getElementById('catalogueView').style.display = v === 'catalogue' ? 'block' : 'none';
       document.getElementById('hitsView').style.display = v === 'hits' ? 'block' : 'none';
-      if (v === 'hits') {
-        loadSummaryStats();
-        loadFullHitsLog();
+
+      if (v === 'management') {
+        loadManagementDashboard();
+      } else if (v === 'hits') {
+        loadTelemetryStats();
       }
     }
 
-    /* ── Tab mode ────────────────────────────────────────────────────────────── */
-    function setMode(m) {
-      ['base64', 'url', 'file'].forEach(x => {
-        document.getElementById('tab' + x.charAt(0).toUpperCase() + x.slice(1)).classList.toggle('active', x === m);
-        document.getElementById(x + 'Form').style.display = x === m ? 'block' : 'none';
-      });
-    }
-
-    /* ── Submit handlers ─────────────────────────────────────────────────────── */
-    async function submitBase64(e) {
-      e.preventDefault();
-      const btn = document.getElementById('btnBase64');
-      const single = document.getElementById('singleApiMode').checked;
-      btn.disabled = true; btn.textContent = single ? 'Analyzing in RAM…' : 'Enqueuing…';
-      const val = document.getElementById('imgBase64').value.trim();
-      const t0 = performance.now();
-      try {
-        const r = await fetch(single ? '/analyze' : '/uploads/url', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_url: val })
-        });
-        const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.detail || 'Failed');
-        if (single) { renderResult(d, val, elapsed); loadHistory(); loadSummaryStats(); }
-        else startPolling(d.upload_id, val);
-      } catch (err) { alert('Error: ' + err.message); }
-      finally { btn.disabled = false; btn.textContent = 'Analyze Base64 In-Memory'; }
-    }
-
-    async function submitUrl(e) {
-      e.preventDefault();
-      const btn = document.getElementById('btnUrl');
-      const single = document.getElementById('singleApiMode').checked;
-      btn.disabled = true; btn.textContent = single ? 'Analyzing…' : 'Submitting…';
-      const val = document.getElementById('imgUrl').value.trim();
-      const t0 = performance.now();
-      try {
-        const r = await fetch(single ? '/analyze' : '/uploads/url', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_url: val })
-        });
-        const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.detail || 'Failed');
-        if (single) { renderResult(d, val, elapsed); loadHistory(); loadSummaryStats(); }
-        else startPolling(d.upload_id, val);
-      } catch (err) { alert('Error: ' + err.message); }
-      finally { btn.disabled = false; btn.textContent = 'Start AI Analysis (URL)'; }
-    }
-
-    async function submitFile(e) {
-      e.preventDefault();
-      const btn = document.getElementById('btnFile');
-      const single = document.getElementById('singleApiMode').checked;
-      btn.disabled = true; btn.textContent = single ? 'Processing…' : 'Uploading…';
-      const file = document.getElementById('imgFile').files[0];
-      const fd = new FormData(); fd.append('file', file);
-      const preview = URL.createObjectURL(file);
-      const t0 = performance.now();
-      try {
-        const r = await fetch(single ? '/analyze/file' : '/uploads', { method: 'POST', body: fd });
-        const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.detail || 'Failed');
-        if (single) { renderResult(d, preview, elapsed); loadHistory(); loadSummaryStats(); }
-        else startPolling(d.upload_id, preview);
-      } catch (err) { alert('Error: ' + err.message); }
-      finally { btn.disabled = false; btn.textContent = 'Stream & Analyze In-Memory'; }
-    }
-
-    /* ── Polling ─────────────────────────────────────────────────────────────── */
-    function startPolling(id, preview) {
-      if (pollInterval) clearInterval(pollInterval);
-      poll(id, preview);
-      pollInterval = setInterval(() => poll(id, preview), 2000);
-    }
-    async function poll(id, preview) {
-      try {
-        const r = await fetch('/uploads/' + id);
-        const d = await r.json();
-        renderResult(d, preview);
-        if (d.status === 'COMPLETED' || d.status === 'FAILED') {
-          clearInterval(pollInterval); loadHistory(); loadSummaryStats();
+    function handleFileSelected(input) {
+      const errBanner = document.getElementById('mAuditErrorBanner');
+      if (errBanner) errBanner.style.display = 'none';
+      const urlInput = document.getElementById('mUrlInput');
+      if (urlInput) urlInput.value = '';
+      if (input.files && input.files[0]) {
+        const file = input.files[0];
+        const previewWrap = document.getElementById('mPhotoPreviewContainer');
+        const previewImg = document.getElementById('mPhotoPreviewImg');
+        if (previewWrap && previewImg) {
+          previewImg.src = URL.createObjectURL(file);
+          previewWrap.style.display = 'block';
         }
-      } catch (e) { console.error(e); }
-    }
-
-    /* ── Toggle a single "Other Suggestions" panel ───────────────────────────── */
-    function toggleSuggestions(cardId) {
-      const body = document.getElementById('sug-body-' + cardId);
-      const chev = document.getElementById('sug-chev-' + cardId);
-      if (!body) return;
-      const closed = body.classList.contains('collapsed');
-      body.classList.toggle('collapsed', !closed);
-      chev.classList.toggle('open', !closed);
-    }
-
-    /* ── Render result ───────────────────────────────────────────────────────── */
-    function renderResult(data, previewSrc, latencySec) {
-      const container = document.getElementById('resultContent');
-
-      /* Token values */
-      const inTok = data.input_tokens || (data.token_usage?.input_tokens ?? 0);
-      const outTok = data.output_tokens || (data.token_usage?.output_tokens ?? 0);
-      const totTok = data.total_tokens || (data.token_usage?.total_tokens ?? 0) || inTok + outTok;
-      const cost = data.estimated_cost_usd ?? data.token_usage?.estimated_cost_usd ?? 0;
-
-      const latencyChip = latencySec ? `
-        <div class="token-chip" style="border-color:rgba(56,189,248,0.35);">
-          <div class="token-chip-title">Latency</div>
-          <div class="token-chip-val" style="color:#38bdf8;">${latencySec}s</div>
-        </div>` : '';
-
-      const tokenHtml = data.status === 'COMPLETED' ? `
-      <div class="token-row">
-        ${latencyChip}
-        <div class="token-chip">
-          <div class="token-chip-title">Input</div>
-          <div class="token-chip-val" style="color:var(--token-in);">${inTok.toLocaleString()}</div>
-        </div>
-        <div class="token-chip">
-          <div class="token-chip-title">Output</div>
-          <div class="token-chip-val" style="color:var(--token-out);">${outTok.toLocaleString()}</div>
-        </div>
-        <div class="token-chip">
-          <div class="token-chip-title">Total</div>
-          <div class="token-chip-val" style="color:var(--primary);">${totTok.toLocaleString()}</div>
-        </div>
-        <div class="token-chip">
-          <div class="token-chip-title">Est. Cost</div>
-          <div class="token-chip-val" style="color:var(--token-cost);">$${Number(cost).toFixed(6)}</div>
-        </div>
-      </div>` : '';
-
-      /* Product list */
-      const products = data.detected_products || [];
-      let productsHtml = '';
-
-      if (products.length > 0) {
-        const matchedCount = products.filter(p => p.matched ?? (p.catalogue_suggestions?.length > 0)).length;
-        const cards = products.map((p, i) => {
-          const cardId = 'card-' + i;
-          const suggestions = p.catalogue_suggestions || [];
-          const hasSug = suggestions.length > 0;
-
-          /* Build "Other Suggestions" rows */
-          let sugBodyHtml = '';
-          if (hasSug) {
-            const rowsHtml = suggestions.map(s => {
-              const confVal = s.confidence != null ? Math.round(s.confidence * 100) : null;
-              const confBadge = confVal != null
-                ? `<span class="sug-conf ${confVal >= 70 ? 'conf-high' : confVal >= 40 ? 'conf-med' : 'conf-low'}" title="Confidence: ${(s.confidence * 100).toFixed(1)}%">${confVal}%</span>`
-                : `<span class="sug-conf">-</span>`;
-              return `
-            <div class="sug-row">
-              <span class="sug-code">${esc(s.item_code)}</span>
-              <span class="sug-item-name">${esc(s.item_name)}</span>
-              <span class="sug-subcat">${esc(s.sub_category_name)}</span>
-              <span class="sug-cat">${esc(s.category_name)}</span>
-              ${confBadge}
-            </div>`;
-            }).join('');
-
-            sugBodyHtml = `
-            <div class="sug-col-header">
-              <span>Item Code</span>
-              <span>Item Name</span>
-              <span>Sub-Category</span>
-              <span>Category</span>
-              <span>Confidence</span>
-            </div>
-            ${rowsHtml}`;
-          }
-
-          const sugSection = hasSug ? `
-          <div class="other-suggestions-section">
-            <div class="other-suggestions-header" onclick="toggleSuggestions('${cardId}')">
-              <span class="other-suggestions-label">
-                Other Suggestions
-                <span class="suggestion-count-badge">${suggestions.length} result${suggestions.length > 1 ? 's' : ''}</span>
-              </span>
-              <span class="toggle-chevron open" id="sug-chev-${cardId}">▲</span>
-            </div>
-            <div class="other-suggestions-body" id="sug-body-${cardId}">
-              ${sugBodyHtml}
-            </div>
-          </div>` : `
-          <div style="padding:8px 14px;">
-            <span class="no-match-pill">No catalogue suggestions found</span>
-          </div>`;
-
-          return `
-          <li class="product-card ${hasSug ? 'has-suggestions' : ''}">
-            <!-- AI Detected Name (exact, as-is) -->
-            <div class="pc-top">
-              <div class="pc-name-block">
-                <span class="pc-name" title="${esc(p.product_name)}">${esc(p.product_name)}</span>
-              </div>
-              <span class="pc-qty">Qty: ${p.quantity_visible ?? 'N/A'}</span>
-            </div>
-            <!-- Other Suggestions from Catalogue -->
-            ${sugSection}
-          </li>`;
-        }).join('');
-
-        productsHtml = `
-        <div style="display:flex; justify-content:space-between; align-items:center; margin:10px 0 8px;">
-          <span style="font-size:12px; color:var(--text-muted);">
-            <strong style="color:#fff;">${products.length}</strong> products detected
-            &nbsp;·&nbsp;
-            <strong style="color:#4ade80;">${matchedCount}</strong> with catalogue suggestions
-          </span>
-          <span style="font-size:11px; color:var(--text-muted);">Suggestions expand by default</span>
-        </div>
-        <ul class="product-list">${cards}</ul>`;
-
-      } else if (data.status === 'COMPLETED') {
-        productsHtml = '<p style="color:var(--text-muted); margin-top:10px;">No PRAN-RFL products identified in this image.</p>';
-      }
-
-      /* Image preview */
-      let imgTag = '';
-      let src = previewSrc || data.image_url || '';
-      if (src.startsWith('/9j/')) src = 'data:image/jpeg;base64,' + src;
-      else if (src.startsWith('iVBOR')) src = 'data:image/png;base64,' + src;
-      if (src && !src.includes('in_memory') && !src.startsWith('s3://')) {
-        imgTag = `<img src="${src}" class="image-preview" alt="Rack" onerror="this.style.display='none'">`;
-      }
-
-      container.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <span style="font-size:12px; color:var(--text-muted);">
-          ID: <span style="font-family:'JetBrains Mono',monospace; color:#fff;">${data.upload_id}</span>
-        </span>
-        <span class="status-badge status-${data.status}">${data.status}</span>
-      </div>
-      ${data.error_message ? `<div style="color:var(--danger); font-size:13px; margin-bottom:8px;">Error: ${esc(data.error_message)}</div>` : ''}
-      ${tokenHtml}
-      ${productsHtml}
-      ${imgTag}`;
-    }
-
-    function esc(s) {
-      return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
-
-    /* ── Summary Stats & API Hits ────────────────────────────────────────────── */
-    async function loadSummaryStats() {
-      try {
-        const r = await fetch('/uploads/summary');
-        if (!r.ok) return;
-        const d = await r.json();
-
-        const total = d.total_scans || 0;
-        const completed = d.completed_scans || 0;
-        const failed = d.failed_scans || 0;
-        const processing = d.processing_scans || 0;
-
-        // Header pills
-        const hitCountEl = document.getElementById('headerHitsCount');
-        if (hitCountEl) hitCountEl.textContent = total.toLocaleString();
-        const successCountEl = document.getElementById('headerSuccessCount');
-        if (successCountEl) successCountEl.textContent = completed.toLocaleString();
-
-        // Top Summary Cards
-        document.getElementById('statScans').textContent = total.toLocaleString();
-        document.getElementById('statSuccessSub').textContent = `${completed} ok`;
-        document.getElementById('statFailSub').textContent = `${failed} fail`;
-
-        const totalProdsEl = document.getElementById('statProductsTotal');
-        if (totalProdsEl) totalProdsEl.textContent = (d.total_products_detected || 0).toLocaleString();
-
-        document.getElementById('statInTokens').textContent = (d.total_input_tokens || 0).toLocaleString();
-        document.getElementById('statOutTokens').textContent = (d.total_output_tokens || 0).toLocaleString();
-        document.getElementById('statTotalTokens').textContent = (d.total_tokens || 0).toLocaleString();
-        document.getElementById('statAvgTokensSub').textContent = `Avg: ${(d.avg_tokens_per_scan || 0).toLocaleString()} / hit`;
-        document.getElementById('statCost').textContent = '$' + Number(d.total_estimated_cost_usd || 0).toFixed(5);
-        document.getElementById('statAvgCostSub').textContent = `Avg: $${Number(d.avg_cost_per_scan_usd || 0).toFixed(5)} / hit`;
-
-        // Telemetry breakdown (Hits View)
-        const teleTotal = document.getElementById('teleTotalHits');
-        if (teleTotal) {
-          teleTotal.textContent = total.toLocaleString();
-          document.getElementById('teleCompletedHits').textContent = completed.toLocaleString();
-          document.getElementById('teleProcessingHits').textContent = processing.toLocaleString();
-          document.getElementById('teleFailedHits').textContent = failed.toLocaleString();
-          const rate = total > 0 ? ((completed / total) * 100).toFixed(1) + '%' : '100%';
-          document.getElementById('teleSuccessRate').textContent = rate;
-          document.getElementById('teleAvgTokens').textContent = (d.avg_tokens_per_scan || 0).toLocaleString();
-          document.getElementById('teleAvgCost').textContent = '$' + Number(d.avg_cost_per_scan_usd || 0).toFixed(5);
-        }
-
-        // Top products list
-        const topEl = document.getElementById('topProductsList');
-        if (topEl && d.top_products) {
-          if (!d.top_products.length) {
-            topEl.innerHTML = '<p style="color:var(--text-muted); font-size:13px;">No products detected yet.</p>';
-          } else {
-            topEl.innerHTML = d.top_products.map((p, idx) => `
-              <div style="display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid rgba(51,65,85,0.3); font-size:12px;">
-                <span style="font-weight:600; color:#e2e8f0;">
-                  <span style="color:#38bdf8; font-family:'JetBrains Mono',monospace; margin-right:6px;">#${idx + 1}</span>
-                  ${esc(p.product_name)}
-                </span>
-                <span style="font-family:'JetBrains Mono',monospace;">
-                  <strong style="color:#22c55e;">${p.total_quantity} units</strong> 
-                  <span style="color:var(--text-muted); font-size:11px;">(${p.scan_appearances} hits)</span>
-                </span>
-              </div>
-            `).join('');
-          }
-        }
-      } catch (e) { console.error(e); }
-    }
-
-    /* ── Full Hits Audit Log ─────────────────────────────────────────────────── */
-    async function loadFullHitsLog() {
-      const c = document.getElementById('fullHitsContainer');
-      if (!c) return;
-      try {
-        const r = await fetch('/uploads?limit=50');
-        const d = await r.json();
-        if (!d.items || !d.items.length) {
-          c.innerHTML = '<p style="color:var(--text-muted); font-size:13px; margin-top:8px;">No API hits recorded yet.</p>';
-          return;
-        }
-        const rows = d.items.map(item => {
-          const inT = item.input_tokens || 0;
-          const outT = item.output_tokens || 0;
-          const totT = item.total_tokens || (inT + outT);
-          const cost = item.estimated_cost_usd ? '$' + Number(item.estimated_cost_usd).toFixed(6) : '-';
-          const prods = item.detected_products || [];
-          const matched = prods.filter(p => p.matched ?? (p.catalogue_suggestions?.length > 0)).length;
-          return `<tr onclick="poll('${item.upload_id}'); switchView('scan');" title="Click to view details in Scanner view">
-            <td style="font-family:'JetBrains Mono',monospace; color:#38bdf8; font-weight:600;">${item.upload_id.substring(0, 8)}...</td>
-            <td>${new Date(item.created_at).toLocaleString()}</td>
-            <td><span class="status-badge status-${item.status}">${item.status}</span></td>
-            <td><strong>${prods.length}</strong> SKUs</td>
-            <td style="color:#4ade80; font-weight:700;">${prods.length ? matched + '/' + prods.length : '-'}</td>
-            <td style="font-family:'JetBrains Mono',monospace; font-size:11px;">${totT > 0 ? inT + ' in / ' + outT + ' out' : '-'}</td>
-            <td style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--token-cost);">${cost}</td>
-          </tr>`;
-        }).join('');
-        c.innerHTML = `<table class="history-table">
-          <thead><tr>
-            <th>Hit ID</th><th>Timestamp</th><th>Status</th><th>Detected SKUs</th>
-            <th>Catalogue Match</th><th>Tokens</th><th>Est. Cost</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>`;
-      } catch (e) {
-        c.innerHTML = '<p style="color:var(--danger);">Failed to load API hits.</p>';
+        const outletMeta = document.getElementById('mOutletMeta');
+        if (outletMeta) outletMeta.textContent = `Selected: ${file.name} (${Math.round(file.size/1024)} KB)`;
       }
     }
 
-    /* ── History Table ───────────────────────────────────────────────────────── */
-    async function loadHistory() {
-      const c = document.getElementById('historyContainer');
-      try {
-        const r = await fetch('/uploads?limit=10');
-        const d = await r.json();
-        if (!d.items || !d.items.length) {
-          c.innerHTML = '<p style="color:var(--text-muted); font-size:13px; margin-top:8px;">No uploads yet.</p>';
-          return;
-        }
-        const rows = d.items.map(item => {
-          const inT = item.input_tokens || 0;
-          const outT = item.output_tokens || 0;
-          const totT = item.total_tokens || (inT + outT);
-          const cost = item.estimated_cost_usd ? '$' + Number(item.estimated_cost_usd).toFixed(6) : '-';
-          const prods = item.detected_products || [];
-          const matched = prods.filter(p => p.matched ?? (p.catalogue_suggestions?.length > 0)).length;
-          return `<tr onclick="poll('${item.upload_id}')">
-          <td>${new Date(item.created_at).toLocaleTimeString()}</td>
-          <td><span class="status-badge status-${item.status}">${item.status}</span></td>
-          <td><strong>${prods.length}</strong> SKUs</td>
-          <td style="color:#4ade80; font-weight:700;">${prods.length ? matched + '/' + prods.length : '-'}</td>
-          <td style="font-family:'JetBrains Mono',monospace; font-size:11px;">${totT > 0 ? inT + ' / ' + outT + ' / <b>' + totT + '</b>' : '-'}</td>
-          <td style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--token-cost);">${cost}</td>
-        </tr>`;
-        }).join('');
-        c.innerHTML = `<table class="history-table">
-        <thead><tr>
-          <th>Time</th><th>Status</th><th>Products</th>
-          <th>Suggestions</th><th>Tokens (In/Out/Total)</th><th>Cost</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`;
-      } catch (e) {
-        c.innerHTML = '<p style="color:var(--danger);">Failed to load history.</p>';
+    function handleUrlEntered(input) {
+      const errBanner = document.getElementById('mAuditErrorBanner');
+      if (errBanner) errBanner.style.display = 'none';
+      const fileInput = document.getElementById('mFileInput');
+      if (fileInput) fileInput.value = '';
+      const url = (input.value || '').trim();
+      const previewWrap = document.getElementById('mPhotoPreviewContainer');
+      const previewImg = document.getElementById('mPhotoPreviewImg');
+      if (url && previewWrap && previewImg) {
+        previewImg.src = url;
+        previewWrap.style.display = 'block';
+      } else if (!url && previewWrap) {
+        previewWrap.style.display = 'none';
       }
     }
 
-    /* ── Catalogue Explorer Search ───────────────────────────────────────────── */
-    async function runCatalogueSearch(e) {
-      if (e) e.preventDefault();
-      const q = document.getElementById('catQ').value.trim();
-      const out = document.getElementById('catResults');
-      const btn = document.getElementById('btnCatSearch');
-      if (!q) return;
-      btn.disabled = true; btn.textContent = 'Searching…';
-      try {
-        const r = await fetch('/catalogue/search?q=' + encodeURIComponent(q) + '&limit=50');
-        const items = await r.json();
-        if (!items.length) {
-          out.innerHTML = `<p style="color:var(--text-muted); font-size:13px; margin-top:8px;">No items found for "<strong>${esc(q)}</strong>".</p>`;
-          return;
+    /* ── Live Shelf AI Audit (Image -> Response Data) ── */
+    async function runMerchandiserAudit() {
+      const btn = document.getElementById('btnRunAudit');
+      const fileInput = document.getElementById('mFileInput');
+      const urlInput = (document.getElementById('mUrlInput').value || '').trim();
+      const errBanner = document.getElementById('mAuditErrorBanner');
+
+      if (errBanner) errBanner.style.display = 'none';
+
+      if (fileInput.files.length === 0 && !urlInput) {
+        if (errBanner) {
+          errBanner.textContent = "Please select a shelf image file or paste an image URL first.";
+          errBanner.style.display = 'block';
         }
-        const rows = items.map(s => `<tr>
-        <td><span class="sug-code">${esc(s.item_code)}</span></td>
-        <td style="font-weight:600; color:#f8fafc;">${esc(s.item_name)}</td>
-        <td><span class="sug-subcat">${esc(s.sub_category_name)}</span></td>
-        <td><span class="sug-cat">${esc(s.category_name)}</span></td>
-      </tr>`).join('');
-        out.innerHTML = `
-        <div style="font-size:13px; color:var(--text-muted); margin-bottom:10px;">
-          <strong>${items.length}</strong> results for "<strong>${esc(q)}</strong>":
-        </div>
-        <table class="cat-result-table">
-          <thead><tr>
-            <th style="width:100px;">Item Code</th>
-            <th>Item Name</th>
-            <th style="width:180px;">Sub-Category</th>
-            <th style="width:140px;">Category</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>`;
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Analyzing Shelf with AI...";
+
+      try {
+        let res;
+        if (fileInput.files.length > 0) {
+          const formData = new FormData();
+          formData.append('file', fileInput.files[0]);
+          res = await fetch('/api/v2/audit/analyze/file', { method: 'POST', body: formData });
+        } else {
+          const payload = { image_url: urlInput };
+          res = await fetch('/api/v2/audit/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          throw new Error(`Server error (${res.status}): ${text.substring(0, 160)}`);
+        }
+        if (!res.ok) throw new Error(data.detail || data.message || 'Audit analysis failed');
+        renderAuditReport(data);
       } catch (err) {
-        out.innerHTML = `<p style="color:var(--danger);">Error: ${esc(err.message)}</p>`;
-      } finally { btn.disabled = false; btn.textContent = 'Search'; }
+        if (errBanner) {
+          errBanner.textContent = "Audit Analysis Notice: " + err.message;
+          errBanner.style.display = 'block';
+        } else {
+          console.error("Audit error:", err);
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Analyze Shelf Photo";
+      }
     }
 
-    window.onload = () => { loadHistory(); loadSummaryStats(); };
+    function escapeHtml(str) {
+      if (str == null) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function copyRawJson(btn) {
+      const jsonPre = document.getElementById('mRawResponseJson');
+      if (jsonPre && navigator.clipboard) {
+        navigator.clipboard.writeText(jsonPre.textContent).then(() => {
+          const orig = btn.textContent;
+          btn.textContent = "Copied!";
+          btn.style.color = "#34d399";
+          setTimeout(() => {
+            btn.textContent = orig;
+            btn.style.color = "";
+          }, 2000);
+        }).catch(() => {});
+      }
+    }
+
+    function renderAuditReport(report) {
+      if (!report) return;
+      currentAuditId = report.audit_id;
+
+      // 1. Outlet & Stage
+      const storeNameEl = document.getElementById('mStoreName');
+      if (storeNameEl) storeNameEl.textContent = report.outlet_name || "Live Shelf Analysis";
+      const stageBadge = document.getElementById('mAuditStageBadge');
+      if (stageBadge) stageBadge.textContent = report.audit_stage || "STANDALONE";
+
+      // 2. Retail Execution Score & Grade
+      const resObj = report.retail_execution_score || {};
+      const score = (resObj.score != null) ? Number(resObj.score) : 0;
+      const grade = resObj.grade || (score >= 80 ? "Acceptable" : "Needs Attention");
+      const isNeedsAttn = (score < 80);
+
+      const statusTextEl = document.getElementById('mStatusText');
+      const statusDotEl = document.getElementById('mStatusDot');
+      if (statusTextEl) statusTextEl.textContent = grade;
+      if (statusDotEl) statusDotEl.className = isNeedsAttn ? "status-dot-needs-attention" : "status-dot-acceptable";
+
+      const scoreValEl = document.getElementById('mScoreVal');
+      if (scoreValEl) {
+        scoreValEl.innerHTML = `${Math.round(score)}<span style="font-size:18px; color:var(--text-muted); font-weight:600;">/100</span>`;
+        scoreValEl.style.color = isNeedsAttn ? "#f59e0b" : "#34d399";
+      }
+
+      // 3. Arrangement Score (Scale 0-10 or 0-100 normalization)
+      let arrScore = (report.shelf_metrics && report.shelf_metrics.arrangement_score != null) 
+        ? Number(report.shelf_metrics.arrangement_score) : 0;
+      if (arrScore > 0 && arrScore <= 10.0) {
+        arrScore = arrScore * 10.0;
+      }
+      const arrScoreEl = document.getElementById('mArrScore');
+      if (arrScoreEl) arrScoreEl.textContent = `${Math.round(arrScore)}/100`;
+
+      // 4. Share of Shelf & Facings
+      const metrics = report.shelf_metrics || {};
+      const pranSos = Math.round(metrics.pran_shelf_share_pct != null ? metrics.pran_shelf_share_pct : 0);
+      const compSos = Math.round(metrics.competitor_shelf_share_pct != null ? metrics.competitor_shelf_share_pct : Math.max(0, 100 - pranSos));
+      const pranFacings = metrics.pran_facing_count != null ? metrics.pran_facing_count : 0;
+      const compFacings = metrics.competitor_facing_count != null ? metrics.competitor_facing_count : 0;
+
+      document.getElementById('mPranSos').textContent = pranSos + "%";
+      document.getElementById('mCompSos').textContent = compSos + "%";
+      document.getElementById('mSosFillPran').style.width = pranSos + "%";
+      document.getElementById('mSosFillComp').style.width = compSos + "%";
+
+      const pranFacingsEl = document.getElementById('mPranFacingsChip');
+      if (pranFacingsEl) pranFacingsEl.textContent = pranFacings;
+      const compFacingsEl = document.getElementById('mCompFacingsChip');
+      if (compFacingsEl) compFacingsEl.textContent = compFacings;
+
+      // 5. Missing SKUs & Gaps
+      const missingCount = (report.availability_alerts && report.availability_alerts.missing_expected_skus) 
+        ? report.availability_alerts.missing_expected_skus.length : 0;
+      const gapsCount = (report.availability_alerts && report.availability_alerts.visible_gaps) 
+        ? report.availability_alerts.visible_gaps.length : 0;
+      document.getElementById('mMissingCount').textContent = missingCount;
+      document.getElementById('mGapsCount').textContent = gapsCount;
+
+      // 6. Score Deductions Breakdown
+      const deductions = resObj.deductions || [];
+      const dedContainer = document.getElementById('mDeductionsContainer');
+      if (dedContainer) {
+        if (deductions.length > 0) {
+          dedContainer.innerHTML = deductions.map(d => `
+            <div class="deduction-tag">
+              <span style="font-weight:700; color:#f87171;">[Deduction]</span> <span>${escapeHtml(d)}</span>
+            </div>
+          `).join('');
+          dedContainer.style.display = 'block';
+        } else {
+          dedContainer.style.display = 'none';
+        }
+      }
+
+      // 7. Sub-scores Matrix Breakdown
+      const subscoresBox = document.getElementById('mSubscoresBox');
+      if (subscoresBox) {
+        const avail = resObj.availability_score != null ? resObj.availability_score : 40;
+        const plano = resObj.planogram_score != null ? resObj.planogram_score : 15;
+        const sosSc = resObj.sos_score != null ? resObj.sos_score : 25;
+        const priceSc = resObj.pricing_score != null ? resObj.pricing_score : 10;
+        const promoSc = resObj.promotion_score != null ? resObj.promotion_score : 10;
+        
+        const elAvail = document.getElementById('subscoreAvail');
+        const elPlano = document.getElementById('subscorePlano');
+        const elSos = document.getElementById('subscoreSos');
+        const elPrice = document.getElementById('subscorePrice');
+        const elPromo = document.getElementById('subscorePromo');
+
+        if (elAvail) elAvail.textContent = `${avail}/40`;
+        if (elPlano) elPlano.textContent = `${plano}/15`;
+        if (elSos) elSos.textContent = `${sosSc}/25`;
+        if (elPrice) elPrice.textContent = `${priceSc}/10`;
+        if (elPromo) elPromo.textContent = `${promoSc}/10`;
+
+        const barAvail = document.getElementById('barSubAvail');
+        const barPlano = document.getElementById('barSubPlano');
+        const barSos = document.getElementById('barSubSos');
+        const barPrice = document.getElementById('barSubPrice');
+        const barPromo = document.getElementById('barSubPromo');
+
+        if (barAvail) barAvail.style.width = `${Math.min(100, (avail / 40) * 100)}%`;
+        if (barPlano) barPlano.style.width = `${Math.min(100, (plano / 15) * 100)}%`;
+        if (barSos) barSos.style.width = `${Math.min(100, (sosSc / 25) * 100)}%`;
+        if (barPrice) barPrice.style.width = `${Math.min(100, (priceSc / 10) * 100)}%`;
+        if (barPromo) barPromo.style.width = `${Math.min(100, (promoSc / 10) * 100)}%`;
+      }
+
+      // 8. Key Findings (Vision AI Perception Narrative)
+      const keyFindings = (report.audit_summary && report.audit_summary.key_findings) ? report.audit_summary.key_findings : [];
+      const findingsList = document.getElementById('mKeyFindingsList');
+      if (findingsList) {
+        if (keyFindings.length > 0) {
+          findingsList.innerHTML = keyFindings.map(f => {
+            let tag = '<span class="pill pill-blue" style="font-size:10px; padding:2px 6px;">INFO</span>';
+            const fLower = f.toLowerCase();
+            if (fLower.includes('promot') || fLower.includes('wobbler') || fLower.includes('beli & menang')) {
+              tag = '<span class="pill pill-green" style="font-size:10px; padding:2px 6px;">PROMO</span>';
+            } else if (fLower.includes('competitor') || fLower.includes('occupy')) {
+              tag = '<span class="pill pill-amber" style="font-size:10px; padding:2px 6px;">COMP</span>';
+            } else if (fLower.includes('short') || fLower.includes('deficit') || fLower.includes('target')) {
+              tag = '<span class="pill pill-red" style="font-size:10px; padding:2px 6px;">SOS</span>';
+            } else if (fLower.includes('pran') || fLower.includes('detected')) {
+              tag = '<span class="pill pill-blue" style="font-size:10px; padding:2px 6px;">FACING</span>';
+            }
+            return `
+              <div class="finding-item">
+                <span class="finding-icon" style="margin-top:1px;">${tag}</span>
+                <span class="finding-text">${escapeHtml(f)}</span>
+              </div>
+            `;
+          }).join('');
+        } else {
+          findingsList.innerHTML = `<div style="color:var(--text-muted); font-size:12px; padding:6px 0;">No key vision findings recorded for this audit.</div>`;
+        }
+      }
+
+      // 9. Pricing & Promotions (Wobblers / Price Tags)
+      const pricingData = report.pricing_and_promotions || [];
+      const pricingList = document.getElementById('mPricingList');
+      if (pricingList) {
+        if (pricingData.length > 0) {
+          pricingList.innerHTML = pricingData.map(p => {
+            const isPromo = p.promotion_detected;
+            const promoBadge = isPromo 
+              ? `<span class="pill pill-green">Promo / Wobbler Active</span>` 
+              : `<span class="pill pill-muted" style="background:rgba(255,255,255,0.06); color:#94a3b8;">Standard Shelf Price</span>`;
+            const priceVal = (p.visible_price != null) ? `RM ${Number(p.visible_price).toFixed(2)}` : 'N/A';
+            return `
+              <div class="pricing-item-row">
+                <div>
+                  <div style="font-weight:700; color:#fff; font-size:12.5px;">${escapeHtml(p.product)}</div>
+                  <div style="margin-top:4px;">${promoBadge}</div>
+                </div>
+                <div style="text-align:right;">
+                  <div style="font-size:16px; font-weight:800; font-family:'JetBrains Mono'; color:#38bdf8;">${priceVal}</div>
+                  <div style="font-size:10px; color:#94a3b8;">Shelf Price Tag</div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        } else {
+          pricingList.innerHTML = `<div style="color:var(--text-muted); font-size:12px; padding:6px 0;">No visible price tags or promotions detected in frame.</div>`;
+        }
+      }
+
+      // 10. Issues Detected
+      const issuesDiv = document.getElementById('mIssuesList');
+      if (issuesDiv) {
+        if (report.issues_detected && report.issues_detected.length > 0) {
+          issuesDiv.innerHTML = report.issues_detected.map(iss => {
+            const sevClass = iss.severity === 'HIGH' ? 'issue-item-high' : (iss.severity === 'MEDIUM' ? 'issue-item-med' : 'issue-item-low');
+            const pillClass = iss.severity === 'HIGH' ? 'pill-red' : (iss.severity === 'MEDIUM' ? 'pill-amber' : 'pill-blue');
+            return `
+              <div class="issue-item ${sevClass}">
+                <div class="issue-header">
+                  <span class="issue-title">${escapeHtml(iss.issue)}</span>
+                  <span class="pill ${pillClass}">${iss.severity}</span>
+                </div>
+                <div class="issue-desc">${escapeHtml(iss.recommended_action || iss.evidence)}</div>
+                ${iss.evidence && iss.recommended_action ? `<div style="font-size:11px; color:#94a3b8; margin-top:4px;"><em>Evidence:</em> ${escapeHtml(iss.evidence)}</div>` : ''}
+              </div>
+            `;
+          }).join('');
+        } else {
+          issuesDiv.innerHTML = `
+            <div class="issue-item issue-item-low" style="border-left-color:#22c55e;">
+              <div class="issue-header">
+                <span class="issue-title" style="color:#34d399;">No Critical Issues Flagged</span>
+                <span class="pill pill-green">PASS</span>
+              </div>
+              <div class="issue-desc">Shelf facings aligned and organized.</div>
+            </div>
+          `;
+        }
+      }
+
+      // 11. Checklist
+      const chkDiv = document.getElementById('mChecklist');
+      if (chkDiv) {
+        if (report.recommended_actions && report.recommended_actions.length > 0) {
+          chkDiv.innerHTML = report.recommended_actions.map((act, idx) => `
+            <label class="check-row">
+              <input type="checkbox" id="chk_${idx}" onchange="checkAllTasks()">
+              <span class="check-label">${escapeHtml(act)}</span>
+            </label>
+          `).join('');
+        } else {
+          chkDiv.innerHTML = `<div style="color:var(--text-muted); font-size:12px; padding:8px 0;">All shelf conditions meet planogram targets. No action needed.</div>`;
+        }
+      }
+
+      // 12. Detected Products & Catalogue Match Explorer
+      const prods = report.detected_products || [];
+      const badge = document.getElementById('mDetectedCountBadge');
+      if (badge) badge.textContent = `${prods.length} Products Detected`;
+
+      const prodsDiv = document.getElementById('mDetectedProductsContainer');
+      if (prodsDiv) {
+        if (prods.length > 0) {
+          prodsDiv.innerHTML = prods.map(p => {
+            const isPran = (p.brand || '').toUpperCase().includes('PRAN');
+            const brandPillClass = isPran ? 'pill-red' : 'pill-amber';
+            const brandName = p.brand || (isPran ? 'PRAN' : 'Competitor');
+            
+            // Check catalogue suggestion for image URL and SKU
+            let thumbUrl = '';
+            let matchConf = '';
+            if (p.catalogue_suggestions && p.catalogue_suggestions.length > 0) {
+              const topMatch = p.catalogue_suggestions[0];
+              thumbUrl = topMatch.item_image_url || '';
+              matchConf = topMatch.confidence != null ? `${Math.round(topMatch.confidence * 100)}% Match` : '';
+            }
+
+            const skuCode = p.sku ? `SKU: ${escapeHtml(p.sku)}` : (p.catalogue_suggestions && p.catalogue_suggestions[0] ? `SKU: ${escapeHtml(p.catalogue_suggestions[0].item_code)}` : '');
+
+            return `
+              <div class="product-detect-row ${isPran ? 'product-detect-pran' : ''}">
+                <div style="display:flex; align-items:center; gap:10px;">
+                  ${thumbUrl ? `<img src="${escapeHtml(thumbUrl)}" class="prod-thumb" alt="Product" onerror="this.style.display='none'">` : `<div class="prod-thumb-placeholder">${isPran ? 'PRAN' : 'COMP'}</div>`}
+                  <div>
+                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                      <span class="pill ${brandPillClass}" style="font-size:10px; padding:2px 7px;">${escapeHtml(brandName)}</span>
+                      <span style="font-weight:700; color:#fff; font-size:13px;">${escapeHtml(p.product_name || 'Shelf Item')}</span>
+                      ${p.variant ? `<span style="font-size:11.5px; color:#38bdf8;">(${escapeHtml(p.variant)})</span>` : ''}
+                    </div>
+                    <div style="display:flex; gap:8px; margin-top:4px; font-size:11px; color:#94a3b8; align-items:center; flex-wrap:wrap;">
+                      ${skuCode ? `<span style="font-family:'JetBrains Mono'; color:#a5b4fc; background:rgba(99,102,241,0.15); padding:1px 6px; border-radius:4px; border:1px solid rgba(99,102,241,0.3); font-weight:600;">${skuCode}</span>` : ''}
+                      <span>Level: <strong style="color:#fff;">${escapeHtml(p.shelf_level || 'eye_level')}</strong></span>
+                      ${matchConf ? `<span style="color:#34d399; font-weight:600;">${matchConf}</span>` : ''}
+                    </div>
+                  </div>
+                </div>
+                <div style="text-align:right; min-width:65px;">
+                  <div style="font-size:18px; font-weight:800; font-family:'JetBrains Mono'; color:#38bdf8;">${p.facing_count || 1}</div>
+                  <div style="font-size:10px; color:#94a3b8;">Facings</div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        } else {
+          prodsDiv.innerHTML = `<div style="color:var(--text-muted); font-size:12px; padding:8px 0;">No individual product facings parsed in response.</div>`;
+        }
+      }
+
+      // 13. Strategic Management Insights & Limitations
+      const insights = report.management_insights || [];
+      const limitations = report.limitations || [];
+      const mgmtInsightsDiv = document.getElementById('mMgmtInsightsList');
+      if (mgmtInsightsDiv) {
+        let html = '';
+        if (insights.length > 0) {
+          html += insights.map(i => `
+            <div class="insight-row">
+              <span class="pill pill-blue" style="font-size:10px; padding:2px 6px;">NOTE</span>
+              <span style="color:#e2e8f0; font-size:12px; line-height:1.4;">${escapeHtml(i)}</span>
+            </div>
+          `).join('');
+        }
+        if (limitations.length > 0) {
+          html += limitations.map(l => `
+            <div class="insight-row" style="background:rgba(245,158,11,0.08); border-left:3px solid #f59e0b;">
+              <span class="pill pill-amber" style="font-size:10px; padding:2px 6px;">BOUND</span>
+              <span style="color:#cbd5e1; font-size:11.5px; line-height:1.4;"><em>Perception boundary:</em> ${escapeHtml(l)}</span>
+            </div>
+          `).join('');
+        }
+        if (!html) {
+          html = `<div style="color:var(--text-muted); font-size:12px; padding:6px 0;">Standard shelf configuration detected. All facings visible within camera frame.</div>`;
+        }
+        mgmtInsightsDiv.innerHTML = html;
+      }
+
+      // 14. Token Usage & Cost Telemetry Banner
+      const tokenUsage = report.token_usage || {};
+      const tokensDiv = document.getElementById('mAuditTokensBanner');
+      if (tokensDiv) {
+        if (tokenUsage.total_tokens) {
+          tokensDiv.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#94a3b8; background:rgba(15,23,42,0.85); padding:8px 12px; border-radius:8px; border:1px solid var(--border); margin-top:10px;">
+              <span><strong>Gemini 3.7 Vision Telemetry:</strong> In: <span style="color:#a5b4fc; font-weight:700;">${tokenUsage.input_tokens || 0}</span> | Out: <span style="color:#34d399; font-weight:700;">${tokenUsage.output_tokens || 0}</span> | Total: <span style="color:#38bdf8; font-weight:700;">${tokenUsage.total_tokens || 0}</span></span>
+              <span style="color:#fbbf24; font-weight:700;">Est. Cost: $${Number(tokenUsage.estimated_cost_usd || 0).toFixed(6)}</span>
+            </div>
+          `;
+          tokensDiv.style.display = 'block';
+        } else {
+          tokensDiv.style.display = 'none';
+        }
+      }
+
+      // 15. Raw JSON Response
+      const jsonPre = document.getElementById('mRawResponseJson');
+      if (jsonPre) {
+        jsonPre.textContent = JSON.stringify(report, null, 2);
+      }
+    }
+
+    /* ── Instant Wafer Biscuit Audit Demo (Loads real Gemini 3.7 JSON) ── */
+    function loadSampleWaferAudit() {
+      const errBanner = document.getElementById('mAuditErrorBanner');
+      if (errBanner) errBanner.style.display = 'none';
+
+      const sampleData = {
+        "audit_id": "041b7223-9fd2-4d53-ab59-8e232beaa69d",
+        "visit_id": null,
+        "outlet_id": null,
+        "outlet_name": "Metro Retail Gondola (Wafer Biscuit Section)",
+        "audit_stage": "STANDALONE",
+        "audit_summary": {
+          "status": "needs_attention",
+          "image_quality": "good",
+          "key_findings": [
+            "PRAN Bisk Club Mama Cube Wafers (Strawberry, Chocolate, Milk/Vanilla) detected on multiple shelf levels.",
+            "Competitor snack brands (Julie's Love Letters, Nabati Bites, Nabati Rolls, Jacker Wafer Cube, Muzic, Cocopie) occupy significant shelf space.",
+            "PRAN Share of Shelf estimated at ~22%, falling short of the agreed target of 45.0%.",
+            "Promotional talker/wobbler present on shelf edge promoting Mama wafer contest/raffle ('BELI & MENANG')."
+          ]
+        },
+        "retail_execution_score": {
+          "score": 74.6,
+          "grade": "Needs Attention",
+          "availability_score": 35.0,
+          "planogram_score": 11.1,
+          "sos_score": 8.5,
+          "pricing_score": 10.0,
+          "promotion_score": 10.0,
+          "deductions": [
+            "[-] -14 pts: Product facings misaligned or grouping irregular",
+            "[-] -12 pts: Shelf share (22.0%) is below agreed target (45%)"
+          ]
+        },
+        "shelf_metrics": {
+          "pran_shelf_share_pct": 22.0,
+          "competitor_shelf_share_pct": 78.0,
+          "empty_shelf_share_pct": 0.0,
+          "pran_facing_count": 12,
+          "competitor_facing_count": 6,
+          "arrangement_score": 75.0,
+          "measurement_type": "estimated"
+        },
+        "detected_products": [
+          {
+            "brand": "PRAN",
+            "product_name": "Bisk Club Mama Cube Wafer Biscuits",
+            "variant": "Chocolate",
+            "sku": "102210",
+            "facing_count": 2,
+            "shelf_level": "top",
+            "confidence": "high",
+            "catalogue_suggestions": [
+              {
+                "sub_category_name": "272-Bisc-Cream",
+                "sub_category_code": "272",
+                "category_name": "145-Biscuit",
+                "category_code": "145",
+                "item_name": "Bisk Club Cream Biscuit Chocolate 90g",
+                "item_code": "102210",
+                "item_image_url": "https://prgspro.sgp1.cdn.digitaloceanspaces.com/mal/Master/item/102210_l.jpg.jpg",
+                "confidence": 0.718
+              }
+            ],
+            "matched": true
+          },
+          {
+            "brand": "PRAN",
+            "product_name": "Bisk Club Mama Cube Wafer Biscuits",
+            "variant": "Strawberry",
+            "sku": "102210",
+            "facing_count": 2,
+            "shelf_level": "top",
+            "confidence": "high",
+            "catalogue_suggestions": [
+              {
+                "sub_category_name": "272-Bisc-Cream",
+                "sub_category_code": "272",
+                "category_name": "145-Biscuit",
+                "category_code": "145",
+                "item_name": "Bisk Club Cream Biscuit Chocolate 90g",
+                "item_code": "102210",
+                "item_image_url": "https://prgspro.sgp1.cdn.digitaloceanspaces.com/mal/Master/item/102210_l.jpg.jpg",
+                "confidence": 0.718
+              }
+            ],
+            "matched": true
+          },
+          {
+            "brand": "PRAN",
+            "product_name": "Bisk Club Mama Cube Wafer Biscuits",
+            "variant": "Milk / Vanilla",
+            "sku": "102210",
+            "facing_count": 2,
+            "shelf_level": "middle",
+            "confidence": "high",
+            "catalogue_suggestions": [
+              {
+                "sub_category_name": "272-Bisc-Cream",
+                "sub_category_code": "272",
+                "category_name": "145-Biscuit",
+                "category_code": "145",
+                "item_name": "Bisk Club Cream Biscuit Chocolate 90g",
+                "item_code": "102210",
+                "item_image_url": "https://prgspro.sgp1.cdn.digitaloceanspaces.com/mal/Master/item/102210_l.jpg.jpg",
+                "confidence": 0.718
+              }
+            ],
+            "matched": true
+          },
+          {
+            "brand": "Julie's",
+            "product_name": "Love Letters Wafer Cubes",
+            "variant": "Chocolate Hazelnut",
+            "sku": "107784",
+            "facing_count": 2,
+            "shelf_level": "middle",
+            "confidence": "high",
+            "catalogue_suggestions": [
+              {
+                "sub_category_name": "300-Wafer",
+                "sub_category_code": "300",
+                "category_name": "146-Bakery",
+                "category_code": "146",
+                "item_name": "Mama Cube Wafer Orange 100gm X 24 pcs",
+                "item_code": "107784",
+                "item_image_url": "https://prgspro.sgp1.cdn.digitaloceanspaces.com/mal/Master/item/66f3d2dd3b1151.jpg",
+                "confidence": 0.495
+              }
+            ],
+            "matched": false
+          },
+          {
+            "brand": "Nabati",
+            "product_name": "Nabati Bites Wafer",
+            "variant": "Richeese / Chocolate",
+            "sku": null,
+            "facing_count": 2,
+            "shelf_level": "bottom",
+            "confidence": "high",
+            "catalogue_suggestions": null,
+            "matched": false
+          },
+          {
+            "brand": "Nabati",
+            "product_name": "Nabati Rolls",
+            "variant": "Cheese",
+            "sku": null,
+            "facing_count": 3,
+            "shelf_level": "bottom",
+            "confidence": "high",
+            "catalogue_suggestions": null,
+            "matched": false
+          },
+          {
+            "brand": "PRAN",
+            "product_name": "Wafer Cube",
+            "variant": "Vanilla / Milk",
+            "sku": "107785",
+            "facing_count": 1,
+            "shelf_level": "middle",
+            "confidence": "medium",
+            "catalogue_suggestions": [
+              {
+                "sub_category_name": "300-Wafer",
+                "sub_category_code": "300",
+                "category_name": "146-Bakery",
+                "category_code": "146",
+                "item_name": "Mama Cube Wafer Chocolate 100gm X 24 pcs",
+                "item_code": "107785",
+                "item_image_url": "https://prgspro.sgp1.cdn.digitaloceanspaces.com/mal/Master/item/66f3d2f1aa7091.jpg",
+                "confidence": 0.996
+              }
+            ],
+            "matched": true
+          },
+          {
+            "brand": "Muzic",
+            "product_name": "Muzic Bites Wafer",
+            "variant": "Chocolate Hazelnut",
+            "sku": null,
+            "facing_count": 1,
+            "shelf_level": "middle",
+            "confidence": "medium",
+            "catalogue_suggestions": null,
+            "matched": false
+          },
+          {
+            "brand": "Cocopie",
+            "product_name": "Cocopie / Choco Pie",
+            "variant": "Marshmallow / Chocolate",
+            "sku": null,
+            "facing_count": 3,
+            "shelf_level": "middle",
+            "confidence": "medium",
+            "catalogue_suggestions": null,
+            "matched": false
+          }
+        ],
+        "issues_detected": [
+          {
+            "issue": "Shelf arrangement needs alignment",
+            "evidence": "Shelf arrangement score assessed at 75/100",
+            "severity": "MEDIUM",
+            "confidence": "medium",
+            "recommended_action": "Align product labels forward and group same-brand variants together.",
+            "is_resolved": false
+          },
+          {
+            "issue": "PRAN shelf presence below target",
+            "evidence": "Current PRAN shelf share is 22.0% vs target 45%",
+            "severity": "MEDIUM",
+            "confidence": "high",
+            "recommended_action": "Review agreed shelf allocation and seek additional facings for core products.",
+            "is_resolved": false
+          }
+        ],
+        "availability_alerts": {
+          "visible_gaps": [],
+          "missing_expected_skus": [],
+          "inventory_status": "unverified"
+        },
+        "pricing_and_promotions": [
+          {
+            "product": "PRAN Bisk Club Mama Cube Wafer Biscuits",
+            "visible_price": 3.9,
+            "promotion_detected": true,
+            "pricing_violation": "not_evaluated",
+            "confidence": "high"
+          },
+          {
+            "product": "Julie's Love Letters Wafer Cubes",
+            "visible_price": 5.5,
+            "promotion_detected": false,
+            "pricing_violation": "not_evaluated",
+            "confidence": "high"
+          }
+        ],
+        "recommended_actions": [
+          "Correct product facing alignment and group identical variants.",
+          "Review agreed shelf allocation and negotiate additional facings."
+        ],
+        "management_insights": [
+          "SOS deficit of 23.0% indicates headroom for additional facings.",
+          "Promotional materials / POSM present and active on shelf."
+        ],
+        "limitations": [
+          "Full gondola extent extends beyond the left, top, and right frame boundaries; metrics reflect visible shelf area only."
+        ],
+        "human_verification_required": false,
+        "token_usage": {
+          "input_tokens": 2468,
+          "output_tokens": 1583,
+          "total_tokens": 4051,
+          "estimated_cost_usd": 0.007787
+        }
+      };
+
+      // Show sample preview
+      const previewWrap = document.getElementById('mPhotoPreviewContainer');
+      const previewImg = document.getElementById('mPhotoPreviewImg');
+      if (previewWrap && previewImg) {
+        previewImg.src = "https://prgspro.sgp1.cdn.digitaloceanspaces.com/mal/Master/item/66f3d2f1aa7091.jpg";
+        previewWrap.style.display = 'block';
+      }
+      const outletMeta = document.getElementById('mOutletMeta');
+      if (outletMeta) outletMeta.textContent = "Loaded Wafer Audit Perceptual Demo";
+
+      renderAuditReport(sampleData);
+    }
+
+    function loadSampleScenario() {
+      // Sets a real sample shelf photo URL and executes the live AI audit pipeline
+      const sampleUrl = "https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=800";
+      const urlInput = document.getElementById('mUrlInput');
+      const fileInput = document.getElementById('mFileInput');
+      if (urlInput) urlInput.value = sampleUrl;
+      if (fileInput) fileInput.value = "";
+      handleUrlEntered(urlInput);
+      runMerchandiserAudit();
+    }
+
+    function checkAllTasks() {
+      // visual feedback
+    }
+
+    /* ── Management Dashboard ── */
+    async function loadManagementDashboard() {
+      try {
+        const territory = document.getElementById('filterTerritory') ? document.getElementById('filterTerritory').value : "";
+        const category = document.getElementById('filterCategory') ? document.getElementById('filterCategory').value : "";
+
+        const params = new URLSearchParams();
+        if (territory) params.append('territory', territory);
+        if (category && category !== "All Categories") params.append('category', category);
+
+        const url = `/api/v2/management/dashboard?${params.toString()}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.executive_overview) {
+          const total = data.executive_overview.total_audits || 0;
+          const sos = data.executive_overview.avg_pran_sos_pct || 0;
+          const score = data.executive_overview.avg_execution_score || 0;
+          const resRate = data.executive_overview.issue_resolution_rate_pct || 0;
+
+          document.getElementById('kpiTotalAudits').textContent = total;
+          document.getElementById('kpiAvgSos').textContent = total > 0 ? (sos.toFixed(1) + "%") : "0.0%";
+          document.getElementById('kpiAvgScore').innerHTML = total > 0 ? `${score.toFixed(1)}<span style="font-size:16px;">/100</span>` : `--<span style="font-size:16px;">/100</span>`;
+          document.getElementById('kpiResRate').textContent = total > 0 ? (resRate.toFixed(1) + "%") : "0.0%";
+
+          const bandEl = document.getElementById('kpiScoreBand');
+          if (bandEl) {
+            bandEl.textContent = total === 0 ? "No audit data" : (score >= 80 ? "Exemplary execution band" : (score >= 65 ? "Acceptable execution band" : "Needs immediate attention"));
+          }
+
+          // Update SOS bar & labels
+          const compSos = total > 0 ? Math.max(0, 100 - sos) : 0;
+          const txtPran = document.getElementById('txtMgmtSosPran');
+          const txtComp = document.getElementById('txtMgmtSosComp');
+          const barPran = document.getElementById('barMgmtSosPran');
+          const barComp = document.getElementById('barMgmtSosComp');
+          if (txtPran) txtPran.textContent = `PRAN Overall SOS: ${sos.toFixed(1)}%`;
+          if (txtComp) txtComp.textContent = `Competitors: ${compSos.toFixed(1)}%`;
+          if (barPran) barPran.style.width = `${sos}%`;
+          if (barComp) barComp.style.width = `${compSos}%`;
+        }
+
+        // Update OSA Pill
+        const pillOsa = document.getElementById('pillOsa');
+        if (pillOsa && data.product_availability) {
+          const osa = data.product_availability.on_shelf_availability_pct;
+          pillOsa.textContent = (data.executive_overview && data.executive_overview.total_audits > 0) ? `OSA: ${osa}%` : "OSA: --";
+        }
+
+        // Populate Category Shares
+        const tblCat = document.getElementById('tblCategoryShares');
+        if (tblCat) {
+          if (data.shelf_intelligence && data.shelf_intelligence.category_shares && data.shelf_intelligence.category_shares.length > 0) {
+            tblCat.innerHTML = data.shelf_intelligence.category_shares.map(c => `
+              <tr>
+                <td>${c.category}</td>
+                <td style="color:#34d399; font-weight:700;">${c.pran_share_pct}%</td>
+                <td>${c.competitor_share_pct}%</td>
+              </tr>
+            `).join('');
+          } else {
+            tblCat.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding:16px;">No category audits recorded yet.</td></tr>`;
+          }
+        }
+
+        // Populate Missing SKUs
+        const tblMissing = document.getElementById('tblMissingSkus');
+        if (tblMissing) {
+          if (data.product_availability && data.product_availability.top_missing_skus && data.product_availability.top_missing_skus.length > 0) {
+            tblMissing.innerHTML = data.product_availability.top_missing_skus.map(m => `
+              <tr>
+                <td style="color:#fff; font-weight:600;">${m.sku_name}</td>
+                <td>${m.category}</td>
+                <td style="color:#f87171; font-weight:700;">${m.outlets_affected_pct}%</td>
+              </tr>
+            `).join('');
+          } else {
+            tblMissing.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding:16px;">No stockouts or missing SKUs flagged.</td></tr>`;
+          }
+        }
+
+        // Populate Exception Outlets
+        const tbodyEx = document.getElementById('tblExceptions');
+        if (tbodyEx) {
+          if (data.exception_outlets && data.exception_outlets.length > 0) {
+            tbodyEx.innerHTML = data.exception_outlets.map(ex => {
+              const isCrit = ex.urgency_index >= 70;
+              const badgeClass = isCrit ? 'urgency-critical' : 'urgency-warning';
+              return `
+                <tr>
+                  <td><span class="urgency-badge ${badgeClass}">${ex.urgency_index}</span></td>
+                  <td style="font-weight:700; color:#fff;">${ex.outlet_name}</td>
+                  <td>${ex.territory}</td>
+                  <td style="color:${ex.last_score < 65 ? '#f87171' : '#38bdf8'}; font-weight:700;">${ex.last_score}/100</td>
+                  <td style="color:#f87171; font-weight:700;">${ex.missing_skus_count} SKUs</td>
+                  <td style="color:#fbbf24;">${ex.competitor_share_pct}%</td>
+                  <td style="font-size:12px;">${ex.primary_issue}</td>
+                </tr>
+              `;
+            }).join('');
+          } else {
+            tbodyEx.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:16px;">No exception outlets requiring intervention.</td></tr>`;
+          }
+        }
+      } catch (e) {
+        console.warn("Could not load dynamic dashboard:", e);
+      }
+    }
+
+    // Auto-init on page load: keep clean waiting state
+    window.addEventListener('DOMContentLoaded', () => {
+      // Ready for user to upload photo or test with sample
+    });
+
+    /* ── Catalogue search ── */
+    async function searchCat() {
+      const q = document.getElementById('catQuery').value.trim();
+      if (!q) return;
+      const res = await fetch(`/catalogue/search?query=${encodeURIComponent(q)}&limit=10`);
+      const data = await res.json();
+      const div = document.getElementById('catResultsContainer');
+      if (data.results && data.results.length > 0) {
+        div.innerHTML = `
+          <table class="mgmt-table">
+            <thead><tr><th>Item Code</th><th>Item Name</th><th>Category</th><th>Sub-Category</th><th>Confidence</th></tr></thead>
+            <tbody>
+              ${data.results.map(r => `
+                <tr>
+                  <td style="font-family:'JetBrains Mono'; font-weight:700; color:#38bdf8;">${r['Item Code'] || r.item_code}</td>
+                  <td style="color:#fff; font-weight:600;">${r['Item Name'] || r.item_name}</td>
+                  <td>${r['Category Name'] || r.category_name}</td>
+                  <td>${r['Sub Category Name'] || r.sub_category_name}</td>
+                  <td style="color:#34d399;">${Math.round((r.confidence || 0.85)*100)}%</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } else {
+        div.innerHTML = `<div style="color:var(--text-muted); padding:10px;">No matching SKUs found for "${q}".</div>`;
+      }
+    }
+
+    /* ── Direct vision scan ── */
+    async function runDirectScan() {
+      const url = document.getElementById('scanDirectUrl').value.trim();
+      const resDiv = document.getElementById('scanDirectResult');
+      resDiv.textContent = "Analyzing shelf image in RAM...";
+      try {
+        const r = await fetch('/analyze', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ image_url: url || "https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=800" })
+        });
+        const d = await r.json();
+        resDiv.innerHTML = `<pre style="font-family:'JetBrains Mono'; font-size:11.5px; color:#38bdf8; overflow-x:auto;">${JSON.stringify(d, null, 2)}</pre>`;
+      } catch (err) {
+        resDiv.textContent = "Error: " + err.message;
+      }
+    }
+
+    /* ── Live API Telemetry & Token Economics ── */
+    async function loadTelemetryStats() {
+      try {
+        const res = await fetch('/tokens/stats');
+        const d = await res.json();
+        if (d) {
+          const avgIn = d.completed_scans > 0 ? Math.round(d.total_input_tokens / d.completed_scans) : 0;
+          const avgOut = d.completed_scans > 0 ? Math.round(d.total_output_tokens / d.completed_scans) : 0;
+          const costStr = d.avg_cost_per_scan_usd != null ? `$${d.avg_cost_per_scan_usd.toFixed(5)}` : "$0.00";
+
+          const elIn = document.getElementById('telemetryAvgIn');
+          const elOut = document.getElementById('telemetryAvgOut');
+          const elCost = document.getElementById('telemetryAvgCost');
+          const elTotal = document.getElementById('telemetryTotalScans');
+
+          if (elIn) elIn.textContent = avgIn;
+          if (elOut) elOut.textContent = avgOut;
+          if (elCost) elCost.textContent = costStr;
+          if (elTotal) elTotal.textContent = d.total_scans || 0;
+        }
+      } catch (e) {
+        console.warn("Could not load telemetry stats:", e);
+      }
+    }
   </script>
 </body>
 

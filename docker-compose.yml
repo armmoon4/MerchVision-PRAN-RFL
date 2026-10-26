@@ -47,15 +47,15 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/pran_rfl
       STORAGE_BASE_URL: /
-      # Single-tile Gemini vision resolution (cuts vision tokens from 1290 to 516)
-      MAX_IMAGE_DIMENSION: "768"
-      OPENROUTER_MODEL: "google/gemini-2.5-flash"
-      OPENROUTER_REASONING_EFFORT: "none"
-      OPENROUTER_REASONING_MAX_TOKENS: "0"
-      OPENROUTER_MAX_TOKENS: "500"
-      GEMINI_THINKING_BUDGET: "0"
-      # Semantic search tuning (optional overrides)
-      ENABLE_RERANKER: "false"
+      # High-definition vision preserves fine packaging text, price tags, and shelf talkers
+      MAX_IMAGE_DIMENSION: "1600"
+      OPENROUTER_MODEL: "google/gemini-3.7-flash"
+      OPENROUTER_REASONING_EFFORT: "low"
+      OPENROUTER_REASONING_MAX_TOKENS: "1024"
+      OPENROUTER_MAX_TOKENS: "6000"
+      GEMINI_THINKING_BUDGET: "1024"
+      # Semantic search tuning (hybrid dense + BM25 + Cross-Encoder reranker)
+      ENABLE_RERANKER: "true"
       EMBEDDING_MODEL: "all-MiniLM-L6-v2"
       CATALOGUE_SIMILARITY_THRESHOLD: "0.30"
       EMBEDDINGS_DIR: "/app/embeddings"

@@ -4,7 +4,7 @@ app/schemas.py — Pydantic request/response models.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -340,4 +340,207 @@ class TokenStatsResponse(BaseModel):
     avg_tokens_per_scan: float
     avg_cost_per_scan_usd: float
     pricing_rates: TokenPricingResponse
+
+
+# ── Enterprise Merchandising AI Schemas ──────────────────────────────────────────
+
+
+class AuditSummary(BaseModel):
+    status: str = "needs_attention"  # needs_attention | acceptable | unable_to_determine
+    image_quality: str = "good"      # good | fair | poor
+    key_findings: List[str] = []
+
+
+class ShelfMetrics(BaseModel):
+    pran_shelf_share_pct: Optional[float] = None
+    competitor_shelf_share_pct: Optional[float] = None
+    empty_shelf_share_pct: Optional[float] = None
+    pran_facing_count: Optional[int] = None
+    competitor_facing_count: Optional[int] = None
+    arrangement_score: Optional[float] = None
+    measurement_type: str = "measured"  # measured | estimated | unavailable
+
+
+class DetectedProductDetail(BaseModel):
+    brand: Optional[str] = "PRAN"
+    product_name: Optional[str] = None
+    variant: Optional[str] = None
+    sku: Optional[str] = None
+    facing_count: Optional[int] = 1
+    shelf_level: Optional[str] = "eye_level"  # eye_level | top | bottom | unknown
+    bounding_box_normalized: Optional[List[float]] = None
+    confidence: Optional[str] = "high"  # high | medium | low
+    catalogue_suggestions: Optional[List[CatalogueSuggestion]] = None
+    matched: Optional[bool] = None
+
+
+class IssueDetected(BaseModel):
+    id: Optional[str] = None
+    issue: str
+    evidence: str = ""
+    severity: str = "MEDIUM"  # HIGH | MEDIUM | LOW
+    confidence: str = "high"  # high | medium | low
+    recommended_action: str = ""
+    is_resolved: bool = False
+
+
+class VisibleGap(BaseModel):
+    shelf_level: Optional[str] = "eye_level"
+    relative_position: Optional[str] = "middle"
+    estimated_empty_facings: Optional[int] = 1
+
+
+class AvailabilityAlerts(BaseModel):
+    visible_gaps: List[Any] = []
+    missing_expected_skus: List[str] = []
+    inventory_status: str = "unverified"
+
+
+class PricingAndPromotions(BaseModel):
+    product: Optional[str] = None
+    visible_price: Optional[float] = None
+    promotion_detected: bool = False
+    pricing_violation: str = "not_evaluated"  # confirmed | suspected | not_detected | not_evaluated
+    confidence: str = "high"
+
+
+class RetailExecutionScore(BaseModel):
+    score: float = 75.0
+    grade: str = "Needs Attention"  # Excellent, Good, Needs Attention, Critical
+    availability_score: float = 80.0
+    planogram_score: float = 75.0
+    sos_score: float = 70.0
+    pricing_score: float = 90.0
+    promotion_score: float = 85.0
+    deductions: List[str] = []
+
+
+class ShelfAuditReport(BaseModel):
+    """Complete structured Shelf Audit Report adhering to the PRAN Merchandising AI specification."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    audit_id: str
+    visit_id: Optional[str] = None
+    outlet_id: Optional[str] = None
+    outlet_name: Optional[str] = None
+    audit_stage: str = "STANDALONE"  # BEFORE | AFTER | STANDALONE
+    audit_summary: AuditSummary
+    retail_execution_score: RetailExecutionScore
+    shelf_metrics: ShelfMetrics
+    detected_products: List[DetectedProductDetail] = []
+    issues_detected: List[IssueDetected] = []
+    availability_alerts: AvailabilityAlerts
+    pricing_and_promotions: List[PricingAndPromotions] = []
+    recommended_actions: List[str] = []
+    management_insights: List[str] = []
+    limitations: List[str] = []
+    human_verification_required: bool = False
+    token_usage: Optional[TokenUsage] = None
+    image_url: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class AuditAnalyzeRequest(BaseModel):
+    """Request payload for running a full retail shelf audit."""
+
+    image_url: Optional[str] = None
+    image: Optional[str] = None
+    outlet_id: Optional[str] = None
+    visit_id: Optional[str] = None
+    audit_stage: Optional[str] = "STANDALONE"  # BEFORE | AFTER | STANDALONE
+    merchandiser_id: Optional[str] = None
+    merchandiser_name: Optional[str] = None
+    expected_skus: Optional[List[str]] = None
+    planogram_rules: Optional[Dict[str, Any]] = None
+    approved_prices: Optional[Dict[str, float]] = None
+
+
+class AuditVerifyRequest(BaseModel):
+    """Request payload to verify shelf improvements after merchandiser fixes."""
+
+    audit_id: str
+    after_image_url: Optional[str] = None
+    after_image: Optional[str] = None
+    completed_actions: Optional[List[str]] = None
+
+
+class AuditVerifyResponse(BaseModel):
+    """Verification results comparing BEFORE and AFTER audits."""
+
+    visit_id: str
+    before_audit_id: str
+    after_audit_id: str
+    before_score: float
+    after_score: float
+    score_improvement: float
+    is_audit_passed: bool
+    resolved_issues: List[str] = []
+    remaining_issues: List[str] = []
+    pran_sos_delta_pct: float
+    after_report: ShelfAuditReport
+
+
+# ── Management Dashboard Sub-Models ──────────────────────────────────────────
+
+
+class ExecutiveOverviewModule(BaseModel):
+    total_audits: int
+    outlets_covered: int
+    avg_pran_sos_pct: float
+    avg_execution_score: float
+    issue_resolution_rate_pct: float
+    failed_audits_count: int
+
+
+class ShelfIntelligenceModule(BaseModel):
+    pran_overall_sos_pct: float
+    competitor_overall_sos_pct: float
+    golden_shelf_eye_level_pran_pct: float
+    top_competitors: List[Dict[str, Any]] = []
+    category_shares: List[Dict[str, Any]] = []
+
+
+class ProductAvailabilityModule(BaseModel):
+    overall_osa_pct: float
+    total_gaps_flagged: int
+    top_missing_skus: List[Dict[str, Any]] = []
+    chronic_stockout_outlets_count: int
+
+
+class FieldForcePerformanceModule(BaseModel):
+    total_visits_planned: int
+    total_visits_completed: int
+    completion_rate_pct: float
+    avg_visit_duration_mins: float
+    first_time_fix_rate_pct: float
+    top_merchandisers: List[Dict[str, Any]] = []
+
+
+class TrendsAndAlertsModule(BaseModel):
+    territory_rankings: List[Dict[str, Any]] = []
+    critical_alerts_count: int
+    week_over_week_sos_gain_pct: float
+
+
+class ExceptionOutletItem(BaseModel):
+    outlet_id: str
+    outlet_name: str
+    territory: str
+    distributor_name: str
+    last_score: float
+    urgency_index: float
+    missing_skus_count: int
+    competitor_share_pct: float
+    primary_issue: str
+
+
+class ManagementDashboardResponse(BaseModel):
+    executive_overview: ExecutiveOverviewModule
+    shelf_intelligence: ShelfIntelligenceModule
+    product_availability: ProductAvailabilityModule
+    field_force_performance: FieldForcePerformanceModule
+    trends_and_alerts: TrendsAndAlertsModule
+    exception_outlets: List[ExceptionOutletItem]
+
 

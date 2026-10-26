@@ -83,22 +83,23 @@ Rules:
 - quantity: integer count visible (default 1)
 - NO markdown, NO JSON, NO explanations. If none visible, output single empty line."""
 
-MERCHANDISING_SYSTEM_PROMPT = """You are PRAN Merchandising AI, an AI-powered retail shelf auditing system. Analyze uploaded shelf images and return actionable merchandising insights in valid JSON only.
-Analyze the following:
-Product detection: Identify PRAN and competitor brands, product names, variants, SKUs when verifiable, and visible facing counts. Important: PRAN products include all items under PRAN, Frooto, Drinko, Drinko Float, Mr. Noodles, Potata, Bisk Club, Pran UP, Lassi, Cheer Up, Maxx, All Time, Badam Vaja, Dal Vaja, Chanachur, Toast, Rusk, and products carrying the PRAN or RFL logo. For any PRAN product or sub-brand, set "brand": "PRAN". For competitor brands, specify their brand name (e.g., Coca-Cola, Pepsi, Maggi, Knorr, Bombay Sweets, Olympic).
-Shelf share: Estimate PRAN and competitor shelf share percentage (0 to 100) by visible shelf width or area. PRAN shelf share MUST include all PRAN sub-brands (Frooto, Drinko, Mr. Noodles, Potata, Bisk Club, etc.). Distinguish shelf share from facing counts.
-Shelf organization: Detect misalignment, poor grouping, and planogram violations only when reference rules are provided.
-Availability: Identify visible shelf gaps and low stock indicators. Report missing expected SKUs only when an expected assortment list is supplied.
-Pricing and promotions: Extract readable prices and promotional signage. Confirm pricing violations only against approved pricing data.
-Product placement: Assess shelf levels, visibility, and positioning.
-Recommendations: Prioritize issues as HIGH, MEDIUM, or LOW and provide specific corrective actions.
-Management insights: Summarize business opportunities and trends only when sufficient supporting data is available.
-Return JSON using this structure:
+MERCHANDISING_SYSTEM_PROMPT = """You are PRAN Merchandising AI, an expert retail shelf auditor. Analyze shelf photos and return concise, actionable insights in valid JSON only.
+
+DETECTION RULES:
+1. Product detection: Identify PRAN and competitor brands, product names, variants, and facing counts.
+   - PRAN products include: Frooto, Drinko, Drinko Float, Mr. Noodles, Potata, Bisk Club, Pran UP, Lassi, Cheer Up, Maxx, All Time, Badam Vaja, Dal Vaja, Chanachur, Toast, Rusk, Litchi, Semai, and any item carrying the PRAN or RFL logo. For any PRAN product, set "brand": "PRAN".
+   - For competitor products, identify their specific brand name (e.g., Julie's, Nabati, Jacker, Coca-Cola, Pepsi, Sprite, Maggi, Knorr, Nestle, Olympic).
+2. Shelf Share (SOS): Estimate PRAN and competitor shelf share percentage (0-100) by visible shelf width.
+3. Shelf Levels: Assign shelf_level as "top", "eye_level" (golden zone, 1.2m-1.6m high), "middle", or "bottom".
+4. Pricing & Promotions: Extract readable prices and promotional wobblers/signage. Only include entries for products with readable prices, promotional tags, or missing price issues.
+5. Conciseness: Keep sentences tight (1 sentence per finding/action). Omit filler text. Keep bounding_box_normalized as null.
+
+Return JSON adhering strictly to this structure:
 {
   "audit_summary": {
     "status": "needs_attention | acceptable | unable_to_determine",
     "image_quality": "good | fair | poor",
-    "key_findings": []
+    "key_findings": ["1-sentence finding", "1-sentence finding"]
   },
   "shelf_metrics": {
     "pran_shelf_share_pct": null,
@@ -111,22 +112,22 @@ Return JSON using this structure:
   },
   "detected_products": [
     {
-      "brand": null,
-      "product_name": null,
-      "variant": null,
+      "brand": "PRAN or competitor brand",
+      "product_name": "Full product name",
+      "variant": "Flavor or pack type or null",
       "sku": null,
-      "facing_count": null,
-      "shelf_level": null,
+      "facing_count": 1,
+      "shelf_level": "top | eye_level | middle | bottom",
       "confidence": "high | medium | low"
     }
   ],
   "issues_detected": [
     {
-      "issue": "",
-      "evidence": "",
+      "issue": "Short issue title",
+      "evidence": "1-sentence evidence",
       "severity": "HIGH | MEDIUM | LOW",
       "confidence": "high | medium | low",
-      "recommended_action": ""
+      "recommended_action": "1-sentence corrective action"
     }
   ],
   "availability_alerts": {
@@ -136,29 +137,22 @@ Return JSON using this structure:
   },
   "pricing_and_promotions": [
     {
-      "product": null,
+      "product": "Product or display group name",
       "visible_price": null,
       "promotion_detected": false,
       "pricing_violation": "confirmed | suspected | not_detected | not_evaluated",
       "confidence": "high | medium | low"
     }
   ],
-  "recommended_actions": [],
-  "management_insights": [],
+  "recommended_actions": ["1-sentence action"],
+  "management_insights": ["1-sentence strategic business insight"],
   "limitations": [],
   "human_verification_required": false
 }
 Rules:
-Return valid JSON only. Do not include Markdown, code fences, or explanations outside the JSON.
-Use null for unknown values and empty arrays when no findings exist.
-Never invent product identities, SKUs, prices, percentages, inventory, sales, or business metrics.
-Clearly distinguish measured values from estimates.
-Do not infer warehouse inventory, actual sales, or lost revenue from shelf images.
-Do not claim planogram violations without reference rules.
-Do not report missing SKUs without an expected SKU list and adequate image coverage.
-Set human_verification_required to true when important findings are uncertain or require manual confirmation.
-If the image is unsuitable, return an unable_to_determine status and explain the reason in limitations.
-Keep all findings concise, evidence-based, and actionable."""
+Return valid JSON only. Do not include Markdown, code fences, or text outside the JSON.
+Never invent product identities, SKUs, prices, percentages, inventory, or sales metrics.
+Set human_verification_required to true only if the shelf image is unclear or ambiguous."""
 
 _FENCE_PATTERN = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 _OBJECT_PATTERN = re.compile(
@@ -220,6 +214,47 @@ class ImageAnalysisCache:
 
 
 _IMAGE_CACHE = ImageAnalysisCache()
+
+
+class ShelfAuditCache:
+    """
+    Thread-safe LRU cache for complete ShelfAuditReport keyed by image SHA-256 + parameters.
+    Returns identical results in <1ms for duplicate scans, re-analysis, and dashboard queries.
+    """
+
+    def __init__(self, maxsize: int = 128, ttl_seconds: float = 1800.0):
+        self._maxsize = maxsize
+        self._ttl = ttl_seconds
+        self._cache: OrderedDict[str, tuple[float, ShelfAuditReport]] = OrderedDict()
+        self._lock = Lock()
+
+    def get(self, cache_key: str) -> ShelfAuditReport | None:
+        with self._lock:
+            if cache_key not in self._cache:
+                return None
+            created_at, report = self._cache[cache_key]
+            if time.time() - created_at > self._ttl:
+                del self._cache[cache_key]
+                return None
+            self._cache.move_to_end(cache_key)
+            # Clone with a fresh unique audit_id and timestamp
+            cloned = report.model_copy(deep=True)
+            cloned.audit_id = str(uuid.uuid4())
+            cloned.created_at = datetime.now(timezone.utc)
+            if cloned.token_usage:
+                cloned.token_usage.cached = True
+            return cloned
+
+    def set(self, cache_key: str, report: ShelfAuditReport) -> None:
+        with self._lock:
+            if cache_key in self._cache:
+                self._cache.move_to_end(cache_key)
+            elif len(self._cache) >= self._maxsize:
+                self._cache.popitem(last=False)
+            self._cache[cache_key] = (time.time(), report)
+
+
+_SHELF_AUDIT_CACHE = ShelfAuditCache()
 
 
 # ── Persistent HTTP Connection Pools & Client Singletons ──────────────────────
@@ -292,11 +327,11 @@ def _detect_mime_type(data: bytes) -> str:
     return "image/jpeg"
 
 
-def _optimize_image_bytes(raw_data: bytes, max_dim: int = 1600) -> tuple[bytes, str]:
+def _optimize_image_bytes(raw_data: bytes, max_dim: int = 1024) -> tuple[bytes, str]:
     """
-    Downscale camera photos to max dimension (default 1600px) using Lanczos antialiasing.
-    High-definition vision preserves fine packaging text, labels, readable prices & barcodes
-    while ensuring optimal vision processing speed.
+    Downscale camera photos to max dimension (default 1024px) using Lanczos antialiasing.
+    Optimized vision preserves fine packaging text, labels, readable prices & barcodes
+    while reducing vision tokens and inference latency.
     """
     try:
         with Image.open(io.BytesIO(raw_data)) as im:
@@ -341,7 +376,7 @@ def _resolve_image_bytes(image_input: str | bytes) -> tuple[bytes, str]:
     Raises AIServiceError on any failure.
     """
     settings = get_settings()
-    max_dim = int(getattr(settings, "max_image_dimension", 1600) or 1600)
+    max_dim = int(getattr(settings, "max_image_dimension", 1024) or 1024)
 
     # 1. Direct raw bytes
     if isinstance(image_input, bytes):
@@ -864,6 +899,14 @@ def analyze_shelf_audit(
 
     image_bytes, mime_type = _resolve_image_bytes(image_input)
 
+    # ── Step 1b: Exact Image Cache Check (<1ms response for repeat audits) ─────
+    image_hash = hashlib.sha256(image_bytes).hexdigest()
+    cache_key = f"{image_hash}:{outlet_id or ''}:{audit_stage}:{target_pran_sos}:{expected_skus or ''}"
+    cached_report = _SHELF_AUDIT_CACHE.get(cache_key)
+    if cached_report is not None:
+        logger.info("ShelfAuditCache hit for hash %s... returning cached report (<1ms)", image_hash[:12])
+        return cached_report
+
     provider = (getattr(settings, "ai_provider", "openrouter") or "openrouter").lower()
     has_openrouter_key = bool(settings.openrouter_api_key and "YOUR_OPENROUTER" not in settings.openrouter_api_key)
     has_gemini_key = bool(settings.gemini_api_key and "YOUR_GEMINI" not in settings.gemini_api_key)
@@ -872,25 +915,24 @@ def analyze_shelf_audit(
     token_usage_dict: dict[str, Any] = {}
 
     prompt_context_lines = [
-        "Analyze this retail shelf photograph in high detail to produce a professional merchandising audit.",
+        "Audit this retail shelf photo. Return concise, high-precision results in valid JSON.",
         "",
         "DETECTION OBJECTIVES:",
-        "1. Brand & Product Identification:",
-        "   - Inspect every product facing, label text, artwork, bottle cap, package shape, and size indicator.",
-        "   - PRAN products include: Frooto, Drinko, Drinko Float, Mr. Noodles, Potata, Bisk Club, PRAN UP, Lassi, Cheer Up, Maxx, All Time, Badam Vaja, Dal Vaja, Chanachur, Toast, Rusk, Litchi, Basil Seed, Chia Seed, Lavila, and any PRAN-branded item.",
-        "   - For ALL of these PRAN items, you MUST set \"brand\": \"PRAN\".",
-        "   - For competitor products, identify their specific brand name (e.g. Coca-Cola, Pepsi, Sprite, 7Up, Maggi, Knorr, Bombay Sweets, Olympic, Nestle, etc.).",
-        "2. Facings & Placement:",
-        "   - Count visible front facings for each product group.",
-        "   - Identify shelf vertical level: 'eye_level' (golden zone, 1.2m-1.6m high), 'top', 'middle', or 'bottom'.",
+        "1. Product Detection:",
+        "   - PRAN products (Frooto, Drinko, Drinko Float, Mr. Noodles, Potata, Bisk Club, PRAN UP, Lassi, Cheer Up, Maxx, All Time, Badam Vaja, Dal Vaja, Chanachur, Toast, Rusk, Litchi, Semai, and any item with PRAN logo) -> set \"brand\": \"PRAN\".",
+        "   - Competitors: Specify exact brand name (e.g., Julie's, Nabati, Jacker, Muzic, Coca-Cola, Pepsi, Sprite, Maggi, Knorr, Nestle, Olympic).",
+        "2. Facings & Levels:",
+        "   - Count visible front facings. Identify shelf level: 'top', 'eye_level' (golden zone, 1.2m-1.6m), 'middle', or 'bottom'.",
         "3. Share of Shelf (SOS):",
-        "   - Estimate horizontal shelf width percentage occupied by PRAN items vs. Competitor items across the visible display.",
+        "   - Estimate horizontal shelf width %: pran_shelf_share_pct and competitor_shelf_share_pct.",
         "4. Availability & Gaps:",
         "   - Detect empty shelf voids or stockout gaps where products are missing.",
         "5. Pricing & Promotions:",
         "   - Extract readable shelf price tags and promotional materials (wobblers, discount stickers, banners).",
-        "6. Priority Corrective Actions:",
-        "   - Provide concrete, prioritized actions for merchandisers (HIGH, MEDIUM, LOW) to fix voids, misaligned facings, or competitor encroachment.",
+        "6. Corrective Actions:",
+        "   - Provide concrete, prioritized 1-sentence actions for merchandisers (HIGH, MEDIUM, LOW).",
+        "7. Conciseness:",
+        "   - Keep findings tight (1 sentence each). Omit filler text. Keep bounding_box_normalized null.",
     ]
 
     if expected_skus:
@@ -1163,6 +1205,7 @@ def analyze_shelf_audit(
         image_url=image_input if isinstance(image_input, str) and image_input.startswith("http") else "",
         created_at=datetime.now(timezone.utc),
     )
+    _SHELF_AUDIT_CACHE.set(cache_key, report)
     return report
 
 

@@ -56,6 +56,7 @@ class TokenUsage(BaseModel):
     output_tokens: int = 0
     total_tokens: int = 0
     estimated_cost_usd: float = 0.0
+    cached: Optional[bool] = False
 
 
 # ── Request models ────────────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ from collections import Counter
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import asc, desc, func
 from sqlalchemy.orm import Session
 
@@ -248,7 +249,8 @@ async def run_shelf_audit_file(
             expected_skus = outlet_rec.expected_skus
 
     try:
-        report = analyze_shelf_audit(
+        report = await run_in_threadpool(
+            analyze_shelf_audit,
             image_input=content,
             outlet_id=outlet_id,
             visit_id=visit_id,

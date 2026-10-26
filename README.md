@@ -1,251 +1,319 @@
 # MerchVision-PRAN-RFL
 
-> AI-powered retail merchandising backend — processes retail rack photos from **S3 bucket URLs, pure Base64 strings (e.g. `/9j/...`), or direct streams** completely **in-memory with zero local disk storage**. Uses **Google Gemini 2.5 Flash-Lite / 3.7 Flash** with suppressed reasoning and compact pipe-delimited outputs to detect PRAN-RFL product SKUs, enriched locally via SentenceTransformers + BM25 with zero extra AI tokens.
+> **AI-Powered Retail Merchandising & Shelf Intelligence System**  
+> Processes retail shelf photos from **S3 bucket URLs, pure Base64 strings, or direct binary streams** completely **in-memory with zero local disk storage**.  
+> Uses **Google Gemini 3.7 Flash** for high-fidelity vision perception, coupled with a **Decoupled Business Rules Engine** for deterministic Retail Execution Scoring (RES), Share of Shelf (SOS), planogram compliance, POSM wobbler detection, and out-of-stock gap detection. Enriched locally via SentenceTransformers + BM25Okapi against 1,954 canonical PRAN SKUs with zero extra AI tokens.
 >
-> 📖 **Full API Reference**: See [Documentation/API_DOCUMENTATION.md](Documentation/API_DOCUMENTATION.md) for detailed payload schemas, sequencing, and code examples.
+> Full API Reference: See [Documentation/API_DOCUMENTATION.md](Documentation/API_DOCUMENTATION.md) for complete payload schemas, response structures, and integration code.
 
 ---
 
 ## Table of Contents
 
-- [Core Architecture & Vision Pipeline](#core-architecture--vision-pipeline)
-  - [Pipeline Breakdown](#pipeline-breakdown)
+- [System Architecture](#system-architecture)
+  - [1. Perception to Decoupled Rules Pipeline](#1-perception-to-decoupled-rules-pipeline)
+  - [2. Hybrid Catalogue Matching with Competitor Isolation](#2-hybrid-catalogue-matching-with-competitor-isolation)
+- [Key Capabilities](#key-capabilities)
+  - [Standalone Shelf AI Audit](#standalone-shelf-ai-audit)
+  - [Retail Execution Score (RES) Breakdown](#retail-execution-score-res-breakdown)
+  - [Executive Management Dashboard](#executive-management-dashboard)
 - [Prerequisites](#prerequisites)
-- [Quick Start — Local (No Docker)](#quick-start--local-no-docker)
 - [Quick Start — Docker](#quick-start--docker)
-- [Token Cost Calculation](#token-cost-calculation)
+- [Quick Start — Local (No Docker)](#quick-start--local-no-docker)
+- [Environment Configuration](#environment-configuration)
 - [API Reference](#api-reference)
-  - [1. Single-Call Rack Analysis](#1-single-call-rack-analysis)
-  - [2. Items Catalogue & Semantic Search](#2-items-catalogue--semantic-search)
-  - [3. Token Router & Cost Analytics](#3-token-router--cost-analytics)
+  - [V2 Auditing Endpoints](#v2-auditing-endpoints)
+  - [Management Dashboard Endpoint](#management-dashboard-endpoint)
+  - [Catalogue & Semantic Search Endpoints](#catalogue--semantic-search-endpoints)
+  - [Token Router & Cost Telemetry](#token-router--cost-telemetry)
+- [Interactive Web UI Dashboard](#interactive-web-ui-dashboard)
 - [Project Structure](#project-structure)
 
 ---
 
-## Core Architecture & Vision Pipeline
+## System Architecture
 
-The system operates **100% in-memory** with a cost- and latency-optimized pipeline:
+### 1. Perception to Decoupled Rules Pipeline
+
+The platform decouples generative visual perception from business execution rules to guarantee audit reproducibility, eliminate hallucinated scoring, and minimize token costs:
 
 ```
-[ Uploaded Shelf Image (e.g. 4000x3000) ]
-                   │
-                   ▼  (1. Auto-Crop & Lanczos 768px: raw 6,000+ vision tokens cut to ~516–700)
-    [ Downscaled to 768px ]
-                   │
-                   ▼  (1b. Exact Image Cache: if duplicate photo → 0 tokens, $0.00 cost)
-    [ Cache Check ]
-                   │
-                   ▼  (2. Thinking Suppressed: effort="none" / budget=0 eliminates 1,000+ reasoning tokens)
-    [ Call Gemini 2.5 Flash-Lite / 3.7 Flash ]
-                   │
-                   ▼  (3. Pipe Syntax: ~10 tokens/item → total actual output is ONLY ~50–70 TOKENS)
-    [ Raw Text: "Frooto 250ml|6" (~50–70 tokens) ]
-                   │
-                   ▼  (4. Zero AI Tokens: SentenceTransformer + BM25 local enrichment)
-    [ Enriched Output: SKU, Category, Sub-Category, Confidence, Qty ]
+[ Uploaded Shelf Image (e.g. 4000x3000, 12 MP) ]
+                     │
+                     ▼  (1. In-RAM Lanczos Resampling: downscaled to 1024–1600px max dimension)
+     [ RAM Image Stream (io.BytesIO) ]
+                     │
+                     ▼  (1b. Exact Image Cache: SHA-256 fingerprinting for duplicate submissions)
+     [ Cache Verification ]
+                     │
+                     ▼  (2. Gemini 3.7 Flash: extracts facings, shelf levels, pricing & wobblers)
+     [ Perceptual JSON Extraction ]
+                     │
+                     ▼  (3. Zero-Token Local Linking: SentenceTransformers + BM25 + CrossEncoder)
+     [ Enriched Product Detections (1,954 SKUs) ]
+                     │
+                     ▼  (4. Deterministic Rules Engine: calculates RES 0–100 & deductions)
+     [ Verified Execution Score, Deductions & Action Checklist ]
 ```
 
-### Pipeline Breakdown
+| Pipeline Stage | Technical Mechanism | Business Value |
+|---|---|---|
+| **1. In-Memory Resampling** | Image resized in RAM using high-fidelity Lanczos filtering to 1024–1600px max dimension (`io.BytesIO`). | Preserves fine product text, packaging barcodes, and price tags while keeping vision prompt tokens low. |
+| **1b. Exact Image Cache** | SHA-256 fingerprint hashes image payload before calling external LLMs. | Duplicate submissions return cached audit results in 0ms with **$0.00 cost** and **0 tokens consumed**. |
+| **2. Gemini 3.7 Vision Perception** | Extracts PRAN and competitor facings, shelf levels (`top`, `middle`, `bottom`), visible price tags, and promotional talkers/wobblers (e.g. `'BELI & MENANG'`). | Accurate scene understanding with controlled reasoning effort (`OPENROUTER_REASONING_EFFORT=low`). |
+| **3. Hybrid Catalogue Matching** | Matches detected product strings against `itemsdb.csv` (1,954 SKUs) using `SentenceTransformer` (`all-MiniLM-L6-v2`), `BM25Okapi` keyword indexing, and Cross-Encoder reranking. | **0 extra LLM tokens spent**. Guarantees canonical Item Code, Category, Sub-Category, and confidence score. |
+| **4. Competitor Brand Isolation** | Explicit competitor keyword filtering (`JULIE`, `NABATI`, `JACKER`, `MUZIC`, `COCOPIE`, `CHOCO PIE`, `OREO`). | Prevents competitor products from being incorrectly overwritten as PRAN items during semantic catalogue search. |
+| **5. Decoupled Rules Engine** | Transparent rule calculations for Retail Execution Score (RES), Arrangement Score (normalized 0–100), Share of Shelf (SOS), and priority action items. | Deterministic scoring with explainable deductions; prevents LLM hallucination of scores. |
 
-| Step | Optimization Stage | Technical Mechanism | Impact on Tokens & Latency |
-|---|---|---|---|
-| **1** | **Auto-Crop & Lanczos 768px** | High-resolution camera images (e.g. 4000×3000, 12 MP) are downscaled in RAM (`io.BytesIO`) using high-fidelity Lanczos resampling to 768px max dimension. | Cuts raw vision tile tokens from **6,000+ tokens** down to only **~516–700 tokens** while preserving product text sharpness. |
-| **1b** | **Exact Image Cache** | SHA-256 fingerprinting checks for duplicate shelf photo submissions. | If a duplicate image is detected: **0 tokens consumed, $0.00 cost**, and instant 0ms response. |
-| **2** | **Thinking Suppressed** | Enforces reasoning suppression via OpenRouter (`effort="none"`, `max_tokens=0`) or Gemini Direct (`thinking_budget=0`). | Eliminates **1,000+ reasoning tokens** and avoids 3–5 seconds of unnecessary thinking latency per scan. |
-| **3** | **Compact Pipe Syntax** | Model is instructed to respond in ultra-compact plain text: `product name\|quantity` (e.g. `Frooto 250ml\|6`) rather than verbose JSON arrays. | Output is only **~10 tokens per detected item**, keeping total completion output to **ONLY ~50–70 TOKENS**. |
-| **4** | **Zero AI Tokens Enrichment** | AI output is matched locally in memory against the 1,954-product `itemsdb.csv` catalogue using `SentenceTransformer` (`all-MiniLM-L6-v2`), `BM25Okapi` keyword search, and Cross-Encoder reranking. | **0 extra LLM tokens spent**. Returns verified SKU Item Code, Item Name, Category, Sub-Category, and Confidence (0.0–1.0). |
+---
+
+## Key Capabilities
+
+### Standalone Shelf AI Audit
+- **Zero Configuration Required**: Does not require pre-registered store IDs or manual shelf mapping. Merchandisers or supervisors simply upload a shelf photo.
+- **Share of Shelf (SOS)**: Automatically computes PRAN shelf share percentage vs. competitor shelf share percentage.
+- **Arrangement Score**: Normalized 0–100 scale evaluating facing grouping, label forward alignment, and shelf neatness.
+- **Pricing & POSM Wobbler Detection**: Detects shelf price tags (e.g. PRAN RM 3.90 vs. Competitor RM 5.50) and active promotional talkers/wobblers (e.g. contest tags `'BELI & MENANG'`).
+- **Availability & Out-of-Stock**: Identifies empty shelf gaps and missing planogram SKUs.
+
+### Retail Execution Score (RES) Breakdown
+
+The Retail Execution Score is evaluated deterministically out of **100 points**:
+
+$$\text{RES} = \text{Availability} (40) + \text{Planogram} (15) + \text{SOS} (25) + \text{Pricing} (10) + \text{Promotion} (10) - \text{Deductions}$$
+
+| Metric | Max Weight | Evaluation Criteria |
+|---|---|---|
+| **Product Availability** | 40 pts | Core SKU presence and absence of visible shelf out-of-stock voids. |
+| **Planogram Compliance** | 15 pts | Proper arrangement on assigned shelf tiers (`top`, `middle`, `bottom`) and alignment. |
+| **Share of Shelf (SOS)** | 25 pts | PRAN visible facing share relative to the agreed category target (e.g. 45%). |
+| **Pricing Display** | 10 pts | Verified shelf price tags present and readable on shelf edge. |
+| **POSM & Promotion** | 10 pts | Active presence of promotional talkers, wobblers, shelf strips, or contest material. |
+
+### Executive Management Dashboard
+- **Executive Overview KPIs**: Real-time aggregated metrics across audits (Avg SOS, Avg Execution Score, Resolution Rate).
+- **Category Share Breakdown**: Side-by-side PRAN vs. Competitor share across Beverages, Noodles, Biscuits, and Culinary.
+- **On-Shelf Availability (OSA)**: Network-wide stockout frequency tracking highlighting top missing SKUs.
+- **Exception-First Ranking**: Stores ranked by an **Urgency Index** ($\text{Missing SKUs} \times \text{Tier} + \text{Competitor Domination}$) requiring immediate distributor replenishment.
 
 ---
 
 ## Prerequisites
 
-### For Local (No Docker)
-
-| Requirement | Version | Check |
+| Requirement | Minimum Version | Notes |
 |---|---|---|
-| Python | 3.11+ / 3.13+ | `python --version` |
-| Pipenv / Pip | any | `pipenv --version` |
-| OpenRouter or Gemini API Key | — | [openrouter.ai/keys](https://openrouter.ai/keys) or [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
-
-### For Docker
-
-| Requirement | Version | Check |
-|---|---|---|
-| Docker Desktop | any | `docker --version` |
-| Docker Compose | v2+ | `docker compose version` |
-| API Key | — | Set in `.env` |
-
----
-
-## Quick Start — Local (No Docker)
-
-Uses **SQLite** (zero setup) + pure in-memory vision processing.
-
-### Step 1 — Clone and enter the project
-
-```bash
-cd MerchVision-PRAN-RFL
-```
-
-### Step 2 — Install dependencies
-
-```bash
-pipenv install
-# or: pip install -r requirements.txt
-```
-
-### Step 3 — Configure environment
-
-```bash
-copy .env.example .env        # Windows
-cp .env.example .env          # Mac/Linux
-```
-
-Open `.env` and set your preferred AI provider:
-
-```env
-AI_PROVIDER=openrouter
-OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxx
-OPENROUTER_MODEL=google/gemini-3.7-flash
-OPENROUTER_REASONING_EFFORT=none
-
-# Or for Gemini direct:
-# AI_PROVIDER=gemini
-# GEMINI_API_KEY=AIzaSyxxxxxxxxxxxxxxxxxxxxxxxx
-# GEMINI_MODEL=gemini-3.7-flash
-# GEMINI_THINKING_BUDGET=0
-```
-
-### Step 4 — Start the server
-
-```bash
-pipenv run uvicorn app.main:app --reload
-```
-
-Open **http://localhost:8000** in your browser for the Web UI dashboard or **http://localhost:8000/docs** for Swagger API Docs.
+| **Docker & Docker Compose** | Docker 24+, Compose v2+ | Recommended for complete production deployment |
+| **Python** | 3.11+ / 3.12+ / 3.13+ | For local non-Docker development |
+| **AI Provider Key** | OpenRouter or Google Gemini Direct | Configured in `.env` |
 
 ---
 
 ## Quick Start — Docker
 
-Run the entire stack with PostgreSQL 16 and pre-warmed embeddings:
+Run the entire platform (FastAPI backend + PostgreSQL 16 + pre-warmed embeddings) with a single command:
 
 ```bash
 docker compose up --build -d
 ```
 
+- Web UI Dashboard: **http://localhost:8000/**
+- Swagger Interactive API: **http://localhost:8000/docs**
+- ReDoc API Reference: **http://localhost:8000/redoc**
+- Token Router Status: **http://localhost:8000/tokens/models**
+
 ---
 
-## Token Cost Calculation
+## Quick Start — Local (No Docker)
 
-Pricing is calculated dynamically based on configurable rates in `.env`:
+### Step 1 — Clone and Install Dependencies
+```bash
+git clone https://github.com/armmoon4/MerchVision-PRAN-RFL.git
+cd MerchVision-PRAN-RFL
+pip install -r requirements.txt
+```
 
-$$\text{Estimated Cost (USD)} = \left(\frac{\text{Input Tokens}}{1,000,000} \times \text{Rate}_{\text{input}}\right) + \left(\frac{\text{Output Tokens}}{1,000,000} \times \text{Rate}_{\text{output}}\right)$$
+### Step 2 — Configure Environment
+```bash
+copy .env.example .env    # Windows
+cp .env.example .env      # Linux/macOS
+```
 
-- Default Input Rate: `$0.75` per 1M tokens (OpenRouter `google/gemini-3.7-flash`)
-- Default Output Rate: `$3.75` per 1M tokens
-- Also supports Gemini 2.5 Flash-Lite / direct Gemini rates configurable via `.env`.
+Edit `.env` to set your OpenRouter or Gemini API key:
+```env
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxx
+OPENROUTER_MODEL=google/gemini-3.7-flash
+OPENROUTER_REASONING_EFFORT=low
+OPENROUTER_MAX_TOKENS=6000
+ENABLE_RERANKER=true
+MAX_IMAGE_DIMENSION=1600
+```
+
+### Step 3 — Launch FastAPI Application
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
 
 ---
 
 ## API Reference
 
-### 1. Single-Call Rack Analysis
+### V2 Auditing Endpoints
 
-#### `POST /analyze`
+#### 1. Analyze Shelf Photo (URL or Base64)
+- **Endpoint**: `POST /api/v2/audit/analyze`
+- **Content-Type**: `application/json`
 
-Analyzes an S3 URL, HTTP image URL, Data URI, or pure Base64 string in **one synchronous call**:
-
-**Request (`application/json`)**
+**Request Body:**
 ```json
 {
-  "image_url": "https://s3.amazonaws.com/bucket/shelf_photo.jpg"
+  "image_url": "https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=800",
+  "outlet_id": null,
+  "outlet_name": "Metro Retail Gondola"
 }
 ```
 
-*Or with Base64 payload:*
+**Response `200 OK`:**
 ```json
 {
-  "image_url": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxAQ..."
-}
-```
-
-**Response `200 OK` (With Zero-AI-Token Local Enrichment):**
-```json
-{
-  "upload_id": "b3f1c2a4-1234-4a5b-8c9d-0e1f2a3b4c5d",
-  "status": "COMPLETED",
-  "image_url": "https://s3.amazonaws.com/bucket/shelf_photo.jpg",
-  "detected_products": [
+  "audit_id": "041b7223-9fd2-4d53-ab59-8e232beaa69d",
+  "audit_stage": "STANDALONE",
+  "audit_summary": {
+    "status": "needs_attention",
+    "image_quality": "good",
+    "key_findings": [
+      "PRAN Bisk Club Mama Cube Wafers detected on multiple shelf levels.",
+      "Competitor snack brands occupy significant shelf space.",
+      "PRAN Share of Shelf estimated at ~22%, falling short of agreed target of 45.0%.",
+      "Promotional talker/wobbler present on shelf edge promoting Mama wafer contest ('BELI & MENANG')."
+    ]
+  },
+  "retail_execution_score": {
+    "score": 74.6,
+    "grade": "Needs Attention",
+    "availability_score": 35.0,
+    "planogram_score": 11.1,
+    "sos_score": 8.5,
+    "pricing_score": 10.0,
+    "promotion_score": 10.0,
+    "deductions": [
+      "[-] -14 pts: Product facings misaligned or grouping irregular",
+      "[-] -12 pts: Shelf share (22.0%) is below agreed target (45%)"
+    ]
+  },
+  "shelf_metrics": {
+    "pran_shelf_share_pct": 22.0,
+    "competitor_shelf_share_pct": 78.0,
+    "empty_shelf_share_pct": 0.0,
+    "pran_facing_count": 12,
+    "competitor_facing_count": 6,
+    "arrangement_score": 75.0,
+    "measurement_type": "estimated"
+  },
+  "pricing_and_promotions": [
     {
-      "product_name": "PRAN Mango Juice 250ml",
-      "quantity_visible": 6,
-      "matched": true,
-      "catalogue_suggestions": [
-        {
-          "sub_category_name": "Juice",
-          "sub_category_code": "SC012",
-          "category_name": "Beverage",
-          "category_code": "CAT004",
-          "item_name": "PRAN Frooto Mango Juice 250ml",
-          "item_code": "PRAN-MJ-250",
-          "confidence": 0.942
-        }
-      ]
+      "product": "PRAN Bisk Club Mama Cube Wafer Biscuits",
+      "visible_price": 3.9,
+      "promotion_detected": true,
+      "confidence": "high"
     },
     {
-      "product_name": "Bisk Club Cream Biscuit Chocolate 90g",
-      "quantity_visible": 4,
+      "product": "Julie's Love Letters Wafer Cubes",
+      "visible_price": 5.5,
+      "promotion_detected": false,
+      "confidence": "high"
+    }
+  ],
+  "detected_products": [
+    {
+      "brand": "PRAN",
+      "product_name": "Bisk Club Mama Cube Wafer Biscuits",
+      "variant": "Chocolate",
+      "sku": "102210",
+      "facing_count": 2,
+      "shelf_level": "top",
       "matched": true,
       "catalogue_suggestions": [
         {
-          "sub_category_name": "Biscuits",
-          "sub_category_code": "SC008",
-          "category_name": "Bakery & Confectionery",
-          "category_code": "CAT002",
-          "item_name": "Bisk Club Chocolate Cream 90g",
-          "item_code": "BC-CC-090",
-          "confidence": 0.915
+          "item_name": "Bisk Club Cream Biscuit Chocolate 90g",
+          "item_code": "102210",
+          "item_image_url": "https://prgspro.sgp1.cdn.digitaloceanspaces.com/mal/Master/item/102210_l.jpg.jpg",
+          "confidence": 0.718
         }
       ]
     }
   ],
   "token_usage": {
-    "input_tokens": 586,
-    "output_tokens": 58,
-    "total_tokens": 644,
-    "estimated_cost_usd": 0.000657
-  },
-  "input_tokens": 586,
-  "output_tokens": 58,
-  "total_tokens": 644,
-  "estimated_cost_usd": 0.000657,
-  "error_message": null,
-  "created_at": "2026-10-06T12:00:00Z"
+    "input_tokens": 2468,
+    "output_tokens": 1583,
+    "total_tokens": 4051,
+    "estimated_cost_usd": 0.007787
+  }
 }
 ```
 
-#### `POST /analyze/file`
+#### 2. Analyze Shelf Photo File (Multipart Stream)
+- **Endpoint**: `POST /api/v2/audit/analyze/file`
+- **Content-Type**: `multipart/form-data`
+- **Form Fields**: `file` (Binary image file)
 
-Uploads a binary image file (`multipart/form-data`) and streams it purely in RAM with zero disk writes.
-
----
-
-### 2. Items Catalogue & Semantic Search
-
-- `GET /catalogue/search?q=Frooto&limit=10`: Search local `itemsdb.csv` catalogue by text, category, or SKU code with hybrid BM25 + cosine scoring (zero AI tokens).
-- `GET /catalogue/stats`: View catalogue size (1,954 products) and embedding index status.
-- `POST /catalogue/rebuild`: Force rebuild of product embeddings.
+#### 3. Closed-Loop Improvement Verification
+- **Endpoint**: `POST /api/v2/audit/verify`
+- **Content-Type**: `application/json`
+- **Description**: Submits an "AFTER" photo following corrective merchandising actions to calculate score improvement delta.
 
 ---
 
-### 3. Token Router & Cost Analytics
+### Management Dashboard Endpoint
 
-- `GET /tokens/models`: View active model limits, capabilities, and pricing rates.
-- `GET /tokens/pricing`: View current input/output rates per 1M and 1K tokens.
-- `POST /tokens/estimate`: Pre-calculate estimated vision tokens, system tokens, and costs before execution.
-- `POST /tokens/count`: Live token count calculation against model limits.
-- `GET /uploads/summary`: Aggregated scan count, total products detected, token usage, and cumulative USD spend.
+#### `GET /api/v2/management/dashboard`
+Returns aggregated shelf performance data across territories and categories.
+
+- **Query Parameters**:
+  - `territory`: Filter by territory (e.g. `Dhaka North`, `Chittagong Central`).
+  - `category`: Filter by category (e.g. `Beverages`, `Biscuits`, `Noodles`, `Culinary`).
+
+**Response Structure**:
+- `executive_overview`: Total audits, average PRAN SOS %, average RES score, issue resolution rate %.
+- `shelf_intelligence`: Overall SOS and category share breakdown (PRAN vs. Competitors).
+- `product_availability`: On-Shelf Availability (OSA %) and top missing SKUs.
+- `exception_outlets`: Outlets ranked by Urgency Index requiring immediate replenishment.
+
+---
+
+### Catalogue & Semantic Search Endpoints
+
+- `GET /catalogue/search?query=Frooto&limit=10`: Local hybrid search (SentenceTransformer + BM25 + CrossEncoder) across 1,954 products with 0 extra LLM tokens.
+- `GET /catalogue/stats`: Catalogue item count and vector indexing status.
+- `POST /catalogue/rebuild`: Re-computes local sentence embedding index.
+
+---
+
+### Token Router & Cost Telemetry
+
+- `GET /tokens/models`: Active vision model limits, reasoning configuration, and token rates.
+- `GET /tokens/pricing`: Input/output pricing rates per 1K and 1M tokens.
+- `GET /tokens/stats`: Cumulative token usage, total scans, and aggregated expenditure.
+- `POST /tokens/estimate`: Pre-computes estimated tokens and cost prior to execution.
+
+---
+
+## Interactive Web UI Dashboard
+
+The frontend dashboard is served directly from `testui.html` at `http://localhost:8000/`. It provides a clean, emoji-free, corporate interface designed for both field merchandisers and executive leadership:
+
+1. **Shelf AI Audit (Image to Insights)**:
+   - **Handheld Smartphone Simulator**: Simulates on-the-ground mobile experience showing Retail Execution Score, arrangement score, deductions, sub-score matrix, and actionable checklist.
+   - **Executive Desk Studio**: High-resolution image inspection, executive key findings, pricing and active wobbler display, and detected products explorer.
+   - **Instant Demo**: One-click **Wafer Audit Demo** button instantly loads real wafer gondola audit data (`041b7223-9fd2-4d53-ab59-8e232beaa69d`) for testing.
+2. **Management Dashboard**:
+   - Executive overview KPI cards, Share of Shelf gauges, category share breakdown table, OSA stockout tracking, and exception-first urgency ranking.
+3. **AI Vision Lab & SKUs**:
+   - Direct low-latency SKU extraction testing with raw model output.
+4. **ItemsDB Catalogue Explorer**:
+   - Interactive search across all 1,954 canonical PRAN SKUs.
+5. **API Telemetry & Costs**:
+   - Real-time token consumption, average cost per scan, and API latency metrics.
 
 ---
 
@@ -254,22 +322,25 @@ Uploads a binary image file (`multipart/form-data`) and streams it purely in RAM
 ```
 MerchVision-PRAN-RFL/
 ├── app/
-│   ├── config.py                 # Pydantic settings (.env, models, token limits)
-│   ├── database.py               # SQLAlchemy SQLite/PostgreSQL setup
-│   ├── main.py                   # FastAPI app, /analyze routes, and lifecycles
-│   ├── models.py                 # ORM database models (RackUpload)
-│   ├── schemas.py                # Pydantic request & response models
+│   ├── config.py                 # Settings (.env, Gemini 3.7 Flash, token rates)
+│   ├── database.py               # Database engine (PostgreSQL 16 / SQLite)
+│   ├── main.py                   # FastAPI routing, middleware, and lifecycle hooks
+│   ├── models.py                 # SQLAlchemy ORM models (AuditSession, RackUpload)
+│   ├── schemas.py                # Pydantic validation schemas
 │   ├── routers/
-│   │   └── token_router.py       # Token router, pricing, estimation & counting
+│   │   ├── audit_router.py       # V2 Auditing & Management Dashboard endpoints
+│   │   └── token_router.py       # Token routing, estimation, and telemetry
 │   └── services/
-│       ├── ai_service.py         # In-memory vision, Lanczos 768px, suppressed thinking, pipe parser
-│       ├── items_db_service.py   # Hybrid search (SentenceTransformer + BM25 + CrossEncoder)
-│       └── storage_service.py    # Zero-disk in-memory stream helpers
+│       ├── ai_service.py         # Gemini 3.7 Flash vision, in-RAM Lanczos, competitor isolation
+│       ├── rules_engine.py       # Deterministic Retail Execution Scoring (RES) & deductions
+│       ├── items_db_service.py   # Hybrid catalogue search (BM25 + SentenceTransformer)
+│       └── storage_service.py    # Zero-disk in-memory byte stream handlers
 ├── Documentation/
-│   └── API_DOCUMENTATION.md      # Full API specification and sequencing guide
-├── itemsdb.csv                   # Official PRAN-RFL catalogue (1,954 products)
-├── testui.html                   # Web UI dashboard and interactive tester
-├── requirements.txt
-├── Pipfile
-└── README.md
+│   └── API_DOCUMENTATION.md      # Comprehensive API specification & payload guide
+├── itemsdb.csv                   # Official PRAN-RFL master product catalogue (1,954 SKUs)
+├── testui.html                   # Web dashboard & interactive studio (emoji-free)
+├── docker-compose.yml            # Production container configuration
+├── Dockerfile                    # Container build specification
+├── requirements.txt              # Production Python dependencies
+└── README.md                     # Project documentation
 ```

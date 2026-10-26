@@ -1,531 +1,851 @@
-# Prism — PRAN-RFL Rack Recognition & Token Cost Analytics API Documentation
+# PRAN-RFL Retail Merchandising & Shelf Intelligence API Documentation
 
-Comprehensive API documentation for the **PRAN-RFL Rack Recognition System** backend service with **Zero Local Disk Storage (100% In-Memory Vision Pipeline)** and integrated **Token Usage & Cost Analysis**.
+## Overview
 
----
+The PRAN-RFL Retail Merchandising & Shelf Intelligence module provides automated computer vision shelf auditing, real-time Planogram adherence assessment, Share of Shelf (SOS) analytics, promotional material verification, and deterministic Retail Execution Scoring (RES 0-100). The module processes single-camera shelf photographs directly in memory, matches detected products against the canonical master catalogue (1,954 SKUs in `itemsdb.csv`) via zero-token hybrid vector search, and delivers closed-loop verification for field merchandisers and executive BI dashboards.
 
-## 1. Overview & Base URLs
+## Base URL
 
-The Prism API processes shelf and rack photos provided as **S3 Presigned URLs**, **Remote HTTP/HTTPS URLs**, **Raw Base64 strings (e.g. `/9j/...`)**, or **Binary Streams**. 
-
-It identifies PRAN-RFL product SKUs, calculates visible unit quantities, and returns exact **input tokens**, **output tokens**, **total tokens**, and **estimated USD cost** using Google Gemini 3.7 Flash vision models.
-
-### Key Architectural Highlights & Pipeline:
-
-```
-[ Uploaded Shelf Image (e.g. 4000x3000) ]
-                   │
-                   ▼  (1. Auto-Crop & Lanczos 768px: raw 6,000+ vision tokens cut to ~516–700)
-    [ Downscaled to 768px ]
-                   │
-                   ▼  (1b. Exact Image Cache: if duplicate photo → 0 tokens, $0.00 cost)
-    [ Cache Check ]
-                   │
-                   ▼  (2. Thinking Suppressed: effort="none" / budget=0 eliminates 1,000+ reasoning tokens)
-    [ Call Gemini 2.5 Flash-Lite / 3.7 Flash ]
-                   │
-                   ▼  (3. Pipe Syntax: ~10 tokens/item → total actual output is ONLY ~50–70 TOKENS)
-    [ Raw Text: "Frooto 250ml|6" (~50–70 tokens) ]
-                   │
-                   ▼  (4. Zero AI Tokens: SentenceTransformer + BM25 local enrichment)
-    [ Enriched Output: SKU, Category, Sub-Category, Confidence, Qty ]
+```text
+/api/v2/audit/
 ```
 
-- **1. Auto-Crop & Lanczos 768px**: 4000x3000 photos raw 6,000+ vision tokens cut to ~516–700 tokens in RAM.
-- **1b. Exact Image Cache**: Duplicate photos trigger 0 AI tokens and $0.00 cost.
-- **2. Thinking Suppressed**: `reasoning_effort="none"` / `thinking_budget=0` eliminates 1,000+ reasoning tokens and 3–5s latency.
-- **3. Pipe Syntax**: `product name|quantity` output consumes only ~10 tokens/item (total actual output ~50–70 tokens vs 300+ JSON tokens).
-- **4. Zero AI Tokens**: Local semantic hybrid search (`SentenceTransformer` + `BM25Okapi` + Cross-Encoder) enriches detected items against `itemsdb.csv` (1,954 SKUs).
+Additional related module base paths:
+- Management Dashboard: `/api/v2/management/`
+- Retail Outlets: `/api/v2/outlets`
+- Master Catalogue: `/catalogue/`
+- Token Telemetry & Accounting: `/tokens/`
 
-| Environment | Base URL | Notes |
-|---|---|---|
-| **Local (SQLite)** | `http://localhost:8000` | Default dev environment |
-| **Docker Compose** | `http://localhost:8000` | Backend with PostgreSQL 16 |
-| **Interactive Swagger UI** | `http://localhost:8000/docs` | Live testing & OpenAPI spec |
-| **ReDoc UI** | `http://localhost:8000/redoc` | Formatted API reference |
-| **Web Dashboard** | `http://localhost:8000/` or `/ui` | Graphical test UI & Token Analytics |
+## Authentication
 
----
+All API endpoints can be accessed directly or with Bearer token authentication in production environments:
 
-## 2. Token Pricing & Cost Calculation
-
-For every image processed by Gemini 3.7 Flash or 2.5 Flash-Lite, the system tracks token usage directly from the completion response and calculates estimated costs:
-
-$$\text{Estimated Cost (USD)} = \left(\frac{\text{Input Tokens}}{1,000,000} \times \text{Rate}_{\text{input}}\right) + \left(\frac{\text{Output Tokens}}{1,000,000} \times \text{Rate}_{\text{output}}\right)$$
-
-### Default Configured Rates:
-- **Input (Prompt) Rate:** `$0.75` per 1,000,000 tokens (OpenRouter `google/gemini-3.7-flash`)
-- **Output (Completion) Rate:** `$3.75` per 1,000,000 tokens
-- Configurable in `.env` via `TOKEN_COST_INPUT_PER_MILLION` and `TOKEN_COST_OUTPUT_PER_MILLION`.
-
----
-
-## 3. Endpoints Reference
-
-### 3.1. System & Health
-
-#### `GET /health`
-Liveness probe to verify server availability.
-
-- **URL:** `/health`
-- **Method:** `GET`
-- **Authentication:** None
-
-**Response `200 OK`:**
-```json
-{
-  "status": "ok"
-}
+```http
+Authorization: Bearer <access_token>
 ```
 
+In standalone or field audit scenarios, endpoints accept requests with or without pre-registered outlet identifiers.
+
 ---
 
-### 3.2. Single-Call Direct Analysis (1 API Request, Download-Then-Delete)
+## Endpoints
 
-#### `POST /analyze` (or `/analyze/url`)
-Analyzes a rack image from an **S3 URL, HTTP/HTTPS URL, or Base64 string** directly in **one single synchronous API call**. The server processes the image in RAM, runs Gemini AI vision recognition using compact pipe syntax, performs zero-AI-token local catalogue enrichment against `itemsdb.csv`, and returns the analysis results.
+### 1. Analyze Shelf Photo (URL or Base64)
 
-- **URL:** `/analyze` (Aliases: `/api/analyze`, `/analyze/url`, `/uploads/analyze`)
-- **Method:** `POST`
-- **Content-Type:** `application/json`
+```http
+POST /api/v2/audit/analyze
+```
 
-**JSON Request Body Schema (`AnalyzeRequest`):**
+Performs full synchronous shelf intelligence analysis from an image URL (HTTP/HTTPS, S3 presigned URL) or Base64-encoded image string. The image is downscaled in memory using Lanczos resampling to 1024px maximum dimension, fingerprinted via SHA-256 for exact-match caching, analyzed via Gemini 3.7 Flash vision inference, enriched against the local master product catalogue, evaluated by the business rules engine, and persisted to the relational database.
+
+**Permissions:** Authenticated / Authorized Field Merchandiser
+
+#### Request Body (`application/json`)
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `image_url` | String | **Yes** | S3 presigned URL, HTTP/HTTPS URL, Data URI, or pure Base64 image string (e.g. `/9j/...`). |
+| `image_url` | string | Yes | S3 presigned URL, HTTP/HTTPS public URL, Data URI, or raw Base64 string. |
+| `outlet_id` | string | No | UUID or string identifier of a registered retail outlet. |
+| `outlet_name` | string | No | Human-readable store or gondola name (e.g., `Metro Hypermarket - Biscuit Aisle`). |
+| `visit_id` | string | No | UUID linking this audit to an active field merchandiser visit session. |
+| `audit_stage` | string | No | Stage of audit: `STANDALONE`, `BEFORE`, or `AFTER`. Default: `STANDALONE`. |
+| `merchandiser_id` | string | No | Identifier of the field agent conducting the audit. |
+| `merchandiser_name` | string | No | Display name of the field agent. |
+| `expected_skus` | array[string] | No | List of required SKU codes or names expected on this shelf fixture. |
+| `planogram_rules` | object | No | Optional dictionary defining eye-level target SKUs, minimum facings, or SOS thresholds. |
+| `approved_prices` | object | No | Dictionary mapping SKU codes to approved shelf price numbers for price audit. |
 
-*(Note: `image` is also supported as an alias for `image_url`)*
+#### Choices / Enums: `audit_stage`
 
-**Example 1 — S3 Presigned URL Payload:**
+| Value | Description |
+|---|---|
+| `STANDALONE` | Default independent audit without linked before/after comparison. |
+| `BEFORE` | Baseline audit conducted at the start of a store visit before corrective actions. |
+| `AFTER` | Post-correction audit conducted to verify issue resolution and score uplift. |
+
+#### Success Response — 200 OK
+
 ```json
 {
-  "image_url": "https://my-bucket.s3.amazonaws.com/racks/shelf_01.jpg"
-}
-```
-
-**Example 2 — Pure Base64 Payload:**
-```json
-{
-  "image_url": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxAQDx..."
-}
-```
-
-**Response `200 OK` (With Zero-AI-Token Local Enrichment):**
-```json
-{
-  "upload_id": "f0051207-7e9f-4f5d-a8a1-8b1fed212103",
-  "status": "COMPLETED",
-  "image_url": "https://my-bucket.s3.amazonaws.com/racks/shelf_01.jpg",
-  "detected_products": [
+  "audit_id": "041b7223-9fd2-4d53-ab59-8e232beaa69d",
+  "visit_id": null,
+  "outlet_id": "OUTLET-104",
+  "outlet_name": "Metro Hypermarket - Biscuit Aisle",
+  "audit_stage": "STANDALONE",
+  "audit_summary": {
+    "status": "needs_attention",
+    "image_quality": "good",
+    "key_findings": [
+      "PRAN Bisk Club Mama Cube Wafers detected on top and middle shelf levels.",
+      "Competitor brands (Julie's Love Letters, Nabati Bites, Nabati Rolls) occupy 90% of visible shelf space.",
+      "PRAN Share of Shelf measured at 10.0%, falling short of the agreed 45.0% target.",
+      "Promotional talker/wobbler present on shelf edge promoting Mama wafer contest ('BELI & MENANG')."
+    ]
+  },
+  "retail_execution_score": {
+    "score": 67.8,
+    "grade": "Needs Attention",
+    "availability_score": 35.0,
+    "planogram_score": 9.8,
+    "sos_score": 8.0,
+    "pricing_score": 10.0,
+    "promotion_score": 5.0,
+    "deductions": [
+      "[-] -5.2 pts: Product facings misaligned or grouping irregular",
+      "[-] -12.0 pts: Shelf share (10.0%) is below agreed target (45.0%)",
+      "[-] -5.0 pts: Promotional material damaged or placement suboptimal"
+    ]
+  },
+  "shelf_metrics": {
+    "pran_shelf_share_pct": 10.0,
+    "competitor_shelf_share_pct": 90.0,
+    "empty_shelf_share_pct": 0.0,
+    "pran_facing_count": 2,
+    "competitor_facing_count": 8,
+    "arrangement_score": 65.0,
+    "measurement_type": "estimated"
+  },
+  "pricing_and_promotions": [
     {
-      "product_name": "PRAN Mango Juice 250ml",
-      "quantity_visible": 6,
-      "matched": true,
-      "catalogue_suggestions": [
-        {
-          "sub_category_name": "Juice",
-          "sub_category_code": "SC012",
-          "category_name": "Beverage",
-          "category_code": "CAT004",
-          "item_name": "PRAN Frooto Mango Juice 250ml",
-          "item_code": "PRAN-MJ-250",
-          "confidence": 0.942
-        }
-      ]
+      "product": "PRAN Bisk Club Mama Cube Wafer Biscuits",
+      "visible_price": 3.90,
+      "promotion_detected": true,
+      "pricing_violation": "not_evaluated",
+      "confidence": "high"
     },
     {
-      "product_name": "PRAN Lassi 200ml",
-      "quantity_visible": 4,
-      "matched": true,
-      "catalogue_suggestions": [
-        {
-          "sub_category_name": "Dairy",
-          "sub_category_code": "SC005",
-          "category_name": "Dairy & Milk",
-          "category_code": "CAT003",
-          "item_name": "PRAN Lassi Mango 200ml",
-          "item_code": "PRAN-LS-200",
-          "confidence": 0.918
-        }
-      ]
+      "product": "Julie's Love Letters Wafer Cubes",
+      "visible_price": 5.50,
+      "promotion_detected": false,
+      "pricing_violation": "not_evaluated",
+      "confidence": "high"
     }
   ],
-  "token_usage": {
-    "input_tokens": 586,
-    "output_tokens": 58,
-    "total_tokens": 644,
-    "estimated_cost_usd": 0.000657
-  },
-  "input_tokens": 586,
-  "output_tokens": 58,
-  "total_tokens": 644,
-  "estimated_cost_usd": 0.000657,
-  "error_message": null,
-  "created_at": "2026-10-06T12:00:00Z"
-}
-```
-
----
-
-#### `POST /analyze/file`
-Uploads and streams a binary image file directly in RAM for instant 1-call analysis (zero disk writes).
-
-- **URL:** `/analyze/file` (Alias: `/analyze/upload`)
-- **Method:** `POST`
-- **Content-Type:** `multipart/form-data`
-
-**Form Parameters:**
-- `file`: Binary file (`image/jpeg`, `image/png`, `image/webp`).
-
----
-
-### 3.3. Asynchronous Rack Uploads & Polling (Zero Disk Storage)
-
-#### `POST /uploads` / `POST /uploads/url`
-Enqueues an in-memory background AI recognition task and returns HTTP 202 immediately.
-
-- **URL:** `/uploads/url` (JSON) or `/uploads` (Multipart File)
-- **Method:** `POST`
-
-**Response `202 Accepted`:**
-```json
-{
-  "upload_id": "f0051207-7e9f-4f5d-a8a1-8b1fed212103",
-  "status": "PENDING",
-  "message": "Image input received. Processing started."
-}
-```
-
----
-
-#### `GET /uploads/{upload_id}` (Alias: `GET /uploads/{upload_id}/result`)
-Retrieves the status, detected products, and token analysis for a specific upload ID.
-
-- **URL:** `/uploads/{upload_id}`
-- **Method:** `GET`
-
-**Response `200 OK` (Completed):**
-```json
-{
-  "upload_id": "f0051207-7e9f-4f5d-a8a1-8b1fed212103",
-  "status": "COMPLETED",
-  "image_url": "base64_in_memory",
   "detected_products": [
     {
-      "product_name": "PRAN Mango Juice 250ml",
-      "quantity_visible": 6
-    }
-  ],
-  "input_tokens": 1280,
-  "output_tokens": 94,
-  "total_tokens": 1374,
-  "estimated_cost_usd": 0.000166,
-  "token_usage": {
-    "input_tokens": 1280,
-    "output_tokens": 94,
-    "total_tokens": 1374,
-    "estimated_cost_usd": 0.000166
-  },
-  "error_message": null,
-  "created_at": "2026-09-22T09:30:00Z",
-  "updated_at": "2026-09-22T09:30:03Z"
-}
-```
-
----
-
-#### `GET /uploads/summary` (Alias: `GET /analysis/summary`)
-Returns aggregate metrics across all scanned racks, including total input tokens, output tokens, total tokens, total USD cost, and top detected items.
-
-**Response `200 OK`:**
-```json
-{
-  "total_scans": 48,
-  "completed_scans": 45,
-  "processing_scans": 1,
-  "pending_scans": 0,
-  "failed_scans": 2,
-  "total_products_detected": 312,
-  "unique_products_count": 24,
-  "total_input_tokens": 58400,
-  "total_output_tokens": 4230,
-  "total_tokens": 62630,
-  "total_estimated_cost_usd": 0.007532,
-  "avg_tokens_per_scan": 1391.78,
-  "avg_cost_per_scan_usd": 0.000167,
-  "top_products": [
+      "brand": "PRAN",
+      "product_name": "Bisk Club Mama Cube Wafer Biscuits",
+      "variant": "Chocolate",
+      "sku": "102210",
+      "facing_count": 2,
+      "shelf_level": "top",
+      "confidence": "high",
+      "catalogue_suggestions": [
+        {
+          "sub_category_name": "272-Bisc-Cream",
+          "sub_category_code": "272",
+          "category_name": "145-Biscuit",
+          "category_code": "145",
+          "item_name": "Bisk Club Cream Biscuit Chocolate 90g",
+          "item_code": "102210",
+          "item_image_url": "https://prgspro.sgp1.cdn.digitaloceanspaces.com/mal/Master/item/102210_l.jpg.jpg",
+          "confidence": 0.812
+        }
+      ],
+      "matched": true
+    },
     {
-      "product_name": "PRAN Mango Juice 250ml",
-      "total_quantity": 84,
-      "scan_appearances": 28
+      "brand": "Julie's",
+      "product_name": "Love Letters Wafer Cubes",
+      "variant": "Chocolate Hazelnut",
+      "sku": "COMP-JULIE-01",
+      "facing_count": 4,
+      "shelf_level": "middle",
+      "confidence": "high",
+      "catalogue_suggestions": null,
+      "matched": false
+    },
+    {
+      "brand": "Nabati",
+      "product_name": "Bites Wafer Rolls",
+      "variant": "Cheese",
+      "sku": "COMP-NABATI-02",
+      "facing_count": 4,
+      "shelf_level": "bottom",
+      "confidence": "high",
+      "catalogue_suggestions": null,
+      "matched": false
     }
   ],
-  "recent_uploads": [...]
-}
-```
-
----
-
----
-
-### 3.4. OpenRouter & Token Router API (`/tokens`)
-
-The Token Router API manages token quotas, model capability queries, pre-inference token estimation, live token counting, and payload routing through **OpenRouter** (`https://openrouter.ai/api/v1`) using the model ID `google/gemini-3.7-flash`.
-
-#### `GET /tokens/models`
-Returns model specifications, token boundaries, thinking capabilities, and feature support for **google/gemini-3.7-flash** on OpenRouter.
-
-**Response `200 OK`:**
-```json
-{
-  "provider": "openrouter",
-  "model_code": "google/gemini-3.7-flash",
-  "openrouter_endpoint": "https://openrouter.ai/api/v1/chat/completions",
-  "version": "Stable: gemini-3.7-flash (OpenRouter: google/gemini-3.7-flash)",
-  "latest_update": "August 2026",
-  "input_token_limit": 1048576,
-  "output_token_limit": 65536,
-  "supported_inputs": ["Text", "Image", "Video", "Audio", "PDF"],
-  "supported_outputs": ["Text"],
-  "capabilities": {
-    "audio_generation": false,
-    "caching": true,
-    "code_execution": true,
-    "computer_use": "Supported (Preview)",
-    "file_search": true,
-    "function_calling": true,
-    "grounding_with_google_maps": true,
-    "image_generation": false,
-    "live_api": false,
-    "search_grounding": true,
-    "structured_outputs": true,
-    "thinking": "Supported (low, medium, high)",
-    "url_context": true,
-    "batch_api": true,
-    "flex_inference": true,
-    "priority_inference": true
+  "issues_detected": [
+    {
+      "id": "e4a77914-fa06-47b1-b93b-52cb7ecae2bc",
+      "issue": "PRAN shelf presence below target",
+      "evidence": "Current PRAN shelf share is 10.0% vs target 45.0%",
+      "severity": "MEDIUM",
+      "confidence": "high",
+      "recommended_action": "Review agreed shelf allocation and negotiate additional facings for core products.",
+      "is_resolved": false
+    },
+    {
+      "id": "31278fdc-567e-4074-b529-87a38b2512f4",
+      "issue": "Shelf arrangement needs alignment",
+      "evidence": "Shelf arrangement score assessed at 65.0/100",
+      "severity": "MEDIUM",
+      "confidence": "medium",
+      "recommended_action": "Align product labels forward and group same-brand variants together.",
+      "is_resolved": false
+    }
+  ],
+  "availability_alerts": {
+    "visible_gaps": [],
+    "missing_expected_skus": [],
+    "inventory_status": "unverified"
   },
-  "active_thinking_budget": 1024,
-  "active_thinking_level": "medium",
-  "pricing_input_per_million": 0.75,
-  "pricing_output_per_million": 3.75
+  "recommended_actions": [
+    "Review agreed shelf allocation and negotiate additional facings for core products.",
+    "Align product labels forward and group same-brand variants together."
+  ],
+  "management_insights": [
+    "SOS deficit of 35.0% indicates significant opportunity for facing expansion.",
+    "Promotional wobbler 'BELI & MENANG' detected on shelf edge."
+  ],
+  "limitations": [
+    "Single camera monocular perspective; metrics reflect visible front facings only."
+  ],
+  "human_verification_required": false,
+  "token_usage": {
+    "input_tokens": 1248,
+    "output_tokens": 582,
+    "total_tokens": 1830,
+    "estimated_cost_usd": 0.003119,
+    "cached": false
+  },
+  "image_url": "https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=800",
+  "created_at": "2026-10-26T14:30:00Z"
+}
+```
+
+#### Error Responses
+
+- **400 Bad Request** — Missing required image parameter
+```json
+{
+  "detail": "image_url or image is required"
+}
+```
+
+- **422 Unprocessable Entity** — Image file corrupt or decoding failure
+```json
+{
+  "detail": "Failed to decode image from provided payload: cannot identify image file"
+}
+```
+
+- **502 Bad Gateway** — Upstream Vision LLM Failure
+```json
+{
+  "detail": "Upstream vision model error: Connection timed out to OpenRouter"
 }
 ```
 
 ---
 
-#### `GET /tokens/pricing`
-Returns active token pricing rates per 1,000,000 tokens and 1,000 tokens (OpenRouter rates: $0.75/1M input, $3.75/1M output).
+### 2. Analyze Shelf Photo (Binary File Upload)
 
-**Response `200 OK`:**
+```http
+POST /api/v2/audit/analyze/file
+```
+
+Direct binary upload of a camera photograph using `multipart/form-data`. Streams image bytes purely through memory (`io.BytesIO`) without writing temporary files to local disk storage.
+
+**Permissions:** Authenticated / Authorized Field Merchandiser
+
+#### Request Body (`multipart/form-data`)
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `file` | file | Yes | Binary image file (JPEG, PNG, WebP). Max recommended size: 20 MB. |
+| `outlet_id` | string | No | UUID of pre-registered retail outlet. |
+| `outlet_name` | string | No | Friendly outlet name. |
+| `visit_id` | string | No | UUID linking audit to field merchandiser visit. |
+| `audit_stage` | string | No | `STANDALONE`, `BEFORE`, or `AFTER`. Default: `STANDALONE`. |
+| `target_pran_sos` | float | No | Target PRAN SOS percentage (default: `45.0`). |
+
+#### Success Response — 200 OK
+
+Returns identical `ShelfAuditReport` schema as detailed in `POST /api/v2/audit/analyze`.
+
+#### Error Responses
+
+- **400 Bad Request** — Invalid file format
 ```json
 {
-  "provider": "openrouter",
-  "model": "google/gemini-3.7-flash",
-  "currency": "USD",
-  "input_cost_per_million": 0.75,
-  "output_cost_per_million": 3.75,
-  "input_cost_per_1k": 0.00075,
-  "output_cost_per_1k": 0.00375,
-  "formula": "cost = (input_tokens / 1,000,000 * input_rate) + (output_tokens / 1,000,000 * output_rate)"
+  "detail": "Invalid image format. Allowed formats: image/jpeg, image/png, image/webp"
 }
 ```
 
 ---
 
-#### `POST /tokens/chat`
-Execute direct chat completions with `google/gemini-3.7-flash` via OpenRouter.
+### 3. Closed-Loop Verify Audit (Before / After Comparison)
 
-**Request Body:**
+```http
+POST /api/v2/audit/verify
+```
+
+Validates corrective actions executed by a merchandiser during a store visit. Compares a baseline `BEFORE` audit against a newly captured `AFTER` photo, computing score improvement, resolved issues, remaining issues, and delta in PRAN Share of Shelf.
+
+**Permissions:** Authenticated Field Merchandiser
+
+#### Request Body (`application/json`)
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `audit_id` | string | Yes | UUID of the initial `BEFORE` shelf audit. |
+| `after_image_url` | string | Yes | Image URL or Base64 string of shelf photo captured after fixes. |
+| `completed_actions` | array[string] | No | List of action strings marked as completed by the merchandiser. |
+
+#### Success Response — 200 OK
+
 ```json
 {
-  "messages": [
-    {"role": "system", "content": "You are a helpful software engineering assistant."},
-    {"role": "user", "content": "Explain Oracle database indexing in simple terms."}
+  "visit_id": "a9082bd8-a6d9-4824-a740-fcbc84fbfbc9",
+  "before_audit_id": "041b7223-9fd2-4d53-ab59-8e232beaa69d",
+  "after_audit_id": "99df2194-c119-4cb3-a9d5-7ceb2c3a388b",
+  "before_score": 67.8,
+  "after_score": 86.4,
+  "score_improvement": 18.6,
+  "is_audit_passed": true,
+  "resolved_issues": [
+    "Shelf arrangement needs alignment",
+    "PRAN shelf presence below target"
+  ],
+  "remaining_issues": [],
+  "pran_sos_delta_pct": 18.0,
+  "after_report": {
+    "audit_id": "99df2194-c119-4cb3-a9d5-7ceb2c3a388b",
+    "audit_stage": "AFTER",
+    "retail_execution_score": {
+      "score": 86.4,
+      "grade": "Good",
+      "availability_score": 35.0,
+      "planogram_score": 23.4,
+      "sos_score": 18.0,
+      "pricing_score": 10.0,
+      "promotion_score": 0.0,
+      "deductions": []
+    },
+    "shelf_metrics": {
+      "pran_shelf_share_pct": 28.0,
+      "competitor_shelf_share_pct": 72.0,
+      "empty_shelf_share_pct": 0.0,
+      "pran_facing_count": 6,
+      "competitor_facing_count": 8,
+      "arrangement_score": 90.0,
+      "measurement_type": "estimated"
+    }
+  }
+}
+```
+
+#### Error Responses
+
+- **404 Not Found** — Initial audit record not found
+```json
+{
+  "detail": "Before audit with ID 041b7223-9fd2-4d53-ab59-8e232beaa69d not found"
+}
+```
+
+---
+
+### 4. Retrieve Audit Report
+
+```http
+GET /api/v2/audit/{audit_id}
+```
+
+Retrieves the persisted, structured `ShelfAuditReport` for a given audit session UUID.
+
+**Permissions:** Authenticated
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `audit_id` | string (UUID) | Yes | Unique identifier of the shelf audit. |
+
+#### Success Response — 200 OK
+
+Returns the complete `ShelfAuditReport` JSON structure.
+
+#### Error Responses
+
+- **404 Not Found**
+```json
+{
+  "detail": "Audit 041b7223-9fd2-4d53-ab59-8e232beaa69d not found"
+}
+```
+
+---
+
+### 5. List Shelf Audits
+
+```http
+GET /api/v2/audits
+```
+
+Returns a paginated list of shelf audits with high-level scores and status filters.
+
+**Permissions:** Authenticated
+
+#### Query Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `outlet_id` | string | No | Filter by specific retail outlet UUID. |
+| `stage` | string | No | Filter by audit stage: `STANDALONE`, `BEFORE`, `AFTER`. |
+| `status` | string | No | Filter by summary status: `needs_attention`, `acceptable`. |
+| `limit` | integer | No | Maximum records to return (default: `50`, max: `200`). |
+| `offset` | integer | No | Offset for pagination (default: `0`). |
+
+#### Success Response — 200 OK
+
+```json
+{
+  "total": 128,
+  "limit": 50,
+  "offset": 0,
+  "items": [
+    {
+      "id": "041b7223-9fd2-4d53-ab59-8e232beaa69d",
+      "outlet_id": "OUTLET-104",
+      "outlet_name": "Metro Hypermarket",
+      "audit_stage": "STANDALONE",
+      "status": "needs_attention",
+      "res_score": 67.8,
+      "pran_shelf_share_pct": 10.0,
+      "competitor_shelf_share_pct": 90.0,
+      "created_at": "2026-10-26T14:30:00Z"
+    }
   ]
 }
 ```
 
-**Response `200 OK`:**
+---
+
+### 6. Management Analytics Dashboard
+
+```http
+GET /api/v2/management/dashboard
+```
+
+Delivers aggregated executive business intelligence across 5 analytical modules: Executive Overview, Category Shelf Intelligence, Product Availability, Merchandiser Performance, and Exception-First Store Rankings.
+
+**Permissions:** Executive / Territory Manager
+
+#### Query Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `territory` | string | No | Filter data by territory name (e.g., `Dhaka North`, `Chittagong Central`). |
+| `category` | string | No | Filter by product category (e.g., `Biscuit`, `Beverage`, `Culinary`). |
+
+#### Success Response — 200 OK
+
 ```json
 {
-  "provider": "openrouter",
-  "model": "google/gemini-3.7-flash",
-  "content": "An Oracle database index works like the index at the back of a book...",
-  "token_usage": {
-    "input_tokens": 28,
-    "output_tokens": 142,
-    "total_tokens": 170,
-    "estimated_cost_usd": 0.0005535
+  "executive_overview": {
+    "total_audits": 48,
+    "outlets_covered": 32,
+    "avg_pran_sos_pct": 38.5,
+    "avg_execution_score": 74.2,
+    "issue_resolution_rate_pct": 82.5,
+    "failed_audits_count": 6
   },
-  "status": "success"
+  "shelf_intelligence": {
+    "pran_overall_sos_pct": 38.5,
+    "competitor_overall_sos_pct": 61.5,
+    "golden_shelf_eye_level_pran_pct": 29.4,
+    "category_breakdown": [
+      {
+        "category_name": "Biscuit",
+        "pran_share_pct": 34.0,
+        "competitor_share_pct": 66.0
+      },
+      {
+        "category_name": "Beverage",
+        "pran_share_pct": 48.0,
+        "competitor_share_pct": 52.0
+      }
+    ]
+  },
+  "product_availability": {
+    "on_shelf_availability_pct": 89.2,
+    "out_of_stock_incidents": 14,
+    "top_missing_skus": [
+      {
+        "sku": "100125",
+        "item_name": "PRAN Frooto Mango Juice 250ml",
+        "missing_occurrences": 8
+      }
+    ]
+  },
+  "exception_outlets": [
+    {
+      "outlet_id": "OUTLET-104",
+      "outlet_name": "Metro Hypermarket",
+      "territory": "Dhaka Central",
+      "res_score": 67.8,
+      "urgency": "HIGH",
+      "primary_issue": "PRAN shelf presence below target: 10.0% vs 45.0% target"
+    }
+  ]
 }
 ```
 
 ---
 
-#### `GET /tokens/summary` (or `/tokens/stats`)
-Aggregates total tokens consumed, overall USD cost, and per-scan averages across all historical requests.
+### 7. List Retail Outlets
 
-**Response `200 OK`:**
+```http
+GET /api/v2/outlets
+```
+
+Lists master retail outlets registered in the system along with target SOS and expected SKU configurations.
+
+**Permissions:** Authenticated
+
+#### Query Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `territory` | string | No | Filter by territory name. |
+| `limit` | integer | No | Maximum records (default: `50`). |
+
+#### Success Response — 200 OK
+
+```json
+[
+  {
+    "id": "OUTLET-104",
+    "outlet_name": "Metro Hypermarket",
+    "outlet_type": "Supermarket",
+    "territory": "Dhaka Central",
+    "distributor_name": "PRAN Regional Distribution",
+    "tier": "Tier 1 - Platinum",
+    "target_pran_sos_pct": 45.0,
+    "expected_skus": ["102210", "100125", "105541"]
+  }
+]
+```
+
+---
+
+### 8. Master Catalogue Hybrid Search
+
+```http
+GET /catalogue/search
+```
+
+Performs low-latency (<15ms) hybrid vector and BM25 search over the 1,954 products in `itemsdb.csv`. Combines 384-dimensional cosine similarity (`all-MiniLM-L6-v2`) with lexical keyword matching. Consumes 0 remote LLM tokens.
+
+**Permissions:** Authenticated
+
+#### Query Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | Yes | Product search query string (e.g. `Mama Wafer`, `Frooto`, `Potata`). |
+| `limit` | integer | No | Number of top candidates to return (default: `5`, max: `25`). |
+
+#### Success Response — 200 OK
+
 ```json
 {
-  "total_scans": 12,
-  "completed_scans": 12,
-  "total_input_tokens": 15360,
-  "total_output_tokens": 1420,
-  "total_tokens": 16780,
-  "total_estimated_cost_usd": 0.002104,
-  "avg_tokens_per_scan": 1398.33,
-  "avg_cost_per_scan_usd": 0.000175,
-  "pricing_rates": { ... }
+  "query": "Mama Wafer",
+  "total_matches": 5,
+  "results": [
+    {
+      "item_code": "102210",
+      "item_name": "Bisk Club Cream Biscuit Chocolate 90g",
+      "category_code": "145",
+      "category_name": "145-Biscuit",
+      "sub_category_code": "272",
+      "sub_category_name": "272-Bisc-Cream",
+      "confidence": 0.812,
+      "item_image_url": "https://prgspro.sgp1.cdn.digitaloceanspaces.com/mal/Master/item/102210_l.jpg.jpg"
+    }
+  ]
 }
 ```
 
 ---
+
+### 9. Master Catalogue Status & Rebuild
+
+#### `GET /catalogue/stats`
+Returns total indexed products, vector dimension, and embedding cache readiness.
+
+#### `POST /catalogue/rebuild`
+Re-reads `itemsdb.csv` and regenerates pre-computed embeddings.
+
+---
+
+### 10. Token Telemetry & Cost Accounting Endpoints
+
+#### `GET /tokens/models`
+Returns currently active AI models, context windows, and configured token pricing rates.
+
+#### `GET /tokens/pricing`
+Returns pricing per 1,000 and 1,000,000 tokens for prompt input and completion output.
+
+#### `GET /tokens/stats`
+Returns cumulative token consumption, total scans processed, and total USD expenditure.
 
 #### `POST /tokens/estimate`
-Pre-calculates estimated Gemini vision tokens, system instruction tokens, expected output tokens, and USD cost prior to making a vision call.
-
-**Request Body:**
-```json
-{
-  "image_width": 1920,
-  "image_height": 1080,
-  "thinking_budget": 1024
-}
-```
-
-**Response `200 OK`:**
-```json
-{
-  "model": "gemini-3.7-flash",
-  "estimated_vision_tokens": 1290,
-  "estimated_system_tokens": 125,
-  "estimated_prompt_tokens": 1435,
-  "estimated_output_tokens": 200,
-  "estimated_thinking_tokens": 1024,
-  "estimated_total_tokens": 2659,
-  "estimated_cost_usd": 0.000633,
-  "dimensions_analyzed": "1920x1080 -> downscaled to 1600x900",
-  "optimization_applied": "Lanczos downscaling (max 1600px)"
-}
-```
+Calculates estimated token usage and USD cost for a given image resolution prior to calling vision inference.
 
 ---
 
-#### `POST /tokens/count`
-Counts exact tokens against Gemini 3.7 Flash limits using the Google GenAI SDK token counter.
+## Field References & Calculation Logic
 
-**Request Body:**
-```json
-{
-  "text": "Identify PRAN juices and quantify visible units."
-}
-```
+### 1. `shelf_metrics` Reference
 
-**Response `200 OK`:**
-```json
-{
-  "model": "gemini-3.7-flash",
-  "total_tokens": 10,
-  "input_token_limit": 1048576,
-  "is_within_limit": true,
-  "remaining_tokens_available": 1048566
-}
-```
+The `shelf_metrics` object encapsulates geometric and perceptual measurements extracted from the shelf image.
+
+| Field | Type | Description |
+|---|---|---|
+| `pran_shelf_share_pct` | float | Percentage of total visible shelf width occupied by PRAN-branded items. Range: `0.0` to `100.0`. |
+| `competitor_shelf_share_pct` | float | Percentage of visible shelf width occupied by competing FMCG brands. Range: `0.0` to `100.0`. |
+| `empty_shelf_share_pct` | float | Percentage of visible shelf space currently unoccupied due to stockouts or removed items. |
+| `pran_facing_count` | integer | Total integer count of front-facing PRAN product packages. |
+| `competitor_facing_count` | integer | Total integer count of front-facing competitor product packages. |
+| `arrangement_score` | float | Visual cleanliness score out of 100 based on alignment, variant clustering, and front-facing presentation. |
+| `measurement_type` | string | `measured` if calibrated boundary data is present; `estimated` for single monocular camera vision. |
 
 ---
 
-#### `POST /tokens/route`
-Token-aware router that analyzes input size, checks context boundaries (1,048,576 tokens), and advises optimal routing mode (synchronous, async queue, or batch).
+### 2. How `shelf_metrics` Is Calculated
 
-**Request Body:**
-```json
-{
-  "prompt": "Analyze shelf rack photo",
-  "priority": "standard"
-}
+In `app/services/ai_service.py`, `shelf_metrics` is computed via deterministic post-processing:
+
+#### Facing Count Aggregation
+1. The vision model identifies and segments every distinct product cluster on the shelf.
+2. Sum of facings for items where `brand == "PRAN"` yields `pran_facing_count`.
+3. Sum of facings for non-PRAN or competitor items yields `competitor_facing_count`.
+
+#### Share of Shelf (SOS) Calculation
+The model estimates horizontal linear space occupancy. If linear share is omitted or unverified, it falls back to facing ratio:
+
+```text
+pran_shelf_share_pct = (pran_facing_count / total_facing_count) * 100.0
+competitor_shelf_share_pct = max(0.0, 100.0 - pran_shelf_share_pct - empty_shelf_share_pct)
 ```
 
-**Response `200 OK`:**
-```json
-{
-  "model": "gemini-3.7-flash",
-  "route": "synchronous_direct",
-  "estimated_input_tokens": 135,
-  "configured_thinking_budget": 1024,
-  "configured_thinking_level": "medium",
-  "max_input_limit": 1048576,
-  "max_output_limit": 65536,
-  "is_payload_valid": true,
-  "recommended_batch_mode": false,
-  "message": "Standard payload: routed to immediate synchronous zero-disk vision analysis."
-}
-```
+#### Arrangement Score Normalization
+The visual arrangement score evaluates whether products are neatly aligned, labels are oriented forward, and same-variant items are grouped together.
+- If the model scores on a 0-10 scale (e.g. `6.5`), it is normalized: `6.5 * 10.0 = 65.0 / 100`.
+- If omitted, fallback formula applies: `arrangement_score = max(50.0, min(95.0, 85.0 - (visible_gaps * 5.0)))`.
 
 ---
 
-## 4. Code Examples (Python & cURL)
+### 3. Walkthrough with Scenario Example
 
-### Example 1 — Analyze S3 / Pure Base64 Payload via Python:
-```python
-import requests
-
-payload = {
-    "image_url": "https://my-bucket.s3.amazonaws.com/racks/shelf_01.jpg"  # or Base64 string "/9j/..."
+Consider the audited wafer shelf fixture:
+```json
+"shelf_metrics": {
+  "pran_shelf_share_pct": 10.0,
+  "competitor_shelf_share_pct": 90.0,
+  "empty_shelf_share_pct": 0.0,
+  "pran_facing_count": 2,
+  "competitor_facing_count": 8,
+  "arrangement_score": 65.0,
+  "measurement_type": "estimated"
 }
-
-res = requests.post("http://localhost:8000/analyze", json=payload)
-data = res.json()
-
-print("Products:", data["detected_products"])
-print(f"Tokens: In={data['input_tokens']}, Out={data['output_tokens']}, Total={data['total_tokens']}")
-print(f"Cost: ${data['estimated_cost_usd']:.6f}")
 ```
 
-### Example 2 — Token Estimation via Python:
-```python
-import requests
+1. **Facing Counts**:
+   - `pran_facing_count = 2` (2 facings of PRAN Bisk Club Mama Cube Wafers).
+   - `competitor_facing_count = 8` (4 facings of Julie's Love Letters + 4 facings of Nabati Bites).
+   - Total Facings = 10.
+2. **Share of Shelf**:
+   - PRAN packages occupy 10% of linear horizontal shelf space.
+   - Competitors occupy 90% of linear horizontal shelf space.
+   - `pran_shelf_share_pct = 10.0%`
+   - `competitor_shelf_share_pct = 90.0%`
+   - `empty_shelf_share_pct = 0.0%` (fully stocked shelf).
+3. **Arrangement Score**:
+   - Model assesses label alignment and product clustering at 6.5 / 10 due to competitor encroachment.
+   - Normalization: `6.5 * 10.0 = 65.0 / 100`.
 
-res = requests.post("http://localhost:8000/tokens/estimate", json={
-    "image_width": 2400,
-    "image_height": 1800,
-    "thinking_budget": 1024,
-})
-print("Estimated Token Usage:", res.json())
-```
+---
 
-### Example 3 — Analyze via cURL (JSON Base64 / S3 URL):
-```bash
-curl -X POST http://localhost:8000/analyze \
-  -H "Content-Type: application/json" \
-  -d '{
-    "image_url": "https://my-bucket.s3.amazonaws.com/racks/shelf_01.jpg"
-  }'
-```
+### 4. How `shelf_metrics` Drives Retail Execution Score (RES)
 
-### Example 4 — Direct OpenRouter with OpenAI Python SDK:
-```python
-import os
-from openai import OpenAI
+In `app/services/rules_engine.py`, the Retail Execution Score is computed deterministically across 5 commercial pillars:
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.environ.get("OPENROUTER_API_KEY", "your-openrouter-api-key"),
-)
+$$\text{RES} = \text{Availability (35)} + \text{Planogram (25)} + \text{SOS (20)} + \text{Pricing (10)} + \text{Promotion (10)}$$
 
-response = client.chat.completions.create(
-    model="google/gemini-3.7-flash",
-    messages=[
-        {
-            "role": "user",
-            "content": "Explain retail shelf SKU recognition."
-        }
-    ]
-)
+#### Pillar 1: Availability Pillar (Max 35.0 pts)
+- Base score = `35.0` pts.
+- Deductions: Missing expected SKUs (`-5.0` pts each) and visible stockout gaps (`-4.0` pts each).
+- With 0 missing SKUs and 0 gaps: `Availability Score = 35.0 / 35.0`.
 
-print(response.choices[0].message.content)
-```
+#### Pillar 2: Planogram & Arrangement Pillar (Max 25.0 pts)
+- **Arrangement sub-component (15.0 pts max)**:
+  $$\text{Arrangement Sub-Score} = \left(\frac{\text{arrangement\_score}}{100.0}\right) \times 15.0 = \left(\frac{65.0}{100.0}\right) \times 15.0 = 9.75 \text{ pts}$$
+  $$\text{Deduction} = 15.0 - 9.75 = 5.25 \text{ pts}$$
+  Logged as: `[-] -5.2 pts: Product facings misaligned or grouping irregular`
+- **Eye-Level Placement sub-component (10.0 pts max)**:
+  PRAN items detected on top shelf; Competitor items occupy prime eye-level tier.
+- Resulting Planogram Score: `9.8 / 25.0`.
 
+#### Pillar 3: Share of Shelf (SOS) Pillar (Max 20.0 pts)
+- Base score = `20.0` pts.
+- Agreed Target PRAN SOS: `45.0%`.
+- Actual Measured PRAN SOS: `10.0%`.
+- Deficit:
+  $$\text{Deficit} = 45.0\% - 10.0\% = 35.0\%$$
+  $$\text{Penalty} = \min(35.0 \times 0.5, 12.0) = 12.0 \text{ pts (Max Cap)}$$
+  $$\text{SOS Score} = 20.0 - 12.0 = 8.0 / 20.0 \text{ pts}$$
+- Generates Issue: `[MEDIUM] PRAN shelf presence below target: Current PRAN shelf share is 10.0% vs target 45%`.
+
+#### Pillar 4: Pricing Compliance Pillar (Max 10.0 pts)
+- Base score = `10.0` pts.
+- No approved price violations detected: `Pricing Score = 10.0 / 10.0`.
+
+#### Pillar 5: Promotion & POSM Pillar (Max 10.0 pts)
+- Base score = `10.0` pts.
+- Wobbler detected but suboptimal positioning: `5.0 / 10.0`.
+
+#### Total Composite Score:
+$$\text{Total Score} = 35.0 + 9.8 + 8.0 + 10.0 + 5.0 = 67.8 / 100$$
+$$\text{Grade} = \text{"Needs Attention"} \quad (65 \le \text{Score} < 80)$$
+
+---
+
+## Model Reference
+
+### 1. `ShelfAudit` (Table: `shelf_audits`)
+
+Stores every individual shelf photograph audit session.
+
+| Field | Type | Writable | Description |
+|---|---|---|---|
+| `id` | string (UUID) | System | Primary key. |
+| `visit_id` | string (UUID) | Yes | Optional foreign key to `merchandiser_visits`. |
+| `outlet_id` | string | Yes | Foreign key to `outlets`. |
+| `audit_stage` | string | Yes | Audit phase: `STANDALONE`, `BEFORE`, or `AFTER`. |
+| `image_url` | string | Yes | Image URL or storage reference. |
+| `status` | string | System | Audit summary status (`needs_attention`, `acceptable`). |
+| `res_score` | float | System | Retail Execution Score (0-100). |
+| `pran_shelf_share_pct` | float | System | PRAN linear shelf share percentage. |
+| `competitor_shelf_share_pct` | float | System | Competitor linear shelf share percentage. |
+| `empty_shelf_share_pct` | float | System | Empty shelf percentage. |
+| `pran_facing_count` | integer | System | Number of PRAN front facings. |
+| `competitor_facing_count` | integer | System | Number of competitor front facings. |
+| `arrangement_score` | float | System | Cleanliness / arrangement score (0-100). |
+| `missing_skus_count` | integer | System | Total missing expected SKUs. |
+| `visible_gaps_count` | integer | System | Total visible shelf gaps. |
+| `issues_count` | integer | System | Total flagged issues count. |
+| `full_analysis` | JSON | System | Complete serialized `ShelfAuditReport` payload. |
+| `input_tokens` | integer | System | Prompt tokens consumed by vision model. |
+| `output_tokens` | integer | System | Completion tokens consumed by vision model. |
+| `total_tokens` | integer | System | Total tokens consumed. |
+| `estimated_cost_usd` | float | System | USD cost of vision API call. |
+| `created_at` | datetime | System | UTC creation timestamp. |
+| `updated_at` | datetime | System | UTC last update timestamp. |
+
+---
+
+### 2. `AuditIssueRecord` (Table: `audit_issues`)
+
+Stores individual merchandising issues extracted from an audit.
+
+| Field | Type | Writable | Description |
+|---|---|---|---|
+| `id` | string (UUID) | System | Primary key. |
+| `audit_id` | string (UUID) | Yes | Foreign key to `shelf_audits`. |
+| `severity` | string | System | Severity level: `HIGH`, `MEDIUM`, or `LOW`. |
+| `issue` | text | System | Concise issue title. |
+| `evidence` | text | System | Quantitative evidence string. |
+| `recommended_action` | text | System | Prescriptive corrective step for merchandiser. |
+| `is_resolved` | integer | Yes | `0` = unresolved, `1` = resolved. |
+| `created_at` | datetime | System | UTC creation timestamp. |
+
+---
+
+### 3. `Outlet` (Table: `outlets`)
+
+Retail store master data.
+
+| Field | Type | Writable | Description |
+|---|---|---|---|
+| `id` | string | Yes | Unique store identifier (e.g. `OUTLET-104`). |
+| `outlet_name` | string | Yes | Retail store name. |
+| `outlet_type` | string | Yes | Store format (e.g., `Supermarket`, `General Store`). |
+| `territory` | string | Yes | Regional territory (e.g., `Dhaka Central`). |
+| `distributor_name` | string | Yes | Regional distributor name. |
+| `tier` | string | Yes | Store tier (e.g., `Tier 1 - Platinum`, `Tier 2 - Gold`). |
+| `target_pran_sos_pct` | float | Yes | Target PRAN Share of Shelf percentage (default: `45.0`). |
+| `expected_skus` | JSON (list) | Yes | List of mandatory SKU codes expected on shelf. |
+| `created_at` | datetime | System | UTC registration timestamp. |
+
+---
+
+### 4. `Visit` (Table: `merchandiser_visits`)
+
+Tracks field merchandiser visits to retail outlets.
+
+| Field | Type | Writable | Description |
+|---|---|---|---|
+| `id` | string (UUID) | System | Primary key. |
+| `outlet_id` | string | Yes | Foreign key to `outlets`. |
+| `merchandiser_id` | string | Yes | Merchandiser identifier. |
+| `merchandiser_name` | string | Yes | Merchandiser display name. |
+| `visit_date` | datetime | Yes | Visit timestamp. |
+| `status` | string | Yes | `IN_PROGRESS`, `COMPLETED`, or `FLAGGED`. |
+| `initial_score` | float | System | Retail Execution Score from `BEFORE` audit. |
+| `final_score` | float | System | Retail Execution Score from `AFTER` audit. |
+| `created_at` | datetime | System | UTC creation timestamp. |
+
+---
+
+## URL Configuration
+
+Summary of all available API routes across the application:
+
+| HTTP Method | URL Path | Handler / Name | Description |
+|---|---|---|---|
+| `GET` | `/health` | `health_check` | Server liveness probe. |
+| `POST` | `/api/v2/audit/analyze` | `analyze_shelf_audit_v2` | Primary shelf analysis from URL or Base64. |
+| `POST` | `/api/v2/audit/analyze/file` | `analyze_shelf_audit_file_v2` | Binary photo file upload analysis. |
+| `POST` | `/api/v2/audit/verify` | `verify_audit_improvement` | Closed-loop before/after verification. |
+| `GET` | `/api/v2/audit/{audit_id}` | `get_audit_report` | Retrieve complete audit report by UUID. |
+| `GET` | `/api/v2/audits` | `list_audits` | Paginated list of historic audits. |
+| `GET` | `/api/v2/management/dashboard` | `get_management_dashboard` | Executive 5-module BI dashboard. |
+| `GET` | `/api/v2/outlets` | `list_outlets` | Master retail outlets list. |
+| `GET` | `/catalogue/search` | `catalogue_search` | Hybrid vector + BM25 catalogue search. |
+| `GET` | `/catalogue/stats` | `catalogue_stats` | Catalogue embedding readiness and stats. |
+| `POST` | `/catalogue/rebuild` | `catalogue_rebuild` | Force rebuild of catalogue vector index. |
+| `GET` | `/tokens/models` | `get_models` | Active AI models and pricing configuration. |
+| `GET` | `/tokens/pricing` | `get_pricing` | Token rates per 1k and 1M tokens. |
+| `GET` | `/tokens/stats` | `get_token_stats` | Aggregated token usage and USD expenditure. |
+| `POST` | `/tokens/estimate` | `estimate_tokens` | Pre-inference cost and token estimation. |
+
+---
+
+## Error Reference
+
+| HTTP Status | Error Detail Code | Description | Corrective Action |
+|---|---|---|---|
+| `400 Bad Request` | `INVALID_INPUT` | Missing required `image_url` or uploaded file. | Provide a valid Base64 string, HTTP URL, or binary file. |
+| `400 Bad Request` | `INVALID_FILE_TYPE` | Uploaded file MIME type is not an allowed image format. | Upload JPEG, PNG, or WebP images only. |
+| `404 Not Found` | `AUDIT_NOT_FOUND` | Specified `audit_id` does not exist in the database. | Verify the audit UUID. |
+| `404 Not Found` | `OUTLET_NOT_FOUND` | Specified `outlet_id` does not exist in master records. | Verify the outlet ID or omit to run standalone audit. |
+| `422 Unprocessable Entity` | `IMAGE_DECODE_ERROR` | Image payload is corrupt or unreadable by PIL. | Ensure Base64 string is correctly padded and uncorrupted. |
+| `500 Internal Server Error` | `RULES_ENGINE_FAILURE` | Error during deterministic scoring or catalogue linking. | Inspect server logs for details. |
+| `502 Bad Gateway` | `UPSTREAM_VISION_ERROR` | Remote vision LLM API call timed out or failed. | Verify OpenRouter API key and upstream provider status. |
+
+---
+
+## Dependencies & Core Technologies
+
+- **Web Framework**: FastAPI (Asynchronous Python 3.11+)
+- **ORM & Database**: SQLAlchemy 2.0 with PostgreSQL 16
+- **Vision AI Perception**: Google Gemini 3.7 Flash via OpenRouter API
+- **In-Memory Image Processing**: Pillow 10.x (Lanczos Antialiasing, RAM-only streams)
+- **Local Catalogue Matching**: `sentence-transformers` (`all-MiniLM-L6-v2`) + `rank_bm25` (`BM25Okapi`) over 1,954 SKUs in `itemsdb.csv`
+- **Data Validation**: Pydantic v2

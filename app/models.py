@@ -50,27 +50,9 @@ class Outlet(Base):
         return f"<Outlet id={self.id} name={self.outlet_name}>"
 
 
-class Visit(Base):
-    """Field merchandiser visit tracking."""
-
-    __tablename__ = "merchandiser_visits"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    outlet_id: Mapped[str] = mapped_column(String(64), index=True)
-    merchandiser_id: Mapped[str] = mapped_column(String(64), default="M-1001", index=True)
-    merchandiser_name: Mapped[str] = mapped_column(String(128), default="Merchandiser", index=True)
-    visit_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now_utc)
-    status: Mapped[str] = mapped_column(String(32), default="IN_PROGRESS")  # IN_PROGRESS, COMPLETED, FLAGGED
-    initial_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    final_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now_utc, index=True)
-
-    def __repr__(self) -> str:
-        return f"<Visit id={self.id} outlet={self.outlet_id} status={self.status}>"
-
 
 class ShelfAudit(Base):
-    """Individual shelf photo audit (Before, After, or Standalone) with full business insights."""
+    """Individual shelf photo audit with full commercial merchandising insights."""
 
     __tablename__ = "shelf_audits"
 

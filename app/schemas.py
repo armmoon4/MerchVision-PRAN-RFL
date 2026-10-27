@@ -529,31 +529,6 @@ class AuditAnalyzeRequest(BaseModel):
     approved_prices: Optional[Dict[str, float]] = None
 
 
-class AuditVerifyRequest(BaseModel):
-    """Request payload to verify shelf improvements after merchandiser fixes."""
-
-    audit_id: str
-    after_image_url: Optional[str] = None
-    after_image: Optional[str] = None
-    completed_actions: Optional[List[str]] = None
-
-
-class AuditVerifyResponse(BaseModel):
-    """Verification results comparing BEFORE and AFTER audits."""
-
-    visit_id: str
-    before_audit_id: str
-    after_audit_id: str
-    before_score: float
-    after_score: float
-    score_improvement: float
-    is_audit_passed: bool
-    resolved_issues: List[str] = []
-    remaining_issues: List[str] = []
-    pran_sos_delta_pct: float
-    after_report: ShelfAuditReport
-
-
 # ── Management Dashboard Sub-Models ──────────────────────────────────────────
 
 

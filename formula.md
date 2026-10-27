@@ -223,7 +223,7 @@ $$\text{Final RES Score} = \text{round}(53.8) = \mathbf{54 / 100}$$
 
 ## 6. How the Field Merchandiser Improves this Shelf
 
-Because each deduction maps directly to an image-provable condition, the merchandiser has an exact checklist to raise this store's score from **54** to **85+** (Verified via `POST /merchandising/verify`):
+Because each deduction maps directly to an image-provable condition, the merchandiser has an exact checklist to raise this store's score from **54** to **85+**:
 
 1. **Move PRAN drinks to eye-level (+20.0 pts):** Shift Tamarind Drink and Sour Plum Drink to the prime eye-level tier $\rightarrow$ Placement jumps from $0 \rightarrow 20.0$.
 2. **Add 2 more PRAN facings / flavors (+9.3 pts):** Expands SoS from $12\% \rightarrow 20\%$ and distinct SKUs from $2 \rightarrow 3$.

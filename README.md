@@ -324,11 +324,6 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - **Content-Type**: `multipart/form-data`
 - **Form Fields**: `file` (Binary image file)
 
-#### 3. Closed-Loop Improvement Verification
-- **Endpoint**: `POST /merchandising/verify` *(alias: `/merchandising/audit/verify`, `/api/v2/audit/verify`)*
-- **Content-Type**: `application/json`
-- **Description**: Submits an "AFTER" photo following corrective merchandising actions to calculate score improvement delta.
-
 ---
 
 ### Management Dashboard Endpoint

@@ -2,9 +2,8 @@
 app/routers/audit_router.py — Retail Merchandising Shelf Audit & Management Dashboard Endpoints.
 
 Endpoints:
-  POST   /merchandising/analyze       → Single-call retail shelf audit (Before/After/Standalone)
+  POST   /merchandising/analyze       → Single-call retail shelf audit (URL / Base64)
   POST   /merchandising/analyze/file  → File upload shelf audit
-  POST   /merchandising/verify        → Before-and-After improvement verification
   GET    /merchandising/audit/{audit_id} → Get shelf audit report by ID
   GET    /merchandising/audits        → List shelf audits with pagination & filters
   GET    /merchandising/dashboard     → 5-Module Management Analytics Dashboard with Exception-First Ranking
@@ -26,11 +25,9 @@ from sqlalchemy import asc, desc, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import AuditIssueRecord, AuditStage, Outlet, ShelfAudit, Visit
+from app.models import AuditIssueRecord, AuditStage, Outlet, ShelfAudit
 from app.schemas import (
     AuditAnalyzeRequest,
-    AuditVerifyRequest,
-    AuditVerifyResponse,
     ExceptionOutletItem,
     ExecutiveOverviewModule,
     FieldForcePerformanceModule,
@@ -123,36 +120,6 @@ def _persist_shelf_audit_results(
             is_resolved=0,
         )
         db.add(issue_rec)
-
-    # Track visit
-    resolved_visit_id = visit_id or report.visit_id
-    if resolved_visit_id:
-        visit_rec = db.query(Visit).filter(Visit.id == resolved_visit_id).first()
-        if not visit_rec:
-            visit_rec = Visit(
-                id=resolved_visit_id,
-                outlet_id=resolved_outlet_id or "OUT-GENERAL",
-                merchandiser_id=merchandiser_id or "M-1001",
-                merchandiser_name=merchandiser_name or "Field Merchandiser",
-                status="IN_PROGRESS",
-                initial_score=report.retail_execution_score.score,
-            )
-            db.add(visit_rec)
-        elif not visit_rec.initial_score:
-            visit_rec.initial_score = report.retail_execution_score.score
-    elif merchandiser_name or merchandiser_id or resolved_outlet_id:
-        new_visit_id = str(uuid.uuid4())
-        visit_rec = Visit(
-            id=new_visit_id,
-            outlet_id=resolved_outlet_id or "OUT-GENERAL",
-            merchandiser_id=merchandiser_id or "M-1001",
-            merchandiser_name=merchandiser_name or "Field Merchandiser",
-            status="COMPLETED",
-            initial_score=report.retail_execution_score.score,
-            final_score=report.retail_execution_score.score,
-        )
-        db.add(visit_rec)
-        audit_rec.visit_id = new_visit_id
 
     db.commit()
     return audit_rec
@@ -306,123 +273,6 @@ async def run_shelf_audit_file(
     )
     return report
 
-
-@router.post(
-    "/verify",
-    response_model=AuditVerifyResponse,
-    summary="Verify Shelf Corrections (Before-and-After)",
-    description="Compares today's BEFORE photo with the AFTER photo captured following merchandiser fixes.",
-)
-@router.post(
-    "/audit/verify",
-    response_model=AuditVerifyResponse,
-    include_in_schema=False,
-)
-@compat_v2_router.post(
-    "/audit/verify",
-    response_model=AuditVerifyResponse,
-    include_in_schema=False,
-)
-def verify_shelf_corrections(
-    payload: AuditVerifyRequest,
-    db: Session = Depends(get_db),
-) -> AuditVerifyResponse:
-    # 1. Fetch BEFORE audit
-    before_audit = db.query(ShelfAudit).filter(ShelfAudit.id == payload.audit_id).first()
-    if not before_audit:
-        raise HTTPException(status_code=404, detail=f"Before audit '{payload.audit_id}' not found")
-
-    after_img = payload.after_image_url or payload.after_image
-    if not after_img:
-        raise HTTPException(status_code=422, detail="after_image_url or after_image is required")
-
-    # 2. Run AFTER audit
-    after_report = analyze_shelf_audit(
-        image_input=after_img,
-        outlet_id=before_audit.outlet_id,
-        visit_id=before_audit.visit_id,
-        audit_stage="AFTER",
-    )
-
-    before_score = before_audit.res_score or 70.0
-    after_score = after_report.retail_execution_score.score
-    score_improvement = round(after_score - before_score, 1)
-
-    before_sos = before_audit.pran_shelf_share_pct or 40.0
-    after_sos = after_report.shelf_metrics.pran_shelf_share_pct or 40.0
-    sos_delta = round(after_sos - before_sos, 1)
-
-    # 3. Mark issues resolved
-    db.query(AuditIssueRecord).filter(AuditIssueRecord.audit_id == before_audit.id).update({"is_resolved": 1})
-    resolved = payload.completed_actions or [
-        "Replenished missing expected SKUs from inventory",
-        "Realigned misaligned product facings on middle shelf",
-    ]
-    remaining = [iss.issue for iss in after_report.issues_detected if iss.severity == "HIGH"]
-
-    is_passed = after_score >= 80.0 or score_improvement >= 10.0
-
-    # 4. Save AFTER audit record
-    after_rec = ShelfAudit(
-        id=after_report.audit_id,
-        visit_id=before_audit.visit_id,
-        outlet_id=before_audit.outlet_id,
-        audit_stage="AFTER",
-        image_url=after_report.image_url or "",
-        status="acceptable" if is_passed else "needs_attention",
-        res_score=after_score,
-        pran_shelf_share_pct=after_sos,
-        competitor_shelf_share_pct=after_report.shelf_metrics.competitor_shelf_share_pct,
-        empty_shelf_share_pct=after_report.shelf_metrics.empty_shelf_share_pct,
-        pran_facing_count=after_report.shelf_metrics.pran_facing_count,
-        competitor_facing_count=after_report.shelf_metrics.competitor_facing_count,
-        arrangement_score=after_report.shelf_metrics.arrangement_score,
-        missing_skus_count=len(after_report.availability_alerts.missing_expected_skus),
-        visible_gaps_count=len(after_report.availability_alerts.visible_gaps),
-        issues_count=len(after_report.issues_detected),
-        full_analysis=after_report.model_dump(mode="json"),
-        input_tokens=after_report.token_usage.input_tokens if after_report.token_usage else 0,
-        output_tokens=after_report.token_usage.output_tokens if after_report.token_usage else 0,
-        total_tokens=after_report.token_usage.total_tokens if after_report.token_usage else 0,
-        estimated_cost_usd=after_report.token_usage.estimated_cost_usd if after_report.token_usage else 0.0,
-    )
-    db.add(after_rec)
-
-    # Persist any remaining issues from AFTER audit
-    for issue in after_report.issues_detected:
-        issue_rec = AuditIssueRecord(
-            id=str(uuid.uuid4()),
-            audit_id=after_report.audit_id,
-            severity=issue.severity,
-            issue=issue.issue,
-            evidence=issue.evidence,
-            recommended_action=issue.recommended_action,
-            is_resolved=0,
-        )
-        db.add(issue_rec)
-
-    # Update visit status
-    if before_audit.visit_id:
-        visit_rec = db.query(Visit).filter(Visit.id == before_audit.visit_id).first()
-        if visit_rec:
-            visit_rec.final_score = after_score
-            visit_rec.status = "COMPLETED"
-
-    db.commit()
-
-    return AuditVerifyResponse(
-        visit_id=before_audit.visit_id or str(uuid.uuid4()),
-        before_audit_id=before_audit.id,
-        after_audit_id=after_report.audit_id,
-        before_score=before_score,
-        after_score=after_score,
-        score_improvement=score_improvement,
-        is_audit_passed=is_passed,
-        resolved_issues=resolved,
-        remaining_issues=remaining,
-        pran_sos_delta_pct=sos_delta,
-        after_report=after_report,
-    )
 
 
 @router.get("/audit/{audit_id}", response_model=ShelfAuditReport, summary="Get Shelf Audit by ID")
@@ -660,52 +510,14 @@ def get_management_dashboard(
         chronic_stockout_outlets_count=0,
     )
 
-    # Module 4: Field-Force Performance (Scoping visits & dynamic merchandiser territory)
-    visits_q = db.query(Visit)
-    if territory:
-        visits_q = visits_q.join(Outlet, Visit.outlet_id == Outlet.id).filter(Outlet.territory == territory)
-
-    total_visits = visits_q.count()
-    completed_visits = visits_q.filter(Visit.status == "COMPLETED").count()
-    comp_rate = round((completed_visits / total_visits * 100.0), 1) if total_visits > 0 else 0.0
-
-    top_merch_query = (
-        db.query(
-            Visit.merchandiser_name,
-            func.count(Visit.id).label("audits_done"),
-            func.avg(func.coalesce(Visit.final_score, Visit.initial_score)).label("avg_score"),
-            func.max(Outlet.territory).label("territory")
-        )
-        .outerjoin(Outlet, Visit.outlet_id == Outlet.id)
-    )
-    if territory:
-        top_merch_query = top_merch_query.filter(Outlet.territory == territory)
-
-    top_merch_rows = (
-        top_merch_query
-        .group_by(Visit.merchandiser_name)
-        .order_by(desc("audits_done"))
-        .limit(4)
-        .all()
-    )
-    top_merchandisers = []
-    for m in top_merch_rows:
-        name = m[0] or "Field Merchandiser"
-        resolved_territory = m[3] or territory or "General Territory"
-        top_merchandisers.append({
-            "name": name,
-            "territory": resolved_territory,
-            "audits_done": int(m[1]),
-            "avg_score": round(float(m[2] or 0.0), 1),
-        })
-
+    # Module 4: Field-Force Performance (Derived from shelf audits)
     field_force = FieldForcePerformanceModule(
-        total_visits_planned=total_visits,
-        total_visits_completed=completed_visits,
-        completion_rate_pct=comp_rate,
+        total_visits_planned=total_audits,
+        total_visits_completed=total_audits,
+        completion_rate_pct=100.0 if total_audits > 0 else 0.0,
         avg_visit_duration_mins=0.0,
         first_time_fix_rate_pct=issue_resolution_rate,
-        top_merchandisers=top_merchandisers,
+        top_merchandisers=[],
     )
 
     # Module 5: Trends and Alerts (OUTER JOIN to include standalone audits)

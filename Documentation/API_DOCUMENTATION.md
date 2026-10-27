@@ -21,7 +21,7 @@ The system cleanly combines two complementary business modules in a single deplo
    ```text
    /merchandising/
    ```
-   *Full commercial shelf auditing, Share of Shelf (SoS %), Retail Execution Scoring (RES 0-100), planogram compliance, out-of-stock gaps, before/after corrections, and management dashboards.*
+   *Full commercial shelf auditing, Share of Shelf (SoS %), Retail Execution Scoring (RES 0-100), planogram compliance, out-of-stock gaps, and management dashboards.*
    *(Also accessible via `/api/merchandising/` and legacy `/api/v2/` for backward compatibility).*
 
 3. **Master Catalogue & Token Telemetry:**
@@ -355,48 +355,7 @@ Returns identical `ShelfAuditReport` schema as detailed in `POST /merchandising/
 
 ---
 
-### 3. Closed-Loop Verify Audit (Before / After Comparison)
-
-```http
-POST /merchandising/verify
-```
-*(Also available as: `POST /merchandising/audit/verify` and legacy `POST /api/v2/audit/verify`)*
-
-Validates corrective merchandising actions by comparing a baseline `BEFORE` audit against a newly captured `AFTER` photo.
-
-**Permissions:** Authenticated Field Merchandiser
-
-#### Request Body (`application/json`)
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `audit_id` | string | Yes | UUID of the initial `BEFORE` shelf audit. |
-| `after_image_url` | string | Yes | Image URL or Base64 string of shelf photo captured after fixes. |
-| `completed_actions` | array[string] | No | Optional list of action strings marked as completed. |
-
-#### Success Response — 200 OK
-
-```json
-{
-  "visit_id": "a9082bd8-a6d9-4824-a740-fcbc84fbfbc9",
-  "before_audit_id": "041b7223-9fd2-4d53-ab59-8e232beaa69d",
-  "after_audit_id": "99df2194-c119-4cb3-a9d5-7ceb2c3a388b",
-  "before_score": 58.2,
-  "after_score": 78.4,
-  "score_improvement": 20.2,
-  "is_audit_passed": true,
-  "resolved_issues": [
-    "Low eye-level Golden Zone presence"
-  ],
-  "remaining_issues": [],
-  "pran_sos_delta_pct": 12.0,
-  "after_report": { ... }
-}
-```
-
----
-
-### 4. Retrieve Audit Report
+### 3. Retrieve Audit Report
 
 ```http
 GET /merchandising/audit/{audit_id}
@@ -409,7 +368,7 @@ Retrieves the persisted, structured `ShelfAuditReport` for a given audit session
 
 ---
 
-### 5. List Shelf Audits
+### 4. List Shelf Audits
 
 ```http
 GET /merchandising/audits
@@ -422,7 +381,7 @@ Returns a paginated list of shelf audits with high-level scores and status filte
 
 ---
 
-### 6. Management Analytics Dashboard
+### 5. Management Analytics Dashboard
 
 ```http
 GET /merchandising/dashboard
@@ -435,7 +394,7 @@ Delivers aggregated executive business intelligence across 5 analytical modules:
 
 ---
 
-### 7. List Retail Outlets
+### 6. List Retail Outlets
 
 ```http
 GET /merchandising/outlets
@@ -707,7 +666,6 @@ Stores every individual shelf photograph audit session.
 |---|---|---|---|
 | `POST` | `/merchandising/analyze` | `/merchandising/audit/analyze`, `/api/v2/audit/analyze` | Full shelf audit (SoS, RES score, missing SKUs, pricing). |
 | `POST` | `/merchandising/analyze/file` | `/merchandising/audit/analyze/file`, `/api/v2/audit/analyze/file` | Binary camera upload shelf audit. |
-| `POST` | `/merchandising/verify` | `/merchandising/audit/verify`, `/api/v2/audit/verify` | Before-vs-After corrective merchandising verification. |
 | `GET` | `/merchandising/audit/{audit_id}` | `/api/v2/audit/{audit_id}` | Retrieve complete audit report by UUID. |
 | `GET` | `/merchandising/audits` | `/api/v2/audits` | Paginated list of historic merchandising audits. |
 | `GET` | `/merchandising/dashboard` | `/merchandising/management/dashboard`, `/api/v2/management/dashboard` | Executive 5-module BI dashboard. |

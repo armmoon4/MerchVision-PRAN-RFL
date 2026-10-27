@@ -928,61 +928,8 @@
               </div>
             </div>
 
-            <!-- Deductions Warning Box -->
-            <div id="mDeductionsContainer" class="deductions-wrap"></div>
-
-            <!-- 6 Image-Provable Pillars Breakdown Matrix -->
-            <div class="subscore-box" id="mSubscoresBox" style="margin-top:16px;">
-              <div class="subscore-title" style="margin-bottom:10px;">
-                <span style="color:#fff; font-size:12px;">Score Breakdown Matrix (6 Image-Provable Pillars)</span>
-                <span style="font-weight:700; color:#38bdf8; text-transform:none;">Max 100 pts</span>
-              </div>
-              
-              <!-- Pillar 1: Presence (20 pts) -->
-              <div class="subscore-row">
-                <span style="width:160px; color:#cbd5e1; font-weight:600;">1. Presence (Variety)</span>
-                <div class="subscore-bar-bg"><div id="barSubPresence" class="subscore-bar-fill" style="width:0%;"></div></div>
-                <span id="subscorePresence" style="width:65px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/20</span>
-              </div>
-
-              <!-- Pillar 2: Visibility / SOS (25 pts) -->
-              <div class="subscore-row">
-                <span style="width:160px; color:#cbd5e1; font-weight:600;">2. Visibility (Share of Shelf)</span>
-                <div class="subscore-bar-bg"><div id="barSubSos" class="subscore-bar-fill" style="width:0%;"></div></div>
-                <span id="subscoreSos" style="width:65px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/25</span>
-              </div>
-
-              <!-- Pillar 3: Placement (20 pts) -->
-              <div class="subscore-row">
-                <span style="width:160px; color:#cbd5e1; font-weight:600;">3. Placement (Golden Zone)</span>
-                <div class="subscore-bar-bg"><div id="barSubPlacement" class="subscore-bar-fill" style="width:0%;"></div></div>
-                <span id="subscorePlacement" style="width:65px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/20</span>
-              </div>
-
-              <!-- Pillar 4: Arrangement (15 pts) -->
-              <div class="subscore-row">
-                <span style="width:160px; color:#cbd5e1; font-weight:600;">4. Shelf Arrangement</span>
-                <div class="subscore-bar-bg"><div id="barSubArrangement" class="subscore-bar-fill" style="width:0%;"></div></div>
-                <span id="subscoreArrangement" style="width:65px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/15</span>
-              </div>
-
-              <!-- Pillar 5: Stock Health (10 pts) -->
-              <div class="subscore-row">
-                <span style="width:160px; color:#cbd5e1; font-weight:600;">5. Stock Health (Gaps &amp; Voids)</span>
-                <div class="subscore-bar-bg"><div id="barSubStock" class="subscore-bar-fill" style="width:0%;"></div></div>
-                <span id="subscoreStock" style="width:65px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/10</span>
-              </div>
-
-              <!-- Pillar 6: Price & Promo (10 pts) -->
-              <div class="subscore-row">
-                <span style="width:160px; color:#cbd5e1; font-weight:600;">6. Price &amp; Promo Visibility</span>
-                <div class="subscore-bar-bg"><div id="barSubPricePromo" class="subscore-bar-fill" style="width:0%;"></div></div>
-                <span id="subscorePricePromo" style="width:65px; text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#fff;">--/10</span>
-              </div>
-            </div>
-
             <!-- Share of Shelf Width Gauge -->
-            <div style="margin-top:14px; padding-top:12px; border-top:1px dashed rgba(51, 65, 85, 0.45);">
+            <div style="margin-top:16px; padding-top:14px; border-top:1px dashed rgba(51, 65, 85, 0.45);">
               <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:4px;">
                 <span style="color:#f87171;">PRAN Share: <strong id="mPranSos">0%</strong></span>
                 <span style="color:#94a3b8;">Competitors: <strong id="mCompSos">0%</strong></span>
@@ -1626,62 +1573,7 @@
         covEl.title = `Matched: ${catCov.matched || 0}, Candidate: ${catCov.candidate || 0}, Unknown PRAN: ${catCov.unknown_pran || 0}`;
       }
 
-      // 6. Score Deductions Breakdown
-      const deductions = resObj.deductions || [];
-      const dedContainer = document.getElementById('mDeductionsContainer');
-      if (dedContainer) {
-        if (deductions.length > 0) {
-          dedContainer.innerHTML = deductions.map(d => `
-            <div class="deduction-tag">
-              <span style="font-weight:700; color:#f87171;">[Deduction]</span> <span>${escapeHtml(d)}</span>
-            </div>
-          `).join('');
-          dedContainer.style.display = 'block';
-        } else {
-          dedContainer.style.display = 'none';
-        }
-      }
-
-      // 7. Sub-scores Matrix Breakdown (6 Image-Provable Pillars)
-      const pillars = resObj.pillars || {};
-      const pPresence = (pillars.presence != null) ? Number(pillars.presence) : (resObj.availability_score != null ? Math.min(20, resObj.availability_score / 2) : 0);
-      const pSos = (pillars.visibility_sos != null) ? Number(pillars.visibility_sos) : (resObj.sos_score != null ? Number(resObj.sos_score) : 0);
-      const pPlacement = (pillars.placement != null) ? Number(pillars.placement) : (resObj.planogram_score != null ? Math.min(20, resObj.planogram_score * 1.33) : 0);
-      const pArr = (pillars.arrangement != null) ? Number(pillars.arrangement) : 0;
-      const pStock = (pillars.stock_health != null) ? Number(pillars.stock_health) : 10.0;
-      const pPricePromo = (pillars.price_promo != null) ? Number(pillars.price_promo) : (resObj.pricing_score != null ? Number(resObj.pricing_score) : 0);
-
-      const elPresence = document.getElementById('subscorePresence');
-      if (elPresence) elPresence.textContent = `${pPresence.toFixed(1)}/20`;
-      const barPresence = document.getElementById('barSubPresence');
-      if (barPresence) barPresence.style.width = `${Math.min(100, (pPresence / 20) * 100)}%`;
-
-      const elSos = document.getElementById('subscoreSos');
-      if (elSos) elSos.textContent = `${pSos.toFixed(1)}/25`;
-      const barSos = document.getElementById('barSubSos');
-      if (barSos) barSos.style.width = `${Math.min(100, (pSos / 25) * 100)}%`;
-
-      const elPlacement = document.getElementById('subscorePlacement');
-      if (elPlacement) elPlacement.textContent = `${pPlacement.toFixed(1)}/20`;
-      const barPlacement = document.getElementById('barSubPlacement');
-      if (barPlacement) barPlacement.style.width = `${Math.min(100, (pPlacement / 20) * 100)}%`;
-
-      const elArr = document.getElementById('subscoreArrangement');
-      if (elArr) elArr.textContent = `${pArr.toFixed(1)}/15`;
-      const barArr = document.getElementById('barSubArrangement');
-      if (barArr) barArr.style.width = `${Math.min(100, (pArr / 15) * 100)}%`;
-
-      const elStock = document.getElementById('subscoreStock');
-      if (elStock) elStock.textContent = `${pStock.toFixed(1)}/10`;
-      const barStock = document.getElementById('barSubStock');
-      if (barStock) barStock.style.width = `${Math.min(100, (pStock / 10) * 100)}%`;
-
-      const elPricePromo = document.getElementById('subscorePricePromo');
-      if (elPricePromo) elPricePromo.textContent = `${pPricePromo.toFixed(1)}/10`;
-      const barPricePromo = document.getElementById('barSubPricePromo');
-      if (barPricePromo) barPricePromo.style.width = `${Math.min(100, (pPricePromo / 10) * 100)}%`;
-
-      // 8. PRAN SKU Breakdown Table
+      // 6. PRAN SKU Breakdown Table
       const skuBody = document.getElementById('mSkuBreakdownBody');
       const skuBadge = document.getElementById('mSkuBreakdownBadge');
       const skuItems = pranSummary.sku_breakdown || [];

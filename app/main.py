@@ -135,7 +135,7 @@ app.include_router(audit_router)
 app.include_router(audit_router, prefix="/api", include_in_schema=False)
 app.include_router(compat_v2_router)
 
-app.include_router(token_router)
+app.include_router(token_router, include_in_schema=False)
 app.include_router(token_router, prefix="/api", include_in_schema=False)
 app.include_router(token_router, prefix="/api/v1", include_in_schema=False)
 
@@ -286,8 +286,7 @@ def health_check() -> HealthResponse:
 @app.get(
     "/catalogue/search",
     response_model=List[CatalogueSuggestion],
-    summary="Search itemsdb.csv catalogue by keyword, item code, subcategory, or category",
-    tags=["Items Catalogue"],
+    include_in_schema=False,
 )
 @app.get(
     "/api/catalogue/search",
@@ -308,8 +307,7 @@ def search_items_catalogue(
 
 @app.get(
     "/catalogue/stats",
-    summary="Get catalogue summary statistics (total items, sub-categories, categories)",
-    tags=["Items Catalogue"],
+    include_in_schema=False,
 )
 @app.get(
     "/api/catalogue/stats",
@@ -322,8 +320,7 @@ def get_catalogue_statistics() -> Dict[str, Any]:
 
 @app.post(
     "/catalogue/rebuild",
-    summary="Rebuild product embeddings from itemsdb.csv (run after CSV updates)",
-    tags=["Items Catalogue"],
+    include_in_schema=False,
 )
 @app.post(
     "/api/catalogue/rebuild",
@@ -354,11 +351,35 @@ def rebuild_catalogue_embeddings() -> Dict[str, Any]:
 
 
 @app.post(
+    "/survey/analyze",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Survey / Analyze rack photo - send image_url (S3 URL or Base64), get result immediately",
+    tags=["Survey AI & SKU Recognition"],
+)
+@app.post(
+    "/survey",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+@app.post(
     "/analyze",
     response_model=DirectAnalyzeResponse,
     status_code=status.HTTP_200_OK,
-    summary="Analyze rack photo — send image_url (S3 URL or Base64), get result immediately",
-    tags=["Single API Analysis"],
+    include_in_schema=False,
+)
+@app.post(
+    "/api/survey/analyze",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+@app.post(
+    "/api/survey",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
 )
 @app.post(
     "/api/analyze",
@@ -480,14 +501,38 @@ async def analyze_image_direct(
 
 
 @app.post(
+    "/survey/analyze/file",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Survey / Analyze uploaded image file directly in-memory (zero disk storage)",
+    tags=["Survey AI & SKU Recognition"],
+)
+@app.post(
+    "/survey/file",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+@app.post(
     "/analyze/file",
     response_model=DirectAnalyzeResponse,
     status_code=status.HTTP_200_OK,
-    summary="Analyze uploaded image file directly in-memory (zero disk storage)",
-    tags=["Single API Analysis"],
+    include_in_schema=False,
 )
 @app.post(
     "/analyze/upload",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+@app.post(
+    "/survey/analyze/upload",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+@app.post(
+    "/survey/upload",
     response_model=DirectAnalyzeResponse,
     status_code=status.HTTP_200_OK,
     include_in_schema=False,
@@ -575,11 +620,22 @@ async def analyze_file_direct(
 
 
 @app.post(
+    "/survey/analyze/url",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+@app.post(
+    "/survey/url",
+    response_model=DirectAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+@app.post(
     "/analyze/url",
     response_model=DirectAnalyzeResponse,
     status_code=status.HTTP_200_OK,
-    summary="Alias for /analyze — send image_url (S3 URL or Base64), get result immediately",
-    tags=["Single API Analysis"],
+    include_in_schema=False,
 )
 @app.post(
     "/api/analyze/url",
@@ -603,11 +659,23 @@ async def analyze_image_url_direct(
 
 
 @app.post(
-    "/uploads",
+    "/survey/uploads",
     response_model=UploadResponse,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Submit a rack photo file and start async AI analysis in-memory",
-    tags=["Async Uploads"],
+    tags=["Survey AI & SKU Recognition"],
+)
+@app.post(
+    "/uploads",
+    response_model=UploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
+@app.post(
+    "/api/survey/uploads",
+    response_model=UploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
 )
 @app.post(
     "/api/uploads",
@@ -665,11 +733,23 @@ async def create_upload(
 
 
 @app.post(
-    "/uploads/url",
+    "/survey/uploads/url",
     response_model=UploadResponse,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Submit a rack photo S3 URL/Base64 and start async AI analysis in-memory",
-    tags=["Async Uploads"],
+    tags=["Survey AI & SKU Recognition"],
+)
+@app.post(
+    "/uploads/url",
+    response_model=UploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
+@app.post(
+    "/api/survey/uploads/url",
+    response_model=UploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
 )
 @app.post(
     "/api/uploads/url",
@@ -716,10 +796,20 @@ async def create_upload_from_url(
 
 
 @app.get(
+    "/survey/uploads",
+    response_model=UploadListResponse,
+    summary="List all survey photo uploads and analysis results",
+    tags=["Survey AI & SKU Recognition"],
+)
+@app.get(
     "/uploads",
     response_model=UploadListResponse,
-    summary="List all uploads and analysis results",
-    tags=["Uploads & History"],
+    include_in_schema=False,
+)
+@app.get(
+    "/api/survey/uploads",
+    response_model=UploadListResponse,
+    include_in_schema=False,
 )
 @app.get(
     "/api/uploads",
@@ -785,10 +875,20 @@ def list_uploads(
 
 
 @app.get(
+    "/survey/uploads/summary",
+    response_model=AnalysisSummaryResponse,
+    summary="Get aggregated survey summary metrics, token totals, and top products",
+    tags=["Survey AI & SKU Recognition"],
+)
+@app.get(
     "/uploads/summary",
     response_model=AnalysisSummaryResponse,
-    summary="Get aggregated summary metrics, token totals, and top products",
-    tags=["Analytics"],
+    include_in_schema=False,
+)
+@app.get(
+    "/api/survey/uploads/summary",
+    response_model=AnalysisSummaryResponse,
+    include_in_schema=False,
 )
 @app.get(
     "/api/uploads/summary",
@@ -895,10 +995,20 @@ def get_analysis_summary(db: Session = Depends(get_db)) -> AnalysisSummaryRespon
 
 
 @app.get(
+    "/survey/uploads/{upload_id}",
+    response_model=UploadResultResponse,
+    summary="Get analysis result & token metrics for a survey upload by ID",
+    tags=["Survey AI & SKU Recognition"],
+)
+@app.get(
     "/uploads/{upload_id}",
     response_model=UploadResultResponse,
-    summary="Get analysis result & token metrics for an upload by ID",
-    tags=["Uploads & History"],
+    include_in_schema=False,
+)
+@app.get(
+    "/api/survey/uploads/{upload_id}",
+    response_model=UploadResultResponse,
+    include_in_schema=False,
 )
 @app.get(
     "/api/uploads/{upload_id}",
@@ -906,10 +1016,19 @@ def get_analysis_summary(db: Session = Depends(get_db)) -> AnalysisSummaryRespon
     include_in_schema=False,
 )
 @app.get(
+    "/survey/uploads/{upload_id}/result",
+    response_model=UploadResultResponse,
+    include_in_schema=False,
+)
+@app.get(
     "/uploads/{upload_id}/result",
     response_model=UploadResultResponse,
-    summary="Get analysis result for an upload (polling endpoint)",
-    tags=["Uploads & History"],
+    include_in_schema=False,
+)
+@app.get(
+    "/api/survey/uploads/{upload_id}/result",
+    response_model=UploadResultResponse,
+    include_in_schema=False,
 )
 @app.get(
     "/api/uploads/{upload_id}/result",
@@ -935,10 +1054,20 @@ def get_upload_result(
 
 
 @app.delete(
+    "/survey/uploads/{upload_id}",
+    response_model=DeleteResponse,
+    summary="Delete a survey upload record and its image",
+    tags=["Survey AI & SKU Recognition"],
+)
+@app.delete(
     "/uploads/{upload_id}",
     response_model=DeleteResponse,
-    summary="Delete an upload record and its image",
-    tags=["Uploads & History"],
+    include_in_schema=False,
+)
+@app.delete(
+    "/api/survey/uploads/{upload_id}",
+    response_model=DeleteResponse,
+    include_in_schema=False,
 )
 @app.delete(
     "/api/uploads/{upload_id}",

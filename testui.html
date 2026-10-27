@@ -2363,7 +2363,7 @@
       const resDiv = document.getElementById('scanDirectResult');
       resDiv.textContent = "Analyzing shelf image in RAM...";
       try {
-        const r = await fetch('/analyze', {
+        const r = await fetch('/survey/analyze', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ image_url: url || "https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=800" })

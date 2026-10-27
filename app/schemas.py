@@ -529,6 +529,15 @@ class AuditAnalyzeRequest(BaseModel):
     approved_prices: Optional[Dict[str, float]] = None
 
 
+class AuditAsyncResponse(BaseModel):
+    """Response returned when an audit is submitted for asynchronous background processing."""
+
+    audit_id: str
+    status: str = "PROCESSING"
+    message: str = "Shelf audit queued for background analysis. Retrieve completed report via GET /merchandising/audit/{audit_id}"
+    created_at: Optional[datetime] = None
+
+
 # ── Management Dashboard Sub-Models ──────────────────────────────────────────
 
 

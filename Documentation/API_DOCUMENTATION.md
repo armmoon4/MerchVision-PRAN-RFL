@@ -10,18 +10,29 @@ Master catalogue matching against the 1,954 SKUs in `itemsdb.csv` acts as enrich
 
 The system cleanly combines two complementary business modules in a single deployment:
 
-1. **Review AI / Product Suggestion Engine (Main Branch API):**
+1. **Survey AI & SKU Recognition Engine (Survey API):**
    ```text
-   /analyze
-   /uploads
+   /survey/analyze
+   /survey/analyze/file
+   /survey/uploads
+   /survey/uploads/url
+   /survey/uploads/{upload_id}
+   /survey/uploads/summary
    ```
-   *Fast, low-cost vision perception that detects products on shelves and suggests matching SKUs from the 1,954-product master catalogue.*
+   *Fast, low-cost vision perception that detects products/facings on shelves, matches canonical SKUs against itemsdb.csv, and tracks token costs.*
 
 2. **Retail Merchandising & Shelf Intelligence Engine (Merchandising API):**
    ```text
-   /merchandising/
+   /merchandising/analyze
+   /merchandising/analyze/file
+   /merchandising/analyze/async
+   /merchandising/analyze/file/async
+   /merchandising/audit/{audit_id}
+   /merchandising/audits
+   /merchandising/dashboard
+   /merchandising/outlets
    ```
-   *Full commercial shelf auditing, Share of Shelf (SoS %), Retail Execution Scoring (RES 0-100), planogram compliance, out-of-stock gaps, and management dashboards.*
+   *Full commercial shelf auditing, Share of Shelf (SoS %), Retail Execution Scoring (RES 0-100 across 6 pillars), planogram compliance, out-of-stock gaps, and management dashboards.*
    *(Also accessible via `/api/merchandising/` and legacy `/api/v2/` for backward compatibility).*
 
 3. **Master Catalogue & Token Telemetry:**
@@ -407,9 +418,13 @@ Lists master retail outlets registered in the system along with target SOS and e
 
 ---
 
-### 8. Review AI / Product Suggestion Scanner (Main Branch API)
+### 7. Review AI / Product Suggestion Scanner (Single API Survey)
 
 ```http
+POST /survey/analyze
+POST /survey/analyze/file
+POST /survey/analyze/url
+POST /survey
 POST /analyze
 POST /analyze/file
 POST /analyze/url
@@ -650,9 +665,9 @@ Stores every individual shelf photograph audit session.
 
 | HTTP Method | URL Path | Handler / Name | Description |
 |---|---|---|---|
-| `POST` | `/analyze` | `analyze_image_direct` | Single-call vision detection + master catalogue SKU matching. |
-| `POST` | `/analyze/file` | `analyze_image_file_direct` | Single-call binary file upload vision detection + SKU matching. |
-| `POST` | `/analyze/url` | `analyze_image_url_direct` | Alias for single-call vision detection via URL. |
+| `POST` | `/survey/analyze` | `analyze_image_direct` | Single-call vision detection + master catalogue SKU matching (alias: `/analyze`, `/survey`). |
+| `POST` | `/survey/analyze/file` | `analyze_file_direct` | Single-call binary file upload vision detection + SKU matching (alias: `/analyze/file`, `/survey/file`). |
+| `POST` | `/survey/analyze/url` | `analyze_image_url_direct` | Alias for single-call vision detection via URL. |
 | `POST` | `/uploads` | `upload_rack_photo` | Asynchronous file upload, queueing background AI analysis. |
 | `POST` | `/uploads/url` | `upload_rack_url` | Asynchronous image URL submission for background processing. |
 | `GET` | `/uploads` | `list_uploads` | Paginated list of historic rack photo uploads. |
@@ -666,6 +681,8 @@ Stores every individual shelf photograph audit session.
 |---|---|---|---|
 | `POST` | `/merchandising/analyze` | `/merchandising/audit/analyze`, `/api/v2/audit/analyze` | Full shelf audit (SoS, RES score, missing SKUs, pricing). |
 | `POST` | `/merchandising/analyze/file` | `/merchandising/audit/analyze/file`, `/api/v2/audit/analyze/file` | Binary camera upload shelf audit. |
+| `POST` | `/merchandising/analyze/async` | `/merchandising/uploads/url` | Asynchronous background shelf audit (URL/Base64). |
+| `POST` | `/merchandising/analyze/file/async` | `/merchandising/uploads` | Asynchronous background shelf audit from camera file. |
 | `GET` | `/merchandising/audit/{audit_id}` | `/api/v2/audit/{audit_id}` | Retrieve complete audit report by UUID. |
 | `GET` | `/merchandising/audits` | `/api/v2/audits` | Paginated list of historic merchandising audits. |
 | `GET` | `/merchandising/dashboard` | `/merchandising/management/dashboard`, `/api/v2/management/dashboard` | Executive 5-module BI dashboard. |

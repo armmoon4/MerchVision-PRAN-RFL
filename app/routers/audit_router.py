@@ -4,7 +4,9 @@ app/routers/audit_router.py — Retail Merchandising Shelf Audit & Management Da
 Endpoints:
   POST   /merchandising/analyze       → Single-call retail shelf audit (URL / Base64)
   POST   /merchandising/analyze/file  → File upload shelf audit
-  GET    /merchandising/audit/{audit_id} → Get shelf audit report by ID
+  POST   /merchandising/analyze/async → Asynchronous background shelf audit (URL / Base64)
+  POST   /merchandising/analyze/file/async → Asynchronous background file upload audit
+  GET    /merchandising/audit/{audit_id} → Get shelf audit report by ID (polling/result)
   GET    /merchandising/audits        → List shelf audits with pagination & filters
   GET    /merchandising/dashboard     → 5-Module Management Analytics Dashboard with Exception-First Ranking
   GET    /merchandising/outlets       → List retail outlets master data
@@ -19,15 +21,16 @@ import uuid
 from collections import Counter
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy import asc, desc, func
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models import AuditIssueRecord, AuditStage, Outlet, ShelfAudit
 from app.schemas import (
     AuditAnalyzeRequest,
+    AuditAsyncResponse,
     ExceptionOutletItem,
     ExecutiveOverviewModule,
     FieldForcePerformanceModule,
@@ -83,30 +86,31 @@ def _persist_shelf_audit_results(
             db.add(outlet_rec)
             db.flush()
 
-    audit_rec = ShelfAudit(
-        id=report.audit_id,
-        visit_id=visit_id or report.visit_id,
-        outlet_id=resolved_outlet_id,
-        audit_stage=report.audit_stage or "STANDALONE",
-        image_url=image_url or report.image_url or "",
-        status=report.audit_summary.status,
-        res_score=report.retail_execution_score.score,
-        pran_shelf_share_pct=report.shelf_metrics.pran_shelf_share_pct,
-        competitor_shelf_share_pct=report.shelf_metrics.competitor_shelf_share_pct,
-        empty_shelf_share_pct=report.shelf_metrics.empty_shelf_share_pct,
-        pran_facing_count=report.shelf_metrics.pran_facing_count,
-        competitor_facing_count=report.shelf_metrics.competitor_facing_count,
-        arrangement_score=report.shelf_metrics.arrangement_score,
-        missing_skus_count=len(report.availability_alerts.missing_expected_skus),
-        visible_gaps_count=len(report.availability_alerts.visible_gaps),
-        issues_count=len(report.issues_detected),
-        full_analysis=report.model_dump(mode="json"),
-        input_tokens=report.token_usage.input_tokens if report.token_usage else 0,
-        output_tokens=report.token_usage.output_tokens if report.token_usage else 0,
-        total_tokens=report.token_usage.total_tokens if report.token_usage else 0,
-        estimated_cost_usd=report.token_usage.estimated_cost_usd if report.token_usage else 0.0,
-    )
-    db.add(audit_rec)
+    audit_rec = db.query(ShelfAudit).filter(ShelfAudit.id == report.audit_id).first()
+    if not audit_rec:
+        audit_rec = ShelfAudit(id=report.audit_id)
+        db.add(audit_rec)
+
+    audit_rec.visit_id = visit_id or report.visit_id
+    audit_rec.outlet_id = resolved_outlet_id
+    audit_rec.audit_stage = report.audit_stage or "STANDALONE"
+    audit_rec.image_url = image_url or report.image_url or ""
+    audit_rec.status = report.audit_summary.status
+    audit_rec.res_score = report.retail_execution_score.score
+    audit_rec.pran_shelf_share_pct = report.shelf_metrics.pran_shelf_share_pct
+    audit_rec.competitor_shelf_share_pct = report.shelf_metrics.competitor_shelf_share_pct
+    audit_rec.empty_shelf_share_pct = report.shelf_metrics.empty_shelf_share_pct
+    audit_rec.pran_facing_count = report.shelf_metrics.pran_facing_count
+    audit_rec.competitor_facing_count = report.shelf_metrics.competitor_facing_count
+    audit_rec.arrangement_score = report.shelf_metrics.arrangement_score
+    audit_rec.missing_skus_count = len(report.availability_alerts.missing_expected_skus)
+    audit_rec.visible_gaps_count = len(report.availability_alerts.visible_gaps)
+    audit_rec.issues_count = len(report.issues_detected)
+    audit_rec.full_analysis = report.model_dump(mode="json")
+    audit_rec.input_tokens = report.token_usage.input_tokens if report.token_usage else 0
+    audit_rec.output_tokens = report.token_usage.output_tokens if report.token_usage else 0
+    audit_rec.total_tokens = report.token_usage.total_tokens if report.token_usage else 0
+    audit_rec.estimated_cost_usd = report.token_usage.estimated_cost_usd if report.token_usage else 0.0
 
     # Persist all flagged issues
     for issue in report.issues_detected:
@@ -274,14 +278,205 @@ async def run_shelf_audit_file(
     return report
 
 
+def _run_shelf_audit_async_worker(
+    audit_id: str,
+    image_input: str | bytes,
+    outlet_id: Optional[str] = None,
+    visit_id: Optional[str] = None,
+    audit_stage: str = "STANDALONE",
+    merchandiser_id: Optional[str] = None,
+    merchandiser_name: Optional[str] = None,
+    expected_skus: Optional[List[str]] = None,
+    planogram_rules: Optional[Dict[str, Any]] = None,
+    approved_prices: Optional[Dict[str, float]] = None,
+    target_sos: float = 45.0,
+    image_url: str = "",
+) -> None:
+    db = SessionLocal()
+    try:
+        report = analyze_shelf_audit(
+            image_input=image_input,
+            outlet_id=outlet_id,
+            visit_id=visit_id,
+            audit_stage=audit_stage,
+            merchandiser_id=merchandiser_id,
+            merchandiser_name=merchandiser_name,
+            expected_skus=expected_skus,
+            planogram_rules=planogram_rules,
+            approved_prices=approved_prices,
+            target_pran_sos=target_sos,
+        )
+        report.audit_id = audit_id
+        if image_url:
+            report.image_url = image_url
+        _persist_shelf_audit_results(
+            db=db,
+            report=report,
+            image_url=image_url or report.image_url or "",
+            outlet_id=outlet_id,
+            visit_id=visit_id,
+            merchandiser_id=merchandiser_id,
+            merchandiser_name=merchandiser_name,
+        )
+    except Exception as exc:
+        logger.exception("Async shelf audit %s failed: %s", audit_id, exc)
+        rec = db.query(ShelfAudit).filter(ShelfAudit.id == audit_id).first()
+        if rec:
+            rec.status = "FAILED"
+            db.commit()
+    finally:
+        db.close()
 
-@router.get("/audit/{audit_id}", response_model=ShelfAuditReport, summary="Get Shelf Audit by ID")
-@router.get("/audits/{audit_id}", response_model=ShelfAuditReport, include_in_schema=False)
-@compat_v2_router.get("/audit/{audit_id}", response_model=ShelfAuditReport, include_in_schema=False)
-def get_audit_by_id(audit_id: str, db: Session = Depends(get_db)) -> ShelfAuditReport:
+
+@router.post(
+    "/analyze/async",
+    response_model=AuditAsyncResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Queue Shelf Audit for Asynchronous Processing (URL or Base64)",
+    description="Submits a shelf photo URL or Base64 string for background AI analysis. Returns 202 with audit_id immediately. Poll results via GET /merchandising/audit/{audit_id}",
+)
+def run_shelf_audit_async(
+    payload: AuditAnalyzeRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> AuditAsyncResponse:
+    img_input = payload.image_url or payload.image
+    if not img_input:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="image_url or image base64 payload is required",
+        )
+
+    target_sos = 45.0
+    expected_skus = payload.expected_skus
+    if payload.outlet_id:
+        outlet_rec = db.query(Outlet).filter(Outlet.id == payload.outlet_id).first()
+        if outlet_rec:
+            target_sos = outlet_rec.target_pran_sos_pct or target_sos
+            if not expected_skus and outlet_rec.expected_skus:
+                expected_skus = outlet_rec.expected_skus
+
+    audit_id = str(uuid.uuid4())
+    img_ref = payload.image_url if payload.image_url and len(payload.image_url) < 2000 else ""
+    audit_rec = ShelfAudit(
+        id=audit_id,
+        outlet_id=payload.outlet_id,
+        visit_id=payload.visit_id,
+        audit_stage=payload.audit_stage or "STANDALONE",
+        image_url=img_ref,
+        status="PROCESSING",
+    )
+    db.add(audit_rec)
+    db.commit()
+
+    background_tasks.add_task(
+        _run_shelf_audit_async_worker,
+        audit_id=audit_id,
+        image_input=img_input,
+        outlet_id=payload.outlet_id,
+        visit_id=payload.visit_id,
+        audit_stage=payload.audit_stage or "STANDALONE",
+        merchandiser_id=payload.merchandiser_id,
+        merchandiser_name=payload.merchandiser_name,
+        expected_skus=expected_skus,
+        planogram_rules=payload.planogram_rules,
+        approved_prices=payload.approved_prices,
+        target_sos=target_sos,
+        image_url=img_ref,
+    )
+
+    return AuditAsyncResponse(
+        audit_id=audit_id,
+        status="PROCESSING",
+        message=f"Shelf audit queued for background analysis. Retrieve completed report via GET /merchandising/audit/{audit_id}",
+        created_at=audit_rec.created_at,
+    )
+
+
+@router.post(
+    "/analyze/file/async",
+    response_model=AuditAsyncResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Queue Shelf Photo File for Asynchronous Processing (Multipart File)",
+    description="Submits an uploaded shelf photo for background AI analysis. Returns 202 with audit_id immediately. Poll results via GET /merchandising/audit/{audit_id}",
+)
+async def run_shelf_audit_file_async(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    outlet_id: Optional[str] = Form(None),
+    visit_id: Optional[str] = Form(None),
+    audit_stage: Optional[str] = Form("STANDALONE"),
+    merchandiser_id: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+) -> AuditAsyncResponse:
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    target_sos = 45.0
+    expected_skus = None
+    if outlet_id:
+        outlet_rec = db.query(Outlet).filter(Outlet.id == outlet_id).first()
+        if outlet_rec:
+            target_sos = outlet_rec.target_pran_sos_pct or target_sos
+            expected_skus = outlet_rec.expected_skus
+
+    audit_id = str(uuid.uuid4())
+    audit_rec = ShelfAudit(
+        id=audit_id,
+        outlet_id=outlet_id,
+        visit_id=visit_id,
+        audit_stage=audit_stage or "STANDALONE",
+        image_url="",
+        status="PROCESSING",
+    )
+    db.add(audit_rec)
+    db.commit()
+
+    background_tasks.add_task(
+        _run_shelf_audit_async_worker,
+        audit_id=audit_id,
+        image_input=content,
+        outlet_id=outlet_id,
+        visit_id=visit_id,
+        audit_stage=audit_stage or "STANDALONE",
+        merchandiser_id=merchandiser_id,
+        merchandiser_name="Field Merchandiser",
+        expected_skus=expected_skus,
+        target_sos=target_sos,
+        image_url="",
+    )
+
+    return AuditAsyncResponse(
+        audit_id=audit_id,
+        status="PROCESSING",
+        message=f"Shelf photo queued for background analysis. Retrieve completed report via GET /merchandising/audit/{audit_id}",
+        created_at=audit_rec.created_at,
+    )
+
+
+@router.get("/audit/{audit_id}", summary="Get Shelf Audit by ID")
+@router.get("/audits/{audit_id}", include_in_schema=False)
+@compat_v2_router.get("/audit/{audit_id}", include_in_schema=False)
+def get_audit_by_id(audit_id: str, db: Session = Depends(get_db)):
     rec = db.query(ShelfAudit).filter(ShelfAudit.id == audit_id).first()
     if not rec:
         raise HTTPException(status_code=404, detail="Shelf audit not found")
+    if rec.status in ["PENDING", "PROCESSING"]:
+        return {
+            "audit_id": rec.id,
+            "status": rec.status,
+            "outlet_id": rec.outlet_id,
+            "message": "Shelf audit is currently being processed by the AI vision engine. Please poll this endpoint again shortly.",
+            "created_at": rec.created_at,
+        }
+    if rec.status == "FAILED":
+        return {
+            "audit_id": rec.id,
+            "status": "FAILED",
+            "message": "Shelf audit analysis encountered an error.",
+            "created_at": rec.created_at,
+        }
     if rec.full_analysis:
         return ShelfAuditReport(**rec.full_analysis)
     raise HTTPException(status_code=404, detail="Full audit report data unavailable")
@@ -606,7 +801,7 @@ def get_management_dashboard(
     )
 
 
-@router.get("/outlets", summary="List Retail Outlets")
+@router.get("/outlets", summary="List Retail Outlets", include_in_schema=False)
 @compat_v2_router.get("/outlets", include_in_schema=False)
 def list_outlets(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
     _ensure_outlets_seeded(db)

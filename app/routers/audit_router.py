@@ -218,10 +218,13 @@ def run_shelf_audit(
         logger.exception("Unexpected error during shelf audit: %s", exc)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Audit failed: {exc}")
 
+    if payload.image_url and (payload.image_url.startswith("http://") or payload.image_url.startswith("https://") or payload.image_url.startswith("s3://")):
+        report.image_url = payload.image_url
+
     _persist_shelf_audit_results(
         db=db,
         report=report,
-        image_url=report.image_url or "",
+        image_url=report.image_url or (payload.image_url if payload.image_url and len(payload.image_url) < 2000 else ""),
         outlet_id=payload.outlet_id,
         visit_id=payload.visit_id,
         merchandiser_id=payload.merchandiser_id,

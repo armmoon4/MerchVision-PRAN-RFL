@@ -86,7 +86,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from app.routers.token_router import router as token_router
-from app.routers.audit_router import router as audit_router
+from app.routers.audit_router import router as audit_router, compat_v2_router
 
 # ── App bootstrap ─────────────────────────────────────────────────────────────
 
@@ -129,7 +129,12 @@ app.add_middleware(
 
 # ── Merchandising Audit & Token Router APIs ────────────────────────────────────
 
+# Primary merchandising routes at /merchandising/...
 app.include_router(audit_router)
+# Convenience & backward-compatibility aliases: /api/merchandising/... and /api/v2/...
+app.include_router(audit_router, prefix="/api", include_in_schema=False)
+app.include_router(compat_v2_router)
+
 app.include_router(token_router)
 app.include_router(token_router, prefix="/api", include_in_schema=False)
 app.include_router(token_router, prefix="/api/v1", include_in_schema=False)

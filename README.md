@@ -166,10 +166,10 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ## API Reference
 
-### V2 Auditing Endpoints
+### Retail Merchandising Endpoints (`/merchandising/...`)
 
 #### 1. Analyze Shelf Photo (URL or Base64)
-- **Endpoint**: `POST /api/v2/audit/analyze`
+- **Endpoint**: `POST /merchandising/analyze` *(also aliased as `/merchandising/audit/analyze` and `/api/v2/audit/analyze`)*
 - **Content-Type**: `application/json`
 
 **Request Body:**
@@ -320,12 +320,12 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 #### 2. Analyze Shelf Photo File (Multipart Stream)
-- **Endpoint**: `POST /api/v2/audit/analyze/file`
+- **Endpoint**: `POST /merchandising/analyze/file` *(alias: `/merchandising/audit/analyze/file`, `/api/v2/audit/analyze/file`)*
 - **Content-Type**: `multipart/form-data`
 - **Form Fields**: `file` (Binary image file)
 
 #### 3. Closed-Loop Improvement Verification
-- **Endpoint**: `POST /api/v2/audit/verify`
+- **Endpoint**: `POST /merchandising/verify` *(alias: `/merchandising/audit/verify`, `/api/v2/audit/verify`)*
 - **Content-Type**: `application/json`
 - **Description**: Submits an "AFTER" photo following corrective merchandising actions to calculate score improvement delta.
 
@@ -333,7 +333,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ### Management Dashboard Endpoint
 
-#### `GET /api/v2/management/dashboard`
+#### `GET /merchandising/dashboard`
+*(also aliased as `/merchandising/management/dashboard` and `/api/v2/management/dashboard`)*
 Returns aggregated shelf performance data across territories and categories.
 
 - **Query Parameters**:

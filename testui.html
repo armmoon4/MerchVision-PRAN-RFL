@@ -777,9 +777,9 @@
         <span class="pill pill-green">Gemini 3.7 Vision</span>
       </h1>
       <div class="links">
-        <a href="/docs" target="_blank">Swagger API</a>
-        <a href="/api/v2/management/dashboard" target="_blank">Management API JSON</a>
-        <a href="/tokens/models" target="_blank">Token Router</a>
+        <a href="/docs" onclick="if(window.location.protocol==='file:'){this.href='http://localhost:8000/docs';}" target="_blank">Swagger API</a>
+        <a href="/merchandising/dashboard" onclick="if(window.location.protocol==='file:'){this.href='http://localhost:8000/merchandising/dashboard';}" target="_blank">Management API JSON</a>
+        <a href="/tokens/models" onclick="if(window.location.protocol==='file:'){this.href='http://localhost:8000/tokens/models';}" target="_blank">Token Router</a>
       </div>
     </header>
 
@@ -1470,10 +1470,10 @@
         if (fileInput.files.length > 0) {
           const formData = new FormData();
           formData.append('file', fileInput.files[0]);
-          res = await fetch('/api/v2/audit/analyze/file', { method: 'POST', body: formData });
+          res = await fetch('/merchandising/analyze/file', { method: 'POST', body: formData });
         } else {
           const payload = { image_url: urlInput };
-          res = await fetch('/api/v2/audit/analyze', {
+          res = await fetch('/merchandising/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -2332,7 +2332,7 @@
         if (territory) params.append('territory', territory);
         if (category && category !== "All Categories") params.append('category', category);
 
-        const url = `/api/v2/management/dashboard?${params.toString()}`;
+        const url = `/merchandising/dashboard?${params.toString()}`;
         const res = await fetch(url);
         const data = await res.json();
 

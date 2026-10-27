@@ -6,17 +6,29 @@ The PRAN-RFL Retail Merchandising & Shelf Intelligence module operates in **imag
 
 Master catalogue matching against the 1,954 SKUs in `itemsdb.csv` acts as enrichment rather than a gate. Any PRAN item not present in the master catalogue is classified into the `unknown_pran` bucket, ensuring Share of Shelf and facing counts remain 100% accurate without data corruption.
 
-## Base URL
+## Base URLs & Routing Architecture
 
-```text
-/api/v2/audit/
-```
+The system cleanly combines two complementary business modules in a single deployment:
 
-Additional related module base paths:
-- Management Dashboard: `/api/v2/management/`
-- Retail Outlets: `/api/v2/outlets`
-- Master Catalogue: `/catalogue/`
-- Token Telemetry & Accounting: `/tokens/`
+1. **Review AI / Product Suggestion Engine (Main Branch API):**
+   ```text
+   /analyze
+   /uploads
+   ```
+   *Fast, low-cost vision perception that detects products on shelves and suggests matching SKUs from the 1,954-product master catalogue.*
+
+2. **Retail Merchandising & Shelf Intelligence Engine (Merchandising API):**
+   ```text
+   /merchandising/
+   ```
+   *Full commercial shelf auditing, Share of Shelf (SoS %), Retail Execution Scoring (RES 0-100), planogram compliance, out-of-stock gaps, before/after corrections, and management dashboards.*
+   *(Also accessible via `/api/merchandising/` and legacy `/api/v2/` for backward compatibility).*
+
+3. **Master Catalogue & Token Telemetry:**
+   ```text
+   /catalogue/
+   /tokens/
+   ```
 
 ## Authentication
 
@@ -35,8 +47,9 @@ In image-only mode, endpoints require only the shelf photo itself; outlet config
 ### 1. Analyze Shelf Photo (URL or Base64)
 
 ```http
-POST /api/v2/audit/analyze
+POST /merchandising/analyze
 ```
+*(Also available as: `POST /merchandising/audit/analyze` and legacy `POST /api/v2/audit/analyze`)*
 
 Performs synchronous shelf intelligence analysis from an image URL (HTTP/HTTPS, S3 presigned URL) or Base64-encoded image string. The image is processed in RAM (Lanczos downscaling to 1024px maximum dimension), fingerprinted via SHA-256 for exact-match caching, analyzed via Gemini 3.7 Flash vision perception, enriched with brand and catalogue status, evaluated across image-provable pillars, and persisted to the relational database.
 
@@ -319,8 +332,9 @@ When zero PRAN products are visible, no unearned points are awarded from seconda
 ### 2. Analyze Shelf Photo (Binary File Upload)
 
 ```http
-POST /api/v2/audit/analyze/file
+POST /merchandising/analyze/file
 ```
+*(Also available as: `POST /merchandising/audit/analyze/file` and legacy `POST /api/v2/audit/analyze/file`)*
 
 Direct binary upload of a camera photograph using `multipart/form-data`. Streams image bytes purely through memory (`io.BytesIO`) without writing temporary files to local disk storage.
 
@@ -337,15 +351,16 @@ Direct binary upload of a camera photograph using `multipart/form-data`. Streams
 
 #### Success Response — 200 OK
 
-Returns identical `ShelfAuditReport` schema as detailed in `POST /api/v2/audit/analyze`.
+Returns identical `ShelfAuditReport` schema as detailed in `POST /merchandising/analyze`.
 
 ---
 
 ### 3. Closed-Loop Verify Audit (Before / After Comparison)
 
 ```http
-POST /api/v2/audit/verify
+POST /merchandising/verify
 ```
+*(Also available as: `POST /merchandising/audit/verify` and legacy `POST /api/v2/audit/verify`)*
 
 Validates corrective merchandising actions by comparing a baseline `BEFORE` audit against a newly captured `AFTER` photo.
 
@@ -384,8 +399,9 @@ Validates corrective merchandising actions by comparing a baseline `BEFORE` audi
 ### 4. Retrieve Audit Report
 
 ```http
-GET /api/v2/audit/{audit_id}
+GET /merchandising/audit/{audit_id}
 ```
+*(Also available as legacy: `GET /api/v2/audit/{audit_id}`)*
 
 Retrieves the persisted, structured `ShelfAuditReport` for a given audit session UUID.
 
@@ -396,8 +412,9 @@ Retrieves the persisted, structured `ShelfAuditReport` for a given audit session
 ### 5. List Shelf Audits
 
 ```http
-GET /api/v2/audits
+GET /merchandising/audits
 ```
+*(Also available as legacy: `GET /api/v2/audits`)*
 
 Returns a paginated list of shelf audits with high-level scores and status filters.
 
@@ -408,8 +425,9 @@ Returns a paginated list of shelf audits with high-level scores and status filte
 ### 6. Management Analytics Dashboard
 
 ```http
-GET /api/v2/management/dashboard
+GET /merchandising/dashboard
 ```
+*(Also available as: `GET /merchandising/management/dashboard` and legacy `GET /api/v2/management/dashboard`)*
 
 Delivers aggregated executive business intelligence across 5 analytical modules: Executive Overview, Category Shelf Intelligence, Product Availability, Merchandiser Performance, and Exception-First Store Rankings.
 
@@ -420,8 +438,9 @@ Delivers aggregated executive business intelligence across 5 analytical modules:
 ### 7. List Retail Outlets
 
 ```http
-GET /api/v2/outlets
+GET /merchandising/outlets
 ```
+*(Also available as legacy: `GET /api/v2/outlets`)*
 
 Lists master retail outlets registered in the system along with target SOS and expected SKU configurations.
 
@@ -429,7 +448,23 @@ Lists master retail outlets registered in the system along with target SOS and e
 
 ---
 
-### 8. Master Catalogue Hybrid Search
+### 8. Review AI / Product Suggestion Scanner (Main Branch API)
+
+```http
+POST /analyze
+POST /analyze/file
+POST /analyze/url
+POST /uploads
+GET  /uploads
+GET  /uploads/summary
+GET  /uploads/{upload_id}
+```
+
+Instant single-call or background asynchronous rack photo analysis that detects PRAN products and matches them against the 1,954-product catalogue with vector similarity suggestions.
+
+---
+
+### 9. Master Catalogue Hybrid Search
 
 ```http
 GET /catalogue/search
@@ -652,17 +687,38 @@ Stores every individual shelf photograph audit session.
 
 ## URL Configuration
 
+### 1. Review AI / Product Suggestion (Main Branch API)
+
+| HTTP Method | URL Path | Handler / Name | Description |
+|---|---|---|---|
+| `POST` | `/analyze` | `analyze_image_direct` | Single-call vision detection + master catalogue SKU matching. |
+| `POST` | `/analyze/file` | `analyze_image_file_direct` | Single-call binary file upload vision detection + SKU matching. |
+| `POST` | `/analyze/url` | `analyze_image_url_direct` | Alias for single-call vision detection via URL. |
+| `POST` | `/uploads` | `upload_rack_photo` | Asynchronous file upload, queueing background AI analysis. |
+| `POST` | `/uploads/url` | `upload_rack_url` | Asynchronous image URL submission for background processing. |
+| `GET` | `/uploads` | `list_uploads` | Paginated list of historic rack photo uploads. |
+| `GET` | `/uploads/summary` | `get_analysis_summary` | Aggregate analytics, token totals, and top-detected SKUs. |
+| `GET` | `/uploads/{upload_id}` | `get_upload_result` | Get analysis result and token metrics for an upload. |
+| `DELETE` | `/uploads/{upload_id}` | `delete_upload` | Permanently delete upload record and stored image. |
+
+### 2. Retail Merchandising & Shelf Intelligence Engine
+
+| HTTP Method | Primary URL Path | Backward-Compat Alias | Description |
+|---|---|---|---|
+| `POST` | `/merchandising/analyze` | `/merchandising/audit/analyze`, `/api/v2/audit/analyze` | Full shelf audit (SoS, RES score, missing SKUs, pricing). |
+| `POST` | `/merchandising/analyze/file` | `/merchandising/audit/analyze/file`, `/api/v2/audit/analyze/file` | Binary camera upload shelf audit. |
+| `POST` | `/merchandising/verify` | `/merchandising/audit/verify`, `/api/v2/audit/verify` | Before-vs-After corrective merchandising verification. |
+| `GET` | `/merchandising/audit/{audit_id}` | `/api/v2/audit/{audit_id}` | Retrieve complete audit report by UUID. |
+| `GET` | `/merchandising/audits` | `/api/v2/audits` | Paginated list of historic merchandising audits. |
+| `GET` | `/merchandising/dashboard` | `/merchandising/management/dashboard`, `/api/v2/management/dashboard` | Executive 5-module BI dashboard. |
+| `GET` | `/merchandising/outlets` | `/api/v2/outlets` | Master retail outlets list. |
+
+### 3. Master Catalogue, Telemetry & Health
+
 | HTTP Method | URL Path | Handler / Name | Description |
 |---|---|---|---|
 | `GET` | `/health` | `health_check` | Server liveness probe. |
-| `POST` | `/api/v2/audit/analyze` | `analyze_shelf_audit_v2` | Primary image-only shelf analysis from URL or Base64. |
-| `POST` | `/api/v2/audit/analyze/file` | `analyze_shelf_audit_file_v2` | Binary photo file upload analysis. |
-| `POST` | `/api/v2/audit/verify` | `verify_audit_improvement` | Closed-loop before/after verification. |
-| `GET` | `/api/v2/audit/{audit_id}` | `get_audit_report` | Retrieve complete audit report by UUID. |
-| `GET` | `/api/v2/audits` | `list_audits` | Paginated list of historic audits. |
-| `GET` | `/api/v2/management/dashboard` | `get_management_dashboard` | Executive 5-module BI dashboard. |
-| `GET` | `/api/v2/outlets` | `list_outlets` | Master retail outlets list. |
-| `GET` | `/catalogue/search` | `catalogue_search` | Hybrid vector + BM25 catalogue search. |
+| `GET` | `/catalogue/search` | `catalogue_search` | Hybrid vector + BM25 catalogue search (1,954 SKUs). |
 | `GET` | `/catalogue/stats` | `catalogue_stats` | Catalogue embedding readiness and stats. |
 | `POST` | `/catalogue/rebuild` | `catalogue_rebuild` | Force rebuild of catalogue vector index. |
 | `GET` | `/tokens/models` | `get_models` | Active AI models and pricing configuration. |

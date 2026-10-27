@@ -1,14 +1,16 @@
 """
-app/routers/audit_router.py — Retail Shelf Audit & Management Dashboard Endpoints.
+app/routers/audit_router.py — Retail Merchandising Shelf Audit & Management Dashboard Endpoints.
 
 Endpoints:
-  POST   /api/v2/audit/analyze       → Single-call retail shelf audit (Before/After/Standalone)
-  POST   /api/v2/audit/analyze/file  → File upload shelf audit
-  POST   /api/v2/audit/verify        → Before-and-After improvement verification
-  GET    /api/v2/audit/{audit_id}    → Get shelf audit report by ID
-  GET    /api/v2/audits              → List shelf audits with pagination & filters
-  GET    /api/v2/management/dashboard→ 5-Module Management Analytics Dashboard with Exception-First Ranking
-  GET    /api/v2/outlets             → List retail outlets master data
+  POST   /merchandising/analyze       → Single-call retail shelf audit (Before/After/Standalone)
+  POST   /merchandising/analyze/file  → File upload shelf audit
+  POST   /merchandising/verify        → Before-and-After improvement verification
+  GET    /merchandising/audit/{audit_id} → Get shelf audit report by ID
+  GET    /merchandising/audits        → List shelf audits with pagination & filters
+  GET    /merchandising/dashboard     → 5-Module Management Analytics Dashboard with Exception-First Ranking
+  GET    /merchandising/outlets       → List retail outlets master data
+
+Also aliased under /api/merchandising/... and /api/v2/... for full backward compatibility.
 """
 from __future__ import annotations
 
@@ -42,7 +44,11 @@ from app.services.ai_service import AIServiceError, analyze_shelf_audit
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v2", tags=["Retail Merchandising Audit & Analytics"])
+# Primary merchandising router: /merchandising/...
+router = APIRouter(prefix="/merchandising", tags=["Retail Merchandising Audit & Analytics"])
+
+# Backward-compatibility router for existing integrations: /api/v2/...
+compat_v2_router = APIRouter(prefix="/api/v2", tags=["Retail Merchandising Audit & Analytics"], include_in_schema=False)
 
 # ── Seed demo outlets if empty ──────────────────────────────────────────────────
 
@@ -156,10 +162,20 @@ def _persist_shelf_audit_results(
 
 
 @router.post(
-    "/audit/analyze",
+    "/analyze",
     response_model=ShelfAuditReport,
     summary="Analyze Shelf Photo (URL or Base64)",
-    description="Full retail audit: checks multi-brand facings, width Share of Shelf, planogram, missing SKUs, pricing & generates Retail Execution Score.",
+    description="Full retail merchandising shelf audit: checks multi-brand facings, width Share of Shelf, planogram, missing SKUs, pricing & generates Retail Execution Score.",
+)
+@router.post(
+    "/audit/analyze",
+    response_model=ShelfAuditReport,
+    include_in_schema=False,
+)
+@compat_v2_router.post(
+    "/audit/analyze",
+    response_model=ShelfAuditReport,
+    include_in_schema=False,
 )
 def run_shelf_audit(
     payload: AuditAnalyzeRequest,
@@ -215,9 +231,20 @@ def run_shelf_audit(
 
 
 @router.post(
-    "/audit/analyze/file",
+    "/analyze/file",
     response_model=ShelfAuditReport,
     summary="Analyze Shelf Photo from File Upload",
+    description="Full retail merchandising shelf audit from uploaded photo file.",
+)
+@router.post(
+    "/audit/analyze/file",
+    response_model=ShelfAuditReport,
+    include_in_schema=False,
+)
+@compat_v2_router.post(
+    "/audit/analyze/file",
+    response_model=ShelfAuditReport,
+    include_in_schema=False,
 )
 async def run_shelf_audit_file(
     file: UploadFile = File(...),
@@ -278,10 +305,20 @@ async def run_shelf_audit_file(
 
 
 @router.post(
-    "/audit/verify",
+    "/verify",
     response_model=AuditVerifyResponse,
     summary="Verify Shelf Corrections (Before-and-After)",
     description="Compares today's BEFORE photo with the AFTER photo captured following merchandiser fixes.",
+)
+@router.post(
+    "/audit/verify",
+    response_model=AuditVerifyResponse,
+    include_in_schema=False,
+)
+@compat_v2_router.post(
+    "/audit/verify",
+    response_model=AuditVerifyResponse,
+    include_in_schema=False,
 )
 def verify_shelf_corrections(
     payload: AuditVerifyRequest,
@@ -385,7 +422,9 @@ def verify_shelf_corrections(
     )
 
 
-@router.get("/audit/{audit_id}", response_model=ShelfAuditReport)
+@router.get("/audit/{audit_id}", response_model=ShelfAuditReport, summary="Get Shelf Audit by ID")
+@router.get("/audits/{audit_id}", response_model=ShelfAuditReport, include_in_schema=False)
+@compat_v2_router.get("/audit/{audit_id}", response_model=ShelfAuditReport, include_in_schema=False)
 def get_audit_by_id(audit_id: str, db: Session = Depends(get_db)) -> ShelfAuditReport:
     rec = db.query(ShelfAudit).filter(ShelfAudit.id == audit_id).first()
     if not rec:
@@ -396,6 +435,7 @@ def get_audit_by_id(audit_id: str, db: Session = Depends(get_db)) -> ShelfAuditR
 
 
 @router.get("/audits", summary="List Shelf Audits")
+@compat_v2_router.get("/audits", include_in_schema=False)
 def list_shelf_audits(
     outlet_id: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=100),
@@ -433,14 +473,21 @@ def list_shelf_audits(
 # ── Management Dashboard Endpoint (5 Modules + Exception-First) ───────────────
 
 
-
-
-
 @router.get(
-    "/management/dashboard",
+    "/dashboard",
     response_model=ManagementDashboardResponse,
     summary="5-Module Management Analytics Dashboard",
     description="Aggregates executive KPIs, shelf intelligence, availability, field-force productivity, and exception-first outlet rankings directly from database audits.",
+)
+@router.get(
+    "/management/dashboard",
+    response_model=ManagementDashboardResponse,
+    include_in_schema=False,
+)
+@compat_v2_router.get(
+    "/management/dashboard",
+    response_model=ManagementDashboardResponse,
+    include_in_schema=False,
 )
 def get_management_dashboard(
     territory: Optional[str] = Query(None),
@@ -745,6 +792,7 @@ def get_management_dashboard(
 
 
 @router.get("/outlets", summary="List Retail Outlets")
+@compat_v2_router.get("/outlets", include_in_schema=False)
 def list_outlets(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
     _ensure_outlets_seeded(db)
     outlets = db.query(Outlet).all()

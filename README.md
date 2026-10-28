@@ -166,6 +166,18 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ## API Reference
 
+### Postman API Collection & Environment
+
+A complete Postman collection and environment are included in the repository root:
+- **Postman Collection:** [`MerchVision_postman_collection.json`](MerchVision_postman_collection.json) (38 endpoints covering System, Survey AI, Merchandising Audit, Catalogue, and Token Router)
+- **Postman Environment:** [`MerchVision_postman_environment.json`](MerchVision_postman_environment.json)
+- **Default Base URL:** `http://172.17.4.199:8093/`
+
+**Quick Setup in Postman:**
+1. Open Postman $\rightarrow$ Click **Import** $\rightarrow$ Select `MerchVision_postman_collection.json` and `MerchVision_postman_environment.json`.
+2. Select the **MerchVision Server (http://172.17.4.199:8093)** environment.
+3. The `baseUrl` is pre-configured to `http://172.17.4.199:8093`. An automatic pre-request script strips any trailing slash if present so `{{baseUrl}}/endpoint` always resolves cleanly.
+
 ### Retail Merchandising Endpoints (`/merchandising/...`)
 
 #### 1. Analyze Shelf Photo (URL or Base64)

@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "7b8f9e61-9c32-4d5e-a812-70b13d7890fa",
-    "name": "MerchVision - PRAN-RFL Retail Merchandising & Token Analytics API",
-    "description": "Comprehensive Postman API Collection for the **PRAN-RFL Retail Merchandising & Shelf Intelligence System**.\n\n### Backend Base URL\n- **Base URL:** `http://172.17.4.199:8093/` (or `http://172.17.4.199:8093`)\n- **Health Check:** `http://172.17.4.199:8093/health`\n- **Swagger Docs:** `http://172.17.4.199:8093/docs`\n- **ReDoc:** `http://172.17.4.199:8093/redoc`\n- **Interactive Web UI:** `http://172.17.4.199:8093/ui`\n\n### Module Architecture\n1. **System & Health:** Health checks, Web UI dashboard, OpenAPI schemas.\n2. **Single-Call Perception / Survey:** Instant AI detection returning product counts, tokens, and cost.\n3. **Asynchronous Uploads & Polling:** Background task queue for high-volume store photo uploads.\n4. **Analytics & Survey History:** Summary token usage, total costs, top detected SKUs.\n5. **Retail Merchandising & Shelf Audits:** Share of Shelf (SoS %), Retail Execution Scoring (RES 0-100 across 6 pillars), planogram compliance, out-of-stock gaps, management dashboard.\n6. **Master Items Catalogue:** Hybrid BM25/Vector search against 1,985 PRAN-RFL SKUs (`itemsdb.csv`).\n7. **Token Router & AI Telemetry:** Gemini 3.7 Flash specs, token estimator, live token counting, and cost breakdown.",
+    "name": "PRAN-RFL Retail Merchandising AI System 2.0.0",
+    "description": "Enterprise retail shelf auditing, execution scoring (RES 0-100), Share of Shelf analytics, planogram compliance, and Token Router intelligence powered by Google Gemini 3.7 Flash.\n\n**Target Base URL:** `http://172.17.4.199:8093/`\n- Health Check: `http://172.17.4.199:8093/health`\n- Swagger Docs: `http://172.17.4.199:8093/docs`\n- OpenAPI JSON: `http://172.17.4.199:8093/openapi.json`",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -10,19 +10,19 @@
       "key": "baseUrl",
       "value": "http://172.17.4.199:8093",
       "type": "string",
-      "description": "Base URL of the PRAN-RFL MerchVision server (e.g. http://172.17.4.199:8093/)"
-    },
-    {
-      "key": "upload_id",
-      "value": "",
-      "type": "string",
-      "description": "Dynamic Upload ID captured automatically by test scripts from upload / analyze responses"
+      "description": "Server base URL (http://172.17.4.199:8093/)"
     },
     {
       "key": "audit_id",
       "value": "",
       "type": "string",
-      "description": "Dynamic Audit ID captured automatically by test scripts from merchandising audit responses"
+      "description": "Dynamic Audit ID captured from Merchandising responses"
+    },
+    {
+      "key": "upload_id",
+      "value": "",
+      "type": "string",
+      "description": "Dynamic Upload ID captured from Survey responses"
     }
   ],
   "event": [
@@ -31,7 +31,7 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "// Ensure baseUrl has no trailing slash so {{baseUrl}}/endpoint never produces double slashes",
+          "// Ensure baseUrl has no trailing slash to prevent double-slashes in {{baseUrl}}/endpoint",
           "var b = pm.variables.get('baseUrl') || '';",
           "if (typeof b === 'string' && b.endsWith('/')) {",
           "    pm.variables.set('baseUrl', b.replace(/\\/+$/, ''));",
@@ -42,11 +42,383 @@
   ],
   "item": [
     {
-      "name": "1. System & Health",
-      "description": "Endpoints to check server health, OpenAPI documentation, and access the web UI dashboard.",
+      "name": "Retail Merchandising Audit & Analytics",
+      "description": "Retail shelf auditing, execution scoring (RES 0-100), Share of Shelf analytics, planogram compliance.",
       "item": [
         {
-          "name": "Health Check (Liveness)",
+          "name": "POST /merchandising/analyze - Analyze Shelf Photo (URL or Base64)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "    try {",
+                  "        var json = pm.response.json();",
+                  "        if (json.audit_id) {",
+                  "            pm.collectionVariables.set('audit_id', json.audit_id);",
+                  "            pm.environment.set('audit_id', json.audit_id);",
+                  "            console.log('Saved audit_id: ' + json.audit_id);",
+                  "        }",
+                  "    } catch (e) {",
+                  "        console.error('Error parsing response: ' + e);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\",\n  \"outlet_id\": \"OUT-Gulshan-001\",\n  \"visit_id\": \"VISIT-101\",\n  \"audit_stage\": \"STANDALONE\",\n  \"merchandiser_id\": \"MER-42\",\n  \"merchandiser_name\": \"Rahim Ahmed\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/merchandising/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchandising",
+                "analyze"
+              ]
+            },
+            "description": "Analyze Shelf Photo (URL or Base64)"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /merchandising/analyze/file - Analyze Shelf Photo from File Upload",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "    try {",
+                  "        var json = pm.response.json();",
+                  "        if (json.audit_id) {",
+                  "            pm.collectionVariables.set('audit_id', json.audit_id);",
+                  "            pm.environment.set('audit_id', json.audit_id);",
+                  "            console.log('Saved audit_id: ' + json.audit_id);",
+                  "        }",
+                  "    } catch (e) {",
+                  "        console.error('Error parsing response: ' + e);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Shelf image file (JPEG, PNG, WebP)"
+                },
+                {
+                  "key": "outlet_id",
+                  "value": "OUT-Gulshan-001",
+                  "type": "text"
+                },
+                {
+                  "key": "visit_id",
+                  "value": "VISIT-101",
+                  "type": "text"
+                },
+                {
+                  "key": "audit_stage",
+                  "value": "STANDALONE",
+                  "type": "text"
+                },
+                {
+                  "key": "merchandiser_id",
+                  "value": "MER-42",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/merchandising/analyze/file",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchandising",
+                "analyze",
+                "file"
+              ]
+            },
+            "description": "Analyze Shelf Photo from File Upload"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /merchandising/analyze/async - Queue Shelf Audit for Asynchronous Processing (URL or Base64)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "    try {",
+                  "        var json = pm.response.json();",
+                  "        if (json.audit_id) {",
+                  "            pm.collectionVariables.set('audit_id', json.audit_id);",
+                  "            pm.environment.set('audit_id', json.audit_id);",
+                  "            console.log('Saved audit_id: ' + json.audit_id);",
+                  "        }",
+                  "    } catch (e) {",
+                  "        console.error('Error parsing response: ' + e);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\",\n  \"outlet_id\": \"OUT-Gulshan-001\",\n  \"visit_id\": \"VISIT-101\",\n  \"audit_stage\": \"STANDALONE\",\n  \"merchandiser_id\": \"MER-42\",\n  \"merchandiser_name\": \"Rahim Ahmed\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/merchandising/analyze/async",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchandising",
+                "analyze",
+                "async"
+              ]
+            },
+            "description": "Queue Shelf Audit for Asynchronous Processing (URL or Base64)"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /merchandising/analyze/file/async - Queue Shelf Photo File for Asynchronous Processing (Multipart File)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "    try {",
+                  "        var json = pm.response.json();",
+                  "        if (json.audit_id) {",
+                  "            pm.collectionVariables.set('audit_id', json.audit_id);",
+                  "            pm.environment.set('audit_id', json.audit_id);",
+                  "            console.log('Saved audit_id: ' + json.audit_id);",
+                  "        }",
+                  "    } catch (e) {",
+                  "        console.error('Error parsing response: ' + e);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Shelf image file"
+                },
+                {
+                  "key": "outlet_id",
+                  "value": "OUT-Gulshan-001",
+                  "type": "text"
+                },
+                {
+                  "key": "visit_id",
+                  "value": "VISIT-101",
+                  "type": "text"
+                },
+                {
+                  "key": "audit_stage",
+                  "value": "STANDALONE",
+                  "type": "text"
+                },
+                {
+                  "key": "merchandiser_id",
+                  "value": "MER-42",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/merchandising/analyze/file/async",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchandising",
+                "analyze",
+                "file",
+                "async"
+              ]
+            },
+            "description": "Queue Shelf Photo File for Asynchronous Processing (Multipart File)"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /merchandising/audit/{audit_id} - Get Shelf Audit by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchandising/audit/{{audit_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchandising",
+                "audit",
+                "{{audit_id}}"
+              ]
+            },
+            "description": "Get Shelf Audit by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /merchandising/audits - List Shelf Audits",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchandising/audits?outlet_id=&limit=20&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchandising",
+                "audits"
+              ],
+              "query": [
+                {
+                  "key": "outlet_id",
+                  "value": "",
+                  "description": "Filter by outlet ID"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Max records (default 20)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Offset (default 0)"
+                }
+              ]
+            },
+            "description": "List Shelf Audits"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /merchandising/dashboard - 5-Module Management Analytics Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchandising/dashboard?territory=&category=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchandising",
+                "dashboard"
+              ],
+              "query": [
+                {
+                  "key": "territory",
+                  "value": "",
+                  "description": "Filter by territory"
+                },
+                {
+                  "key": "category",
+                  "value": "",
+                  "description": "Filter by category"
+                }
+              ]
+            },
+            "description": "5-Module Management Analytics Dashboard"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "System",
+      "description": "System health and liveness checks.",
+      "item": [
+        {
+          "name": "GET /health - Liveness check",
           "request": {
             "method": "GET",
             "header": [
@@ -64,7 +436,7 @@
                 "health"
               ]
             },
-            "description": "Liveness check endpoint returning `{\"status\": \"ok\"}` when the service is healthy."
+            "description": "Liveness check"
           },
           "response": [
             {
@@ -93,92 +465,15 @@
               "body": "{\n  \"status\": \"ok\"\n}"
             }
           ]
-        },
-        {
-          "name": "Web Dashboard / UI",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/ui",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "ui"
-              ]
-            },
-            "description": "Serves the interactive web UI dashboard for testing rack uploads, inspecting bounding/detection results, and viewing token analytics."
-          },
-          "response": []
-        },
-        {
-          "name": "Swagger API Documentation (HTML)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/docs",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "docs"
-              ]
-            },
-            "description": "Interactive OpenAPI Swagger UI."
-          },
-          "response": []
-        },
-        {
-          "name": "ReDoc API Documentation (HTML)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/redoc",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "redoc"
-              ]
-            },
-            "description": "Alternative clean OpenAPI documentation view."
-          },
-          "response": []
-        },
-        {
-          "name": "OpenAPI Specification (JSON)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/openapi.json",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "openapi.json"
-              ]
-            },
-            "description": "Raw OpenAPI v3 JSON specification describing all system schemas and endpoints."
-          },
-          "response": []
         }
       ]
     },
     {
-      "name": "2. Single-Call Direct Analysis (Survey AI)",
-      "description": "Direct 1-call analysis endpoints that process the rack photo synchronously and return detected products, token usage, and cost estimation in a single response.",
+      "name": "Survey AI & SKU Recognition",
+      "description": "Survey perception and rack recognition endpoints for rapid product detection and token metrics.",
       "item": [
         {
-          "name": "Direct Analyze (File Upload - multipart/form-data)",
+          "name": "POST /survey/analyze - Survey / Analyze rack photo (URL or Base64)",
           "event": [
             {
               "listen": "test",
@@ -191,77 +486,10 @@
                   "        if (json.upload_id) {",
                   "            pm.collectionVariables.set('upload_id', json.upload_id);",
                   "            pm.environment.set('upload_id', json.upload_id);",
-                  "            console.log('Saved upload_id to collection variables: ' + json.upload_id);",
+                  "            console.log('Saved upload_id: ' + json.upload_id);",
                   "        }",
                   "    } catch (e) {",
-                  "        console.error('Failed to parse response JSON: ' + e);",
-                  "    }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "file",
-                  "type": "file",
-                  "description": "Rack or shelf photograph (JPEG, PNG, WebP up to 10MB)"
-                },
-                {
-                  "key": "shop_id",
-                  "value": "SHOP-Gulshan-102",
-                  "type": "text",
-                  "description": "Unique shop identifier"
-                },
-                {
-                  "key": "merchandiser_id",
-                  "value": "MER-Rahim-45",
-                  "type": "text",
-                  "description": "Merchandiser ID"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/analyze",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "analyze"
-              ]
-            },
-            "description": "Accepts an image file, saves it, runs Gemini vision analysis synchronously, and returns detected products with token metrics."
-          },
-          "response": []
-        },
-        {
-          "name": "Direct Analyze (JSON - Image URL / Remote S3)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "    try {",
-                  "        var json = pm.response.json();",
-                  "        if (json.upload_id) {",
-                  "            pm.collectionVariables.set('upload_id', json.upload_id);",
-                  "            pm.environment.set('upload_id', json.upload_id);",
-                  "            console.log('Saved upload_id to collection variables: ' + json.upload_id);",
-                  "        }",
-                  "    } catch (e) {",
-                  "        console.error('Failed to parse response JSON: ' + e);",
+                  "        console.error('Error parsing response: ' + e);",
                   "    }",
                   "}"
                 ]
@@ -282,68 +510,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\",\n  \"shop_id\": \"SHOP-Gulshan-102\",\n  \"merchandiser_id\": \"MER-Rahim-45\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/analyze/url",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "analyze",
-                "url"
-              ]
-            },
-            "description": "Downloads the image from remote URL or S3, processes it synchronously, and returns detected products and token usage."
-          },
-          "response": []
-        },
-        {
-          "name": "Direct Analyze (Alias: /survey/analyze)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "    try {",
-                  "        var json = pm.response.json();",
-                  "        if (json.upload_id) {",
-                  "            pm.collectionVariables.set('upload_id', json.upload_id);",
-                  "            pm.environment.set('upload_id', json.upload_id);",
-                  "            console.log('Saved upload_id to collection variables: ' + json.upload_id);",
-                  "        }",
-                  "    } catch (e) {",
-                  "        console.error('Failed to parse response JSON: ' + e);",
-                  "    }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "file",
-                  "type": "file",
-                  "description": "Shelf photo"
-                },
-                {
-                  "key": "shop_id",
-                  "value": "SHOP-Gulshan-102",
-                  "type": "text"
-                }
-              ]
+              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/survey/analyze",
@@ -355,12 +522,12 @@
                 "analyze"
               ]
             },
-            "description": "Survey AI alias route for direct file analysis."
+            "description": "Survey / Analyze rack photo - send image_url (S3 URL or Base64), get result immediately"
           },
           "response": []
         },
         {
-          "name": "Direct Analyze URL (Alias: /survey/analyze/url)",
+          "name": "POST /survey/analyze/file - Survey / Analyze uploaded image file directly in-memory",
           "event": [
             {
               "listen": "test",
@@ -373,71 +540,10 @@
                   "        if (json.upload_id) {",
                   "            pm.collectionVariables.set('upload_id', json.upload_id);",
                   "            pm.environment.set('upload_id', json.upload_id);",
-                  "            console.log('Saved upload_id to collection variables: ' + json.upload_id);",
+                  "            console.log('Saved upload_id: ' + json.upload_id);",
                   "        }",
                   "    } catch (e) {",
-                  "        console.error('Failed to parse response JSON: ' + e);",
-                  "    }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\",\n  \"shop_id\": \"SHOP-Gulshan-102\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/survey/analyze/url",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "survey",
-                "analyze",
-                "url"
-              ]
-            },
-            "description": "Survey AI alias route for remote image URL analysis."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "3. Asynchronous Uploads & Polling",
-      "description": "Asynchronous upload pipeline returning 202 Accepted immediately and processing in background tasks.",
-      "item": [
-        {
-          "name": "Async Upload - File (multipart/form-data)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "    try {",
-                  "        var json = pm.response.json();",
-                  "        if (json.upload_id) {",
-                  "            pm.collectionVariables.set('upload_id', json.upload_id);",
-                  "            pm.environment.set('upload_id', json.upload_id);",
-                  "            console.log('Saved upload_id to collection variables: ' + json.upload_id);",
-                  "        }",
-                  "    } catch (e) {",
-                  "        console.error('Failed to parse response JSON: ' + e);",
+                  "        console.error('Error parsing response: ' + e);",
                   "    }",
                   "}"
                 ]
@@ -459,34 +565,26 @@
                   "key": "file",
                   "type": "file",
                   "description": "Rack image file"
-                },
-                {
-                  "key": "shop_id",
-                  "value": "SHOP-Gulshan-102",
-                  "type": "text"
-                },
-                {
-                  "key": "merchandiser_id",
-                  "value": "MER-Rahim-45",
-                  "type": "text"
                 }
               ]
             },
             "url": {
-              "raw": "{{baseUrl}}/uploads",
+              "raw": "{{baseUrl}}/survey/analyze/file",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "uploads"
+                "survey",
+                "analyze",
+                "file"
               ]
             },
-            "description": "Uploads rack photo, returns 202 Accepted with upload_id, and kicks off AI analysis in the background."
+            "description": "Survey / Analyze uploaded image file directly in-memory (zero disk storage)"
           },
           "response": []
         },
         {
-          "name": "Async Upload - Image URL",
+          "name": "POST /survey/uploads - Submit a rack photo file and start async AI analysis in-memory",
           "event": [
             {
               "listen": "test",
@@ -499,10 +597,112 @@
                   "        if (json.upload_id) {",
                   "            pm.collectionVariables.set('upload_id', json.upload_id);",
                   "            pm.environment.set('upload_id', json.upload_id);",
-                  "            console.log('Saved upload_id to collection variables: ' + json.upload_id);",
+                  "            console.log('Saved upload_id: ' + json.upload_id);",
                   "        }",
                   "    } catch (e) {",
-                  "        console.error('Failed to parse response JSON: ' + e);",
+                  "        console.error('Error parsing response: ' + e);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Rack image file"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/survey/uploads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "survey",
+                "uploads"
+              ]
+            },
+            "description": "Submit a rack photo file and start async AI analysis in-memory"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /survey/uploads - List all survey photo uploads and analysis results",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/survey/uploads?status=&search=&limit=20&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "survey",
+                "uploads"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "Filter by status: PENDING, PROCESSING, COMPLETED, FAILED"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Search products"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Limit"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Offset"
+                }
+              ]
+            },
+            "description": "List all survey photo uploads and analysis results"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /survey/uploads/url - Submit a rack photo S3 URL/Base64 and start async AI analysis in-memory",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "    try {",
+                  "        var json = pm.response.json();",
+                  "        if (json.upload_id) {",
+                  "            pm.collectionVariables.set('upload_id', json.upload_id);",
+                  "            pm.environment.set('upload_id', json.upload_id);",
+                  "            console.log('Saved upload_id: ' + json.upload_id);",
+                  "        }",
+                  "    } catch (e) {",
+                  "        console.error('Error parsing response: ' + e);",
                   "    }",
                   "}"
                 ]
@@ -523,243 +723,25 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\",\n  \"shop_id\": \"SHOP-Gulshan-102\",\n  \"merchandiser_id\": \"MER-Rahim-45\"\n}"
+              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/uploads/url",
+              "raw": "{{baseUrl}}/survey/uploads/url",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
+                "survey",
                 "uploads",
                 "url"
               ]
             },
-            "description": "Submits an image URL for asynchronous background processing."
+            "description": "Submit a rack photo S3 URL/Base64 and start async AI analysis in-memory"
           },
           "response": []
         },
         {
-          "name": "Get Upload Result by ID",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/uploads/{{upload_id}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "uploads",
-                "{{upload_id}}"
-              ]
-            },
-            "description": "Polls the status of an upload. Returns status (PENDING, PROCESSING, COMPLETED, FAILED) and detected products with token metrics when done."
-          },
-          "response": []
-        },
-        {
-          "name": "Poll Upload Result (Alias: /uploads/{upload_id}/result)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/uploads/{{upload_id}}/result",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "uploads",
-                "{{upload_id}}",
-                "result"
-              ]
-            },
-            "description": "Alias route for polling upload result."
-          },
-          "response": []
-        },
-        {
-          "name": "Survey Async Upload - File (Alias: /survey/uploads)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "    try {",
-                  "        var json = pm.response.json();",
-                  "        if (json.upload_id) {",
-                  "            pm.collectionVariables.set('upload_id', json.upload_id);",
-                  "            pm.environment.set('upload_id', json.upload_id);",
-                  "            console.log('Saved upload_id to collection variables: ' + json.upload_id);",
-                  "        }",
-                  "    } catch (e) {",
-                  "        console.error('Failed to parse response JSON: ' + e);",
-                  "    }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "file",
-                  "type": "file"
-                },
-                {
-                  "key": "shop_id",
-                  "value": "SHOP-Gulshan-102",
-                  "type": "text"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/survey/uploads",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "survey",
-                "uploads"
-              ]
-            },
-            "description": "Survey AI asynchronous upload endpoint."
-          },
-          "response": []
-        },
-        {
-          "name": "Survey Get Result (Alias: /survey/uploads/{upload_id})",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/survey/uploads/{{upload_id}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "survey",
-                "uploads",
-                "{{upload_id}}"
-              ]
-            },
-            "description": "Survey AI get upload result."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "4. Analytics & Survey History",
-      "description": "Endpoints to list historic scans, filter by shop/merchandiser, and view aggregated token cost metrics.",
-      "item": [
-        {
-          "name": "List Uploads / Results (With Filters & Pagination)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/uploads?limit=20&offset=0&status=&shop_id=&merchandiser_id=&search=",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "uploads"
-              ],
-              "query": [
-                {
-                  "key": "limit",
-                  "value": "20",
-                  "description": "Number of records to return (1-100)"
-                },
-                {
-                  "key": "offset",
-                  "value": "0",
-                  "description": "Pagination offset"
-                },
-                {
-                  "key": "status",
-                  "value": "",
-                  "description": "Filter by status: PENDING, PROCESSING, COMPLETED, FAILED"
-                },
-                {
-                  "key": "shop_id",
-                  "value": "",
-                  "description": "Filter by shop ID"
-                },
-                {
-                  "key": "merchandiser_id",
-                  "value": "",
-                  "description": "Filter by merchandiser ID"
-                },
-                {
-                  "key": "search",
-                  "value": "",
-                  "description": "Search by product name"
-                }
-              ]
-            },
-            "description": "Returns paginated list of upload records with token counts and costs."
-          },
-          "response": []
-        },
-        {
-          "name": "Analytics Summary & Token Costs",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/uploads/summary",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "uploads",
-                "summary"
-              ]
-            },
-            "description": "Aggregated summary of total uploads, completed scans, total tokens consumed, total USD cost, and top detected SKUs."
-          },
-          "response": []
-        },
-        {
-          "name": "Survey Summary (Alias: /survey/uploads/summary)",
+          "name": "GET /survey/uploads/summary - Get aggregated survey summary metrics, token totals, and top products",
           "request": {
             "method": "GET",
             "header": [
@@ -779,12 +761,37 @@
                 "summary"
               ]
             },
-            "description": "Survey module alias for aggregated summary."
+            "description": "Get aggregated survey summary metrics, token totals, and top products"
           },
           "response": []
         },
         {
-          "name": "Delete Upload Record",
+          "name": "GET /survey/uploads/{upload_id} - Get analysis result & token metrics for a survey upload by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/survey/uploads/{{upload_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "survey",
+                "uploads",
+                "{{upload_id}}"
+              ]
+            },
+            "description": "Get analysis result & token metrics for a survey upload by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /survey/uploads/{upload_id} - Delete a survey upload record and its image",
           "request": {
             "method": "DELETE",
             "header": [
@@ -794,769 +801,17 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/uploads/{{upload_id}}",
+              "raw": "{{baseUrl}}/survey/uploads/{{upload_id}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
+                "survey",
                 "uploads",
                 "{{upload_id}}"
               ]
             },
-            "description": "Permanently deletes an upload record and cleans up associated image files from disk."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "5. Retail Merchandising Shelf Audit & Intelligence",
-      "description": "Commercial retail shelf auditing module.\n- Image-only PRAN product detection and facing quantification.\n- Decoupled brand classification (PRAN vs. Competitor).\n- Master catalogue matching against itemsdb.csv (1,985 SKUs).\n- Share of Shelf (SoS %) & Eye-Level Share.\n- Deterministic Retail Execution Score (RES 0-100) across 6 commercial pillars.\n- Management Dashboard with Exception-First outlet rankings.",
-      "item": [
-        {
-          "name": "Retail Shelf Audit - Single Call (Image URL / Base64)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "    try {",
-                  "        var json = pm.response.json();",
-                  "        if (json.audit_id) {",
-                  "            pm.collectionVariables.set('audit_id', json.audit_id);",
-                  "            pm.environment.set('audit_id', json.audit_id);",
-                  "            console.log('Saved audit_id to collection variables: ' + json.audit_id);",
-                  "        }",
-                  "    } catch (e) {",
-                  "        console.error('Failed to parse response JSON: ' + e);",
-                  "    }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\",\n  \"outlet_id\": \"OUT-Gulshan-001\",\n  \"outlet_name\": \"Gulshan Supermarket Gondola 1\",\n  \"visit_id\": \"VISIT-2026-1028-01\",\n  \"merchandiser_id\": \"MER-42\",\n  \"merchandiser_name\": \"Rahim Ahmed\",\n  \"audit_stage\": \"STANDALONE\",\n  \"target_pran_sos\": 30.0\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/merchandising/analyze",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "merchandising",
-                "analyze"
-              ]
-            },
-            "description": "Executes full commercial shelf audit synchronously from image URL or base64. Returns PRAN summary, competitor summary, 6-pillar Retail Execution Score (0-100), and planogram compliance."
-          },
-          "response": []
-        },
-        {
-          "name": "Retail Shelf Audit - Single Call (File Upload)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "    try {",
-                  "        var json = pm.response.json();",
-                  "        if (json.audit_id) {",
-                  "            pm.collectionVariables.set('audit_id', json.audit_id);",
-                  "            pm.environment.set('audit_id', json.audit_id);",
-                  "            console.log('Saved audit_id to collection variables: ' + json.audit_id);",
-                  "        }",
-                  "    } catch (e) {",
-                  "        console.error('Failed to parse response JSON: ' + e);",
-                  "    }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "file",
-                  "type": "file",
-                  "description": "Shelf photo (JPEG, PNG, WebP)"
-                },
-                {
-                  "key": "outlet_id",
-                  "value": "OUT-Gulshan-001",
-                  "type": "text"
-                },
-                {
-                  "key": "outlet_name",
-                  "value": "Gulshan Supermarket Gondola 1",
-                  "type": "text"
-                },
-                {
-                  "key": "visit_id",
-                  "value": "VISIT-2026-1028-01",
-                  "type": "text"
-                },
-                {
-                  "key": "merchandiser_id",
-                  "value": "MER-42",
-                  "type": "text"
-                },
-                {
-                  "key": "audit_stage",
-                  "value": "STANDALONE",
-                  "type": "text"
-                },
-                {
-                  "key": "target_pran_sos",
-                  "value": "30.0",
-                  "type": "text"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/merchandising/analyze/file",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "merchandising",
-                "analyze",
-                "file"
-              ]
-            },
-            "description": "Performs synchronous shelf intelligence audit from multipart/form-data image file upload."
-          },
-          "response": []
-        },
-        {
-          "name": "Retail Shelf Audit - Asynchronous (Image URL / Base64)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "    try {",
-                  "        var json = pm.response.json();",
-                  "        if (json.audit_id) {",
-                  "            pm.collectionVariables.set('audit_id', json.audit_id);",
-                  "            pm.environment.set('audit_id', json.audit_id);",
-                  "            console.log('Saved audit_id to collection variables: ' + json.audit_id);",
-                  "        }",
-                  "    } catch (e) {",
-                  "        console.error('Failed to parse response JSON: ' + e);",
-                  "    }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"image_url\": \"https://raw.githubusercontent.com/opencv/opencv/master/samples/data/fruits.jpg\",\n  \"outlet_id\": \"OUT-Gulshan-001\",\n  \"outlet_name\": \"Gulshan Supermarket Gondola 1\",\n  \"audit_stage\": \"STANDALONE\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/merchandising/analyze/async",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "merchandising",
-                "analyze",
-                "async"
-              ]
-            },
-            "description": "Enqueues asynchronous retail shelf audit, returning 202 Accepted with audit_id immediately."
-          },
-          "response": []
-        },
-        {
-          "name": "Retail Shelf Audit - Asynchronous (File Upload)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "    try {",
-                  "        var json = pm.response.json();",
-                  "        if (json.audit_id) {",
-                  "            pm.collectionVariables.set('audit_id', json.audit_id);",
-                  "            pm.environment.set('audit_id', json.audit_id);",
-                  "            console.log('Saved audit_id to collection variables: ' + json.audit_id);",
-                  "        }",
-                  "    } catch (e) {",
-                  "        console.error('Failed to parse response JSON: ' + e);",
-                  "    }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "file",
-                  "type": "file",
-                  "description": "Shelf photo"
-                },
-                {
-                  "key": "outlet_id",
-                  "value": "OUT-Gulshan-001",
-                  "type": "text"
-                },
-                {
-                  "key": "outlet_name",
-                  "value": "Gulshan Supermarket Gondola 1",
-                  "type": "text"
-                },
-                {
-                  "key": "audit_stage",
-                  "value": "STANDALONE",
-                  "type": "text"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/merchandising/analyze/file/async",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "merchandising",
-                "analyze",
-                "file",
-                "async"
-              ]
-            },
-            "description": "Uploads shelf image file and enqueues background commercial audit."
-          },
-          "response": []
-        },
-        {
-          "name": "Get Shelf Audit Report by ID",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/merchandising/audit/{{audit_id}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "merchandising",
-                "audit",
-                "{{audit_id}}"
-              ]
-            },
-            "description": "Retrieves the complete shelf intelligence report: SoS %, Retail Execution Score, eye-level distribution, competitor breakdown, and raw bounding boxes."
-          },
-          "response": []
-        },
-        {
-          "name": "List Shelf Audits (Filters & Pagination)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/merchandising/audits?limit=20&offset=0&outlet_id=&stage=&from_date=&to_date=",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "merchandising",
-                "audits"
-              ],
-              "query": [
-                {
-                  "key": "limit",
-                  "value": "20",
-                  "description": "Max audits to return"
-                },
-                {
-                  "key": "offset",
-                  "value": "0",
-                  "description": "Pagination offset"
-                },
-                {
-                  "key": "outlet_id",
-                  "value": "",
-                  "description": "Filter by outlet UUID / ID"
-                },
-                {
-                  "key": "stage",
-                  "value": "",
-                  "description": "Filter by stage: STANDALONE, BEFORE, AFTER"
-                },
-                {
-                  "key": "from_date",
-                  "value": "",
-                  "description": "ISO 8601 start date (e.g. 2026-10-01)"
-                },
-                {
-                  "key": "to_date",
-                  "value": "",
-                  "description": "ISO 8601 end date (e.g. 2026-10-31)"
-                }
-              ]
-            },
-            "description": "Returns paginated list of historical retail shelf audits."
-          },
-          "response": []
-        },
-        {
-          "name": "Management Analytics Dashboard (5 Modules)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/merchandising/dashboard?from_date=&to_date=&outlet_id=",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "merchandising",
-                "dashboard"
-              ],
-              "query": [
-                {
-                  "key": "from_date",
-                  "value": "",
-                  "description": "Filter start date"
-                },
-                {
-                  "key": "to_date",
-                  "value": "",
-                  "description": "Filter end date"
-                },
-                {
-                  "key": "outlet_id",
-                  "value": "",
-                  "description": "Filter specific outlet"
-                }
-              ]
-            },
-            "description": "Returns the complete 5-module management dashboard: Executive Overview, Shelf Intelligence, Product Availability & Gaps, Field Force Performance, and Trends & Critical Outlets."
-          },
-          "response": []
-        },
-        {
-          "name": "List Retail Outlets Master Data",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/merchandising/outlets",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "merchandising",
-                "outlets"
-              ]
-            },
-            "description": "Retrieves registered retail stores, locations, and channel types."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "6. Master Items Catalogue (1,985 SKUs)",
-      "description": "Endpoints to search, inspect, and manage master PRAN-RFL product catalogue matching against itemsdb.csv.",
-      "item": [
-        {
-          "name": "Search Items Catalogue (Hybrid Search)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/catalogue/search?q=PRAN Mango&limit=10",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "catalogue",
-                "search"
-              ],
-              "query": [
-                {
-                  "key": "q",
-                  "value": "PRAN Mango",
-                  "description": "Search query: item code, product name, brand, or category"
-                },
-                {
-                  "key": "limit",
-                  "value": "10",
-                  "description": "Max candidates to return (1-100)"
-                }
-              ]
-            },
-            "description": "Hybrid BM25 + embedding search against 1,985 products in itemsdb.csv. Returns canonical SKU code, exact name, category, and subcategory."
-          },
-          "response": []
-        },
-        {
-          "name": "Catalogue Statistics & Index Status",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/catalogue/stats",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "catalogue",
-                "stats"
-              ]
-            },
-            "description": "Returns total products loaded, total categories, embedding model status, and cache statistics."
-          },
-          "response": []
-        },
-        {
-          "name": "Rebuild Catalogue Embeddings",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/catalogue/rebuild",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "catalogue",
-                "rebuild"
-              ]
-            },
-            "description": "Triggers cache rebuild / vector indexing for itemsdb.csv in the background."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "7. Token Router & Model Metering API",
-      "description": "Token metering, pre-inference estimation, live Gemini SDK token counting, and OpenRouter telemetry.",
-      "item": [
-        {
-          "name": "Get Model Specs & Capabilities",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/tokens/models",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "models"
-              ]
-            },
-            "description": "Returns capabilities, context window limits (1M tokens), and input modalities of Google Gemini 3.7 Flash."
-          },
-          "response": []
-        },
-        {
-          "name": "Get Token Pricing Rates & Cost Formulas",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/tokens/pricing",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "pricing"
-              ]
-            },
-            "description": "Returns current token pricing rates per 1M and 1K tokens ($0.075 / 1M input, $0.30 / 1M output)."
-          },
-          "response": []
-        },
-        {
-          "name": "Chat with google/gemini-3.7-flash (OpenRouter)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a retail shelf specialist.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Explain how shelf inventory scanning works.\"\n    }\n  ]\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/tokens/chat",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "chat"
-              ]
-            },
-            "description": "Direct chat completion with google/gemini-3.7-flash through OpenRouter."
-          },
-          "response": []
-        },
-        {
-          "name": "Get Global Token Consumption Stats",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/tokens/summary",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "summary"
-              ]
-            },
-            "description": "Returns total tokens consumed, total USD spent, and scan averages across all historical requests."
-          },
-          "response": []
-        },
-        {
-          "name": "Estimate Token Usage & Cost",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"image_width\": 1920,\n  \"image_height\": 1080,\n  \"thinking_budget\": 1024\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/tokens/estimate",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "estimate"
-              ]
-            },
-            "description": "Pre-calculates estimated vision tokens, system tokens, thinking tokens, and USD cost before making an inference call."
-          },
-          "response": []
-        },
-        {
-          "name": "Live Count Tokens",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"text\": \"Identify all PRAN-RFL products on this shelf.\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/tokens/count",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "count"
-              ]
-            },
-            "description": "Counts exact tokens for text or image payloads using the Gemini SDK token counter."
-          },
-          "response": []
-        },
-        {
-          "name": "Route & Validate Payload",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"prompt\": \"Shelf recognition task\",\n  \"priority\": \"standard\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/tokens/route",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "route"
-              ]
-            },
-            "description": "Token-aware router that analyzes payload size, verifies context window limits, and advises execution path."
-          },
-          "response": []
-        },
-        {
-          "name": "Token Usage History Logs",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/tokens/history?limit=20&offset=0",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tokens",
-                "history"
-              ],
-              "query": [
-                {
-                  "key": "limit",
-                  "value": "20",
-                  "description": "Number of logs to retrieve"
-                },
-                {
-                  "key": "offset",
-                  "value": "0",
-                  "description": "Pagination offset"
-                }
-              ]
-            },
-            "description": "List token usage breakdown logs for recent scans."
+            "description": "Delete a survey upload record and its image"
           },
           "response": []
         }

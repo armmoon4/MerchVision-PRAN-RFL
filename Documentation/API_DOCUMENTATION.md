@@ -10,7 +10,6 @@ Master catalogue matching against the 1,954 SKUs in `itemsdb.csv` acts as enrich
 
 - **Active Host Base URL:** `http://172.17.4.199:8093/`
 - **Postman Collection:** [`MerchVision_postman_collection.json`](file:///c:/Users/HP/Desktop/MerchVision/MerchVision-PRAN-RFL/MerchVision_postman_collection.json)
-- **Postman Environment:** [`MerchVision_postman_environment.json`](file:///c:/Users/HP/Desktop/MerchVision/MerchVision-PRAN-RFL/MerchVision_postman_environment.json)
 - **Interactive Swagger Docs:** `http://172.17.4.199:8093/docs`
 - **ReDoc:** `http://172.17.4.199:8093/redoc`
 - **Web UI Dashboard:** `http://172.17.4.199:8093/ui`

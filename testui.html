@@ -1641,16 +1641,24 @@
         let res;
         if (hasFile) {
           const formData = new FormData();
+          formData.append('file', fileInput.files[0]);
           formData.append('image_file', fileInput.files[0]);
-          res = await fetch('/audit/image-only', {
+          formData.append('audit_stage', 'STANDALONE');
+          res = await fetch('/merchandising/analyze/file', {
             method: 'POST',
             body: formData
           });
         } else {
-          res = await fetch('/audit/image-only', {
+          const isBase64 = urlVal.startsWith('data:image');
+          const payload = {
+            image_url: isBase64 ? null : urlVal,
+            image: isBase64 ? urlVal : null,
+            audit_stage: 'STANDALONE'
+          };
+          res = await fetch('/merchandising/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image_url: urlVal })
+            body: JSON.stringify(payload)
           });
         }
 

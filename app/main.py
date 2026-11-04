@@ -86,7 +86,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from app.routers.token_router import router as token_router
-from app.routers.audit_router import router as audit_router, compat_v2_router
+from app.routers.audit_router import router as audit_router, compat_v2_router, run_shelf_audit_file, run_shelf_audit
+from app.schemas import AuditAnalyzeRequest, ShelfAuditReport
 
 # ── App bootstrap ─────────────────────────────────────────────────────────────
 
@@ -239,6 +240,44 @@ def process_upload(upload_id: str, image_input: str | bytes, image_ref: str = ""
             pass
     finally:
         db.close()
+
+
+# ── Image-Only Alias Route (Direct & UI Compatibility) ───────────────────────
+
+
+@app.post(
+    "/audit/image-only",
+    response_model=ShelfAuditReport,
+    summary="Image-Only Audit Compatibility Endpoint",
+    include_in_schema=False,
+)
+async def audit_image_only_alias(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Compatibility alias accepting multipart file ('file' or 'image_file') or JSON {'image_url': ...}.
+    """
+    content_type = (request.headers.get("content-type") or "").lower()
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        uploaded_file = form.get("file") or form.get("image_file")
+        if not uploaded_file:
+            raise HTTPException(status_code=400, detail="Missing 'file' or 'image_file' upload")
+        audit_stage = form.get("audit_stage") or "STANDALONE"
+        outlet_id = form.get("outlet_id")
+        return await run_shelf_audit_file(
+            file=uploaded_file,
+            outlet_id=outlet_id,
+            visit_id=None,
+            audit_stage=audit_stage,
+            merchandiser_id=None,
+            db=db,
+        )
+    else:
+        body = await request.json()
+        req_obj = AuditAnalyzeRequest(**body)
+        return await run_shelf_audit(request=req_obj, db=db)
 
 
 # ── System & UI Endpoints ─────────────────────────────────────────────────────

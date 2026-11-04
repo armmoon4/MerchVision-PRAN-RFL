@@ -1227,38 +1227,11 @@
                 Products Detected</span>
             </div>
             <div id="mDetectedProductsContainer"
-              style="max-height:380px; overflow-y:auto; margin-bottom:14px; padding-right:4px;">
+              style="max-height:380px; overflow-y:auto; padding-right:4px;">
               <div style="color:var(--text-muted); font-size:12px; padding:10px 0;">Individual product detections and
                 catalogue matches will appear here.</div>
             </div>
 
-            <!-- Inspect Raw JSON Card -->
-            <div style="border-top:1px solid var(--border); padding-top:14px;">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <span
-                  style="font-size:12px; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:6px;">
-                  <i data-lucide="code-2" class="icon-sm"></i> Vision Engine Output JSON
-                </span>
-                <button type="button" class="copy-btn" onclick="event.preventDefault(); copyRawJson(this)">
-                  <i data-lucide="copy" class="icon-sm"></i> Copy JSON
-                </button>
-              </div>
-              <pre id="mRawResponseJson"
-                style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#e2e8f0; background:#0f172a; padding:12px; border-radius:10px; max-height:220px; overflow:auto; border:1px solid #1e293b;">Waiting for audit execution...</pre>
-            </div>
-          </div>
-
-          <!-- Architectural Summary Card -->
-          <div class="card">
-            <h3 class="card-title" style="font-size:14px; margin-bottom:8px;">
-              <i data-lucide="workflow" style="color:var(--primary);"></i> Perception to Decoupled Rules Architecture
-            </h3>
-            <p style="font-size:12px; color:var(--text-body); line-height:1.5;">
-              <strong>Decoupled Intelligence:</strong> The AI Vision engine performs pure shelf perception (product
-              identification, facing counts, shelf tiers, pricing). Deterministic math calculates linear Share of Shelf
-              (SOS), and the standalone Python rules engine applies weighted execution scoring across the 6
-              image-provable pillars.
-            </p>
           </div>
 
         </div>

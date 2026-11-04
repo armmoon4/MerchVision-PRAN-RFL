@@ -86,3 +86,4 @@ Thumbs.db
 # Regenerate with: python scripts/build_embeddings.py
 embeddings/
 *.npy
+scratch/

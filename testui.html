@@ -24,7 +24,7 @@
       --card-hover: #f1f5f9;
       --border: #e2e8f0;
       --border-strong: #cbd5e1;
-      
+
       --primary: #2563eb;
       --primary-hover: #1d4ed8;
       --primary-glow: rgba(37, 99, 235, 0.15);
@@ -75,6 +75,12 @@
       padding: 0;
     }
 
+    html, body {
+      overflow-x: hidden;
+      width: 100%;
+      max-width: 100vw;
+    }
+
     body {
       font-family: 'Plus Jakarta Sans', sans-serif;
       background-color: var(--bg-page);
@@ -87,7 +93,9 @@
 
     .container {
       max-width: 1440px;
+      width: 100%;
       margin: 0 auto;
+      overflow-x: hidden;
     }
 
     /* ── Header ── */
@@ -253,6 +261,10 @@
       padding: 22px;
       box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.03);
       transition: box-shadow 0.2s ease, border-color 0.2s ease;
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
+      overflow-wrap: break-word;
     }
 
     .card:hover {
@@ -293,17 +305,21 @@
     /* ── Shelf Audit Studio Desktop Grid ── */
     .audit-studio-grid {
       display: grid;
-      grid-template-columns: 460px 1fr;
+      grid-template-columns: 460px minmax(0, 1fr);
       gap: 20px;
       align-items: start;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
     }
 
     @media (max-width: 1100px) {
       .audit-studio-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
       }
+
       .grid-2 {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
       }
     }
 
@@ -311,12 +327,18 @@
       display: flex;
       flex-direction: column;
       gap: 18px;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
     }
 
     .studio-panel-right {
       display: flex;
       flex-direction: column;
       gap: 18px;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
     }
 
     .sku-breakdown-table {
@@ -451,7 +473,7 @@
     .metric-chip:hover {
       background: #ffffff;
       border-color: var(--border-strong);
-      box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
     }
 
     .metric-chip-label {
@@ -504,13 +526,13 @@
       border-radius: 12px;
       padding: 14px 16px;
       margin-bottom: 10px;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
       transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
 
     .issue-item:hover {
       transform: translateY(-1px);
-      box-shadow: 0 4px 8px rgba(0,0,0,0.06);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.06);
     }
 
     .issue-item-high {
@@ -683,7 +705,7 @@
       border-radius: 10px;
       padding: 10px 14px;
       margin-bottom: 8px;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
     }
 
     /* ── Product Detection Rows ── */
@@ -696,14 +718,14 @@
       border-radius: 12px;
       padding: 11px 14px;
       margin-bottom: 8px;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
       transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
     }
 
     .product-detect-row:hover {
       transform: translateY(-1px);
       border-color: var(--primary);
-      box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
     }
 
     .product-detect-pran {
@@ -777,7 +799,7 @@
       padding: 14px 18px;
       border-radius: 14px;
       border: 1px solid var(--border);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
     }
 
     .filter-select {
@@ -858,7 +880,8 @@
     }
 
     /* ── Lucide Icon Alignment & Sizing ── */
-    i[data-lucide], svg.lucide {
+    i[data-lucide],
+    svg.lucide {
       display: inline-block;
       vertical-align: -2px;
       width: 16px;
@@ -909,16 +932,21 @@
         </div>
         <span><span style="color:var(--pran-red); font-weight:900;">PRAN</span> Merchandising AI</span>
         <span class="pill pill-blue"><i data-lucide="shield-check" class="icon-sm"></i> V2.0 Closed-Loop</span>
-        
+
       </h1>
       <div class="links">
-        <a href="/docs" onclick="if(window.location.protocol==='file:'){this.href='http://localhost:8000/docs';}" target="_blank">
+        <a href="/docs" onclick="if(window.location.protocol==='file:'){this.href='http://localhost:8000/docs';}"
+          target="_blank">
           <i data-lucide="book-open" class="icon-sm"></i> Swagger API
         </a>
-        <a href="/merchandising/dashboard" onclick="if(window.location.protocol==='file:'){this.href='http://localhost:8000/merchandising/dashboard';}" target="_blank">
+        <a href="/merchandising/dashboard"
+          onclick="if(window.location.protocol==='file:'){this.href='http://localhost:8000/merchandising/dashboard';}"
+          target="_blank">
           <i data-lucide="layout-dashboard" class="icon-sm"></i> Management API JSON
         </a>
-        <a href="/tokens/models" onclick="if(window.location.protocol==='file:'){this.href='http://localhost:8000/tokens/models';}" target="_blank">
+        <a href="/tokens/models"
+          onclick="if(window.location.protocol==='file:'){this.href='http://localhost:8000/tokens/models';}"
+          target="_blank">
           <i data-lucide="cpu" class="icon-sm"></i> Token Router
         </a>
       </div>
@@ -927,7 +955,7 @@
     <!-- Navigation -->
     <div class="view-nav">
       <button class="view-btn active" id="btnViewMerch" onclick="switchView('merchandiser')">
-        <i data-lucide="camera" class="icon-md"></i> Shelf AI Audit (Image to Insights)
+        <i data-lucide="camera" class="icon-md"></i> Shelf AI Audit
       </button>
       <button class="view-btn" id="btnViewMgmt" onclick="switchView('management')">
         <i data-lucide="bar-chart-3" class="icon-md"></i> Management Dashboard
@@ -961,19 +989,26 @@
               <span class="pill pill-green"><i data-lucide="zap" class="icon-sm"></i> Live AI Vision</span>
             </div>
             <p style="font-size:12.5px; color:var(--text-muted); line-height:1.45; margin-bottom:14px;">
-              Upload or paste any retail shelf photo. The AI automatically detects all PRAN and competitor products, computes linear Share of Shelf (SOS), Golden Zone placement, and scores the shelf across 6 image-provable pillars without requiring pre-defined expected planograms.
+              Upload or paste any retail shelf photo. The AI automatically detects all PRAN and competitor products,
+              computes linear Share of Shelf (SOS), Golden Zone placement, and scores the shelf across 6 image-provable
+              pillars without requiring pre-defined expected planograms.
             </p>
 
             <div style="margin-bottom:14px;">
-              <label style="font-size:12px; color:var(--text-main); display:flex; align-items:center; gap:6px; margin-bottom:6px; font-weight:700;">
+              <label
+                style="font-size:12px; color:var(--text-main); display:flex; align-items:center; gap:6px; margin-bottom:6px; font-weight:700;">
                 <i data-lucide="image" class="icon-sm" style="color:var(--text-muted);"></i> Upload Shelf Image
               </label>
-              <input type="file" id="mFileInput" accept="image/*" class="filter-select" style="font-size:12px; margin-bottom:8px; width:100%; cursor:pointer;" onchange="handleFileSelected(this)">
-              <input type="text" id="mUrlInput" placeholder="Or paste image URL (e.g. image link)..." class="filter-select" style="width:100%;" oninput="handleUrlEntered(this)">
+              <input type="file" id="mFileInput" accept="image/*" class="filter-select"
+                style="font-size:12px; margin-bottom:8px; width:100%; cursor:pointer;"
+                onchange="handleFileSelected(this)">
+              <input type="text" id="mUrlInput" placeholder="Or paste image URL (e.g. image link)..."
+                class="filter-select" style="width:100%;" oninput="handleUrlEntered(this)">
             </div>
 
             <!-- Error Banner -->
-            <div id="mAuditErrorBanner" style="display:none; color:var(--danger); background:var(--danger-light); border:1px solid var(--danger-border); padding:10px 14px; border-radius:10px; font-size:12px; margin-bottom:12px; line-height:1.4;">
+            <div id="mAuditErrorBanner"
+              style="display:none; color:var(--danger); background:var(--danger-light); border:1px solid var(--danger-border); padding:10px 14px; border-radius:10px; font-size:12px; margin-bottom:12px; line-height:1.4;">
               <span id="mAuditErrorText">Error message</span>
             </div>
 
@@ -983,23 +1018,31 @@
             </button>
 
             <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:10px;">
-              <button class="btn-secondary" onclick="loadSampleWaferAudit()" style="background:var(--primary-light); border-color:var(--primary-border); color:var(--primary);" title="Quick demo with real wafer shelf audit data">
+              <button class="btn-secondary" onclick="loadSampleWaferAudit()"
+                style="background:var(--primary-light); border-color:var(--primary-border); color:var(--primary);"
+                title="Quick demo with real wafer shelf audit data">
                 <i data-lucide="sparkles" class="icon-sm"></i> Wafer Demo
               </button>
-              <button class="btn-secondary" onclick="loadSampleScenario()" title="Run live vision audit with sample shelf photo">
+              <button class="btn-secondary" onclick="loadSampleScenario()"
+                title="Run live vision audit with sample shelf photo">
                 <i data-lucide="flask-conical" class="icon-sm"></i> Sample
               </button>
-              <button class="btn-secondary" onclick="resetAuditForm()" style="background:var(--danger-light); border-color:var(--danger-border); color:var(--danger);" title="Clear audit form">
+              <button class="btn-secondary" onclick="resetAuditForm()"
+                style="background:var(--danger-light); border-color:var(--danger-border); color:var(--danger);"
+                title="Clear audit form">
                 <i data-lucide="rotate-ccw" class="icon-sm"></i> Reset
               </button>
             </div>
 
             <!-- Image preview container -->
-            <div id="mPhotoPreviewContainer" style="display:none; margin-top:14px; border-radius:12px; overflow:hidden; border:1px solid var(--border); position:relative;">
-              <img id="mPhotoPreviewImg" src="" alt="Shelf Photo" style="width:100%; height:240px; object-fit:cover; display:block;">
+            <div id="mPhotoPreviewContainer"
+              style="display:none; margin-top:14px; border-radius:12px; overflow:hidden; border:1px solid var(--border); position:relative;">
+              <img id="mPhotoPreviewImg" src="" alt="Shelf Photo"
+                style="width:100%; height:240px; object-fit:cover; display:block;">
               <div style="position:absolute; top:8px; left:8px; display:flex; gap:6px; flex-wrap:wrap;">
                 <span class="store-badge" id="mStoreName"><i data-lucide="store" class="icon-sm"></i> Store Shelf</span>
-                <span class="pill pill-blue" id="mAuditStageBadge"><i data-lucide="tag" class="icon-sm"></i> STANDALONE</span>
+                <span class="pill pill-blue" id="mAuditStageBadge"><i data-lucide="tag" class="icon-sm"></i>
+                  STANDALONE</span>
               </div>
             </div>
           </div>
@@ -1010,9 +1053,12 @@
               <i data-lucide="info" style="color:var(--cyan);"></i> Shelf Context &amp; Fixture Details
             </h3>
             <div style="display:flex; flex-wrap:wrap; gap:8px;">
-              <span class="pill pill-cyan" id="mFixtureCategoryBadge"><i data-lucide="layers" class="icon-sm"></i> Fixture: General Shelf</span>
-              <span class="pill pill-blue" id="mImageQualityBadge"><i data-lucide="gauge" class="icon-sm"></i> Quality: 85%</span>
-              <span class="pill pill-green" id="mAuditModeBadge"><i data-lucide="eye" class="icon-sm"></i> Mode: Image-Only</span>
+              <span class="pill pill-cyan" id="mFixtureCategoryBadge"><i data-lucide="layers" class="icon-sm"></i>
+                Fixture: General Shelf</span>
+              <span class="pill pill-blue" id="mImageQualityBadge"><i data-lucide="gauge" class="icon-sm"></i> Quality:
+                85%</span>
+              <span class="pill pill-green" id="mAuditModeBadge"><i data-lucide="eye" class="icon-sm"></i> Mode:
+                Image-Only</span>
             </div>
             <!-- Token Telemetry Banner -->
             <div id="mAuditTokensBanner" style="display:none;"></div>
@@ -1026,7 +1072,8 @@
               </h3>
             </div>
             <div id="mPricingList">
-              <div style="color:var(--text-muted); font-size:12px; padding:6px 0;">Upload or load sample to view price tags and active promotional wobblers.</div>
+              <div style="color:var(--text-muted); font-size:12px; padding:6px 0;">Upload or load sample to view price
+                tags and active promotional wobblers.</div>
             </div>
           </div>
 
@@ -1034,11 +1081,13 @@
           <div class="card">
             <div class="card-header-flex" style="margin-bottom:10px;">
               <h3 class="card-title" style="font-size:14px;">
-                <i data-lucide="file-text" style="color:var(--purple);"></i> Executive Directives &amp; Shelf Observations
+                <i data-lucide="file-text" style="color:var(--purple);"></i> Executive Directives &amp; Shelf
+                Observations
               </h3>
             </div>
             <div id="mMgmtInsightsList">
-              <div style="color:var(--text-muted); font-size:12px; padding:6px 0;">Strategic directives and perception boundaries will populate here.</div>
+              <div style="color:var(--text-muted); font-size:12px; padding:6px 0;">Strategic directives and perception
+                boundaries will populate here.</div>
             </div>
           </div>
 
@@ -1051,35 +1100,45 @@
           <div class="scorecard-banner">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
               <div>
-                <div style="font-size:14px; font-weight:800; color:var(--text-main); display:flex; align-items:center;" id="mStatusTitle">
-                  <span class="status-dot-acceptable" id="mStatusDot" style="background:#0284c7; box-shadow:none;"></span>
+                <div style="font-size:14px; font-weight:800; color:var(--text-main); display:flex; align-items:center;"
+                  id="mStatusTitle">
+                  <span class="status-dot-acceptable" id="mStatusDot"
+                    style="background:#0284c7; box-shadow:none;"></span>
                   <span id="mStatusText">Ready for Image</span>
                 </div>
-                <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;" id="mOutletMeta">Upload a photo to start AI audit</div>
+                <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px; word-break:break-all; overflow-wrap:anywhere;" id="mOutletMeta">Upload a photo
+                  to start AI audit</div>
               </div>
             </div>
 
             <!-- Score Dials Row -->
             <div class="score-dial-row">
               <div>
-                <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); font-weight:700; margin-bottom:2px;">
+                <div
+                  style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); font-weight:700; margin-bottom:2px;">
                   Overall Retail Execution Score
                 </div>
-                <div class="score-dial-value" id="mScoreVal">--<span style="font-size:18px; color:var(--text-muted); font-weight:600;">/100</span></div>
+                <div class="score-dial-value" id="mScoreVal">--<span
+                    style="font-size:18px; color:var(--text-muted); font-weight:600;">/100</span></div>
               </div>
               <div style="text-align:right;">
-                <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); font-weight:700; margin-bottom:2px;">
+                <div
+                  style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); font-weight:700; margin-bottom:2px;">
                   Arrangement Score
                 </div>
-                <div style="font-size:24px; font-weight:800; color:var(--primary); font-family:'JetBrains Mono';" id="mArrScore">--/100</div>
+                <div style="font-size:24px; font-weight:800; color:var(--primary); font-family:'JetBrains Mono';"
+                  id="mArrScore">--/100</div>
               </div>
             </div>
 
             <!-- Share of Shelf Progress Bar -->
             <div style="margin-top:16px;">
               <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700;">
-                <span style="color:var(--pran-red); display:flex; align-items:center; gap:5px;"><i data-lucide="package-check" class="icon-sm"></i> PRAN Share: <strong id="mPranSos">0%</strong></span>
-                <span style="color:var(--text-muted); display:flex; align-items:center; gap:5px;"><i data-lucide="boxes" class="icon-sm"></i> Competitors: <strong id="mCompSos">0%</strong></span>
+                <span style="color:var(--pran-red); display:flex; align-items:center; gap:5px;"><i
+                    data-lucide="package-check" class="icon-sm"></i> PRAN Share: <strong
+                    id="mPranSos">0%</strong></span>
+                <span style="color:var(--text-muted); display:flex; align-items:center; gap:5px;"><i data-lucide="boxes"
+                    class="icon-sm"></i> Competitors: <strong id="mCompSos">0%</strong></span>
               </div>
               <div class="sos-track">
                 <div class="sos-fill-pran" id="mSosFillPran" style="width:0%;"></div>
@@ -1111,7 +1170,8 @@
               </div>
               <div class="metric-chip">
                 <div class="metric-chip-label"><i data-lucide="badge-check" class="icon-sm"></i> Coverage</div>
-                <div class="metric-chip-val" style="font-size:14px; color:var(--purple);" id="mCatalogueCoverageChip">0 / 0</div>
+                <div class="metric-chip-val" style="font-size:14px; color:var(--purple);" id="mCatalogueCoverageChip">0
+                  / 0</div>
               </div>
             </div>
           </div>
@@ -1130,11 +1190,13 @@
             <div id="mChecklist">
               <div style="color:var(--text-muted); font-size:12px; padding:6px 0;">No corrective tasks pending.</div>
             </div>
-            <button class="btn-action-verify" id="btnVerifyCorrective" onclick="verifyCorrectiveActions()" style="display:none;">
+            <button class="btn-action-verify" id="btnVerifyCorrective" onclick="verifyCorrectiveActions()"
+              style="display:none;">
               <i data-lucide="check-circle-2" class="icon-sm"></i> Mark All Corrected &amp; Recalculate
             </button>
             <div class="delta-banner" id="mDeltaBanner">
-              <div style="font-weight:800; color:var(--success); font-size:13px; display:flex; align-items:center; gap:6px;">
+              <div
+                style="font-weight:800; color:var(--success); font-size:13px; display:flex; align-items:center; gap:6px;">
                 <i data-lucide="check-circle" class="icon-sm"></i> Remediation Verified!
               </div>
               <div style="font-size:12px; color:var(--text-body); margin-top:4px;" id="mDeltaText"></div>
@@ -1150,7 +1212,8 @@
               <span class="pill pill-red"><i data-lucide="flag" class="icon-sm"></i> Prioritized</span>
             </div>
             <div id="mIssuesList">
-              <div style="color:var(--text-muted); font-size:12px; padding:6px 0;">No critical issues flagged for this shelf.</div>
+              <div style="color:var(--text-muted); font-size:12px; padding:6px 0;">No critical issues flagged for this
+                shelf.</div>
             </div>
           </div>
 
@@ -1160,23 +1223,28 @@
               <h3 class="card-title" style="font-size:14px;">
                 <i data-lucide="boxes" style="color:var(--primary);"></i> Detected Shelf Products Explorer
               </h3>
-              <span class="pill pill-blue" id="mDetectedCountBadge"><i data-lucide="hash" class="icon-sm"></i> 0 Products Detected</span>
+              <span class="pill pill-blue" id="mDetectedCountBadge"><i data-lucide="hash" class="icon-sm"></i> 0
+                Products Detected</span>
             </div>
-            <div id="mDetectedProductsContainer" style="max-height:380px; overflow-y:auto; margin-bottom:14px; padding-right:4px;">
-              <div style="color:var(--text-muted); font-size:12px; padding:10px 0;">Individual product detections and catalogue matches will appear here.</div>
+            <div id="mDetectedProductsContainer"
+              style="max-height:380px; overflow-y:auto; margin-bottom:14px; padding-right:4px;">
+              <div style="color:var(--text-muted); font-size:12px; padding:10px 0;">Individual product detections and
+                catalogue matches will appear here.</div>
             </div>
 
             <!-- Inspect Raw JSON Card -->
             <div style="border-top:1px solid var(--border); padding-top:14px;">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <span style="font-size:12px; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:6px;">
+                <span
+                  style="font-size:12px; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:6px;">
                   <i data-lucide="code-2" class="icon-sm"></i> Vision Engine Output JSON
                 </span>
                 <button type="button" class="copy-btn" onclick="event.preventDefault(); copyRawJson(this)">
                   <i data-lucide="copy" class="icon-sm"></i> Copy JSON
                 </button>
               </div>
-              <pre id="mRawResponseJson" style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#e2e8f0; background:#0f172a; padding:12px; border-radius:10px; max-height:220px; overflow:auto; border:1px solid #1e293b;">Waiting for audit execution...</pre>
+              <pre id="mRawResponseJson"
+                style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#e2e8f0; background:#0f172a; padding:12px; border-radius:10px; max-height:220px; overflow:auto; border:1px solid #1e293b;">Waiting for audit execution...</pre>
             </div>
           </div>
 
@@ -1186,7 +1254,10 @@
               <i data-lucide="workflow" style="color:var(--primary);"></i> Perception to Decoupled Rules Architecture
             </h3>
             <p style="font-size:12px; color:var(--text-body); line-height:1.5;">
-              <strong>Decoupled Intelligence:</strong> The AI Vision engine performs pure shelf perception (product identification, facing counts, shelf tiers, pricing). Deterministic math calculates linear Share of Shelf (SOS), and the standalone Python rules engine applies weighted execution scoring across the 6 image-provable pillars.
+              <strong>Decoupled Intelligence:</strong> The AI Vision engine performs pure shelf perception (product
+              identification, facing counts, shelf tiers, pricing). Deterministic math calculates linear Share of Shelf
+              (SOS), and the standalone Python rules engine applies weighted execution scoring across the 6
+              image-provable pillars.
             </p>
           </div>
 
@@ -1227,7 +1298,8 @@
           </select>
         </div>
 
-        <button onclick="loadManagementDashboard()" class="pill pill-blue" style="cursor:pointer; padding:8px 16px; margin-left:auto; font-size:12.5px;">
+        <button onclick="loadManagementDashboard()" class="pill pill-blue"
+          style="cursor:pointer; padding:8px 16px; margin-left:auto; font-size:12.5px;">
           <i data-lucide="refresh-cw" class="icon-sm"></i> Refresh Dashboard
         </button>
       </div>
@@ -1238,26 +1310,40 @@
           <div class="kpi-icon-badge" style="background:var(--primary-light); color:var(--primary);">
             <i data-lucide="clipboard-list" class="icon-md"></i>
           </div>
-          <div style="font-size:11.5px; color:var(--text-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Total Audits</div>
-          <div style="font-size:28px; font-weight:800; color:var(--primary); font-family:'JetBrains Mono'; margin-top:4px;" id="kpiTotalAudits">0</div>
-          <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;" id="kpiTerritoryMeta">Across all active territories</div>
+          <div
+            style="font-size:11.5px; color:var(--text-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
+            Total Audits</div>
+          <div
+            style="font-size:28px; font-weight:800; color:var(--primary); font-family:'JetBrains Mono'; margin-top:4px;"
+            id="kpiTotalAudits">0</div>
+          <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;" id="kpiTerritoryMeta">Across all
+            active territories</div>
         </div>
 
         <div class="card">
           <div class="kpi-icon-badge" style="background:var(--pran-red-light); color:var(--pran-red);">
             <i data-lucide="pie-chart" class="icon-md"></i>
           </div>
-          <div style="font-size:11.5px; color:var(--text-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Average PRAN SOS</div>
-          <div style="font-size:28px; font-weight:800; color:var(--pran-red); font-family:'JetBrains Mono'; margin-top:4px;" id="kpiAvgSos">0.0%</div>
-          <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;" id="kpiSosTrend">Target: &ge; 40.0%</div>
+          <div
+            style="font-size:11.5px; color:var(--text-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
+            Average PRAN SOS</div>
+          <div
+            style="font-size:28px; font-weight:800; color:var(--pran-red); font-family:'JetBrains Mono'; margin-top:4px;"
+            id="kpiAvgSos">0.0%</div>
+          <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;" id="kpiSosTrend">Target: &ge; 40.0%
+          </div>
         </div>
 
         <div class="card">
           <div class="kpi-icon-badge" style="background:var(--purple-light); color:var(--purple);">
             <i data-lucide="trending-up" class="icon-md"></i>
           </div>
-          <div style="font-size:11.5px; color:var(--text-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Mean Execution Score</div>
-          <div style="font-size:28px; font-weight:800; color:var(--purple); font-family:'JetBrains Mono'; margin-top:4px;" id="kpiAvgScore">--<span style="font-size:16px;">/100</span></div>
+          <div
+            style="font-size:11.5px; color:var(--text-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
+            Mean Execution Score</div>
+          <div
+            style="font-size:28px; font-weight:800; color:var(--purple); font-family:'JetBrains Mono'; margin-top:4px;"
+            id="kpiAvgScore">--<span style="font-size:16px;">/100</span></div>
           <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;" id="kpiScoreBand">No audit data</div>
         </div>
 
@@ -1265,9 +1351,14 @@
           <div class="kpi-icon-badge" style="background:var(--success-light); color:var(--success);">
             <i data-lucide="shield-check" class="icon-md"></i>
           </div>
-          <div style="font-size:11.5px; color:var(--text-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Issue Resolution Rate</div>
-          <div style="font-size:28px; font-weight:800; color:var(--success); font-family:'JetBrains Mono'; margin-top:4px;" id="kpiResRate">0.0%</div>
-          <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;" id="kpiResolutionMeta">Corrective remediation loop</div>
+          <div
+            style="font-size:11.5px; color:var(--text-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
+            Issue Resolution Rate</div>
+          <div
+            style="font-size:28px; font-weight:800; color:var(--success); font-family:'JetBrains Mono'; margin-top:4px;"
+            id="kpiResRate">0.0%</div>
+          <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;" id="kpiResolutionMeta">Corrective
+            remediation loop</div>
         </div>
       </div>
 
@@ -1283,7 +1374,8 @@
             <span class="pill pill-blue"><i data-lucide="percent" class="icon-sm"></i> Visible Width %</span>
           </div>
           <div style="margin-bottom:12px;">
-            <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:6px;">
+            <div
+              style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:6px;">
               <span style="color:var(--pran-red);" id="txtMgmtSosPran">PRAN Overall SOS: 0.0%</span>
               <span style="color:var(--text-muted);" id="txtMgmtSosComp">Competitors: 0.0%</span>
             </div>
@@ -1301,7 +1393,10 @@
               </tr>
             </thead>
             <tbody id="tblCategoryShares">
-              <tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding:16px;">Loading category intelligence...</td></tr>
+              <tr>
+                <td colspan="3" style="text-align:center; color:var(--text-muted); padding:16px;">Loading category
+                  intelligence...</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -1326,7 +1421,10 @@
               </tr>
             </thead>
             <tbody id="tblMissingSkus">
-              <tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding:16px;">No stockouts flagged.</td></tr>
+              <tr>
+                <td colspan="3" style="text-align:center; color:var(--text-muted); padding:16px;">No stockouts flagged.
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -1339,10 +1437,12 @@
           <h2 class="card-title">
             <i data-lucide="map-pin" style="color:var(--danger);"></i> Exception-First Outlets (High Urgency Ranking)
           </h2>
-          <span class="pill pill-red"><i data-lucide="alert-triangle" class="icon-sm"></i> Immediate Route Action Required</span>
+          <span class="pill pill-red"><i data-lucide="alert-triangle" class="icon-sm"></i> Immediate Route Action
+            Required</span>
         </div>
         <p style="font-size:12px; color:var(--text-muted); margin-bottom:14px;">
-          Outlets ranked by algorithmic urgency index factoring in severe planogram non-compliance, missing priority SKUs, and lost golden-zone share.
+          Outlets ranked by algorithmic urgency index factoring in severe planogram non-compliance, missing priority
+          SKUs, and lost golden-zone share.
         </p>
         <div style="overflow-x:auto;">
           <table class="mgmt-table">
@@ -1358,7 +1458,10 @@
               </tr>
             </thead>
             <tbody id="tblExceptions">
-              <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:16px;">Loading exception routes...</td></tr>
+              <tr>
+                <td colspan="7" style="text-align:center; color:var(--text-muted); padding:16px;">Loading exception
+                  routes...</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -1375,16 +1478,20 @@
           <i data-lucide="microscope" style="color:var(--primary);"></i> Direct Vision &amp; Catalogue Matcher Lab
         </h2>
         <p style="font-size:12.5px; color:var(--text-body); line-height:1.5; margin-bottom:14px;">
-          Test raw perception endpoints against direct image URLs or Base64 payloads. The vision model analyzes bounding boxes and computes semantic catalogue cosine similarities in RAM without persisting database visits.
+          Test raw perception endpoints against direct image URLs or Base64 payloads. The vision model analyzes bounding
+          boxes and computes semantic catalogue cosine similarities in RAM without persisting database visits.
         </p>
         <div style="display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
-          <input type="text" id="scanDirectUrl" placeholder="Enter image URL or Base64..." class="filter-select" style="flex:1; min-width:280px;">
-          <button class="pill pill-blue" onclick="runDirectScan()" style="cursor:pointer; font-size:13px; padding:10px 18px;">
+          <input type="text" id="scanDirectUrl" placeholder="Enter image URL or Base64..." class="filter-select"
+            style="flex:1; min-width:280px;">
+          <button class="pill pill-blue" onclick="runDirectScan()"
+            style="cursor:pointer; font-size:13px; padding:10px 18px;">
             <i data-lucide="sparkles" class="icon-sm"></i> Analyze
           </button>
         </div>
         <div style="font-size:12px; font-weight:700; color:var(--text-main); margin-bottom:6px;">Analysis Result:</div>
-        <div id="scanDirectResult" style="font-size:12px; color:var(--text-muted); background:var(--bg-page); padding:16px; border-radius:10px; border:1px solid var(--border); min-height:100px; max-height:400px; overflow:auto;">
+        <div id="scanDirectResult"
+          style="font-size:12px; color:var(--text-muted); background:var(--bg-page); padding:16px; border-radius:10px; border:1px solid var(--border); min-height:100px; max-height:400px; overflow:auto;">
           Ready to run direct vision scan.
         </div>
       </div>
@@ -1399,16 +1506,20 @@
           <i data-lucide="package-search" style="color:var(--primary);"></i> PRAN ItemsDB Catalogue Explorer
         </h2>
         <p style="font-size:12.5px; color:var(--text-body); line-height:1.5; margin-bottom:14px;">
-          Search across 1,954 pre-indexed PRAN SKUs spanning Confectionery, Juices, Culinary, Spices, and Dairy. Tested with hybrid semantic BM25 and vector retrieval embeddings.
+          Search across 1,954 pre-indexed PRAN SKUs spanning Confectionery, Juices, Culinary, Spices, and Dairy. Tested
+          with hybrid semantic BM25 and vector retrieval embeddings.
         </p>
         <div style="display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap;">
-          <input type="text" id="catQuery" placeholder="Search product (e.g. Frooto, Lassi, Noodles)..." class="filter-select" style="flex:1; min-width:280px;" onkeydown="if(event.key==='Enter') searchCat()">
-          <button class="pill pill-blue" onclick="searchCat()" style="cursor:pointer; font-size:13px; padding:10px 18px;">
+          <input type="text" id="catQuery" placeholder="Search product (e.g. Frooto, Lassi, Noodles)..."
+            class="filter-select" style="flex:1; min-width:280px;" onkeydown="if(event.key==='Enter') searchCat()">
+          <button class="pill pill-blue" onclick="searchCat()"
+            style="cursor:pointer; font-size:13px; padding:10px 18px;">
             <i data-lucide="search" class="icon-sm"></i> Search Catalogue
           </button>
         </div>
         <div id="catResultsContainer" style="overflow-x:auto;">
-          <div style="color:var(--text-muted); font-size:12px; padding:10px 0;">Enter a keyword above to search active SKUs.</div>
+          <div style="color:var(--text-muted); font-size:12px; padding:10px 0;">Enter a keyword above to search active
+            SKUs.</div>
         </div>
       </div>
     </div>
@@ -1440,7 +1551,8 @@
           </div>
         </div>
         <p style="font-size:12.5px; color:var(--text-body); line-height:1.5;">
-          Real-time token accounting tracks AI Vision API calls. Images are processed in-memory without persistent cloud egress overhead. Costs are benchmarked against standard cloud model pricing.
+          Real-time token accounting tracks AI Vision API calls. Images are processed in-memory without persistent cloud
+          egress overhead. Costs are benchmarked against standard cloud model pricing.
         </p>
       </div>
     </div>
@@ -1450,68 +1562,68 @@
   <script>
     let currentAuditId = null;
 
-        // ── Rock-Solid Embedded SVG Icon Engine (Guarantees icons render 100% offline or with CDN) ──
+    // ── Rock-Solid Embedded SVG Icon Engine (Guarantees icons render 100% offline or with CDN) ──
     const ICONS_SVG_MAP = {
-  "activity": "<path d=\"M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2\" />",
-  "alert-circle": "<circle cx=\"12\" cy=\"12\" r=\"10\" /> <line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\" /> <line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\" />",
-  "alert-octagon": "<path d=\"M12 16h.01\" /> <path d=\"M12 8v4\" /> <path d=\"M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z\" />",
-  "alert-triangle": "<path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\" /> <path d=\"M12 9v4\" /> <path d=\"M12 17h.01\" />",
-  "arrow-down-left": "<path d=\"M17 7 7 17\" /> <path d=\"M17 17H7V7\" />",
-  "arrow-up-right": "<path d=\"M7 7h10v10\" /> <path d=\"M7 17 17 7\" />",
-  "badge-check": "<path d=\"M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z\" /> <path d=\"m16 9-5.5 5.5L8 12\" />",
-  "bar-chart-3": "<path d=\"M3 3v16a2 2 0 0 0 2 2h16\" /> <path d=\"M18 17V9\" /> <path d=\"M13 17V5\" /> <path d=\"M8 17v-3\" />",
-  "book-open": "<path d=\"M12 5v16\" /> <path d=\"M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z\" />",
-  "boxes": "<path d=\"M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z\" /> <path d=\"m7 16.5-4.74-2.85\" /> <path d=\"m7 16.5 5-3\" /> <path d=\"M7 16.5v5.17\" /> <path d=\"M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z\" /> <path d=\"m17 16.5-5-3\" /> <path d=\"m17 16.5 4.74-2.85\" /> <path d=\"M17 16.5v5.17\" /> <path d=\"M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z\" /> <path d=\"M12 8 7.26 5.15\" /> <path d=\"m12 8 4.74-2.85\" /> <path d=\"M12 13.5V8\" />",
-  "camera": "<path d=\"M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z\" /> <circle cx=\"12\" cy=\"13\" r=\"3\" />",
-  "check": "<path d=\"M20 6 9 17l-5-5\" />",
-  "check-circle": "<path d=\"M21.801 10A10 10 0 1 1 17 3.335\" /> <path d=\"m9 11 3 3L22 4\" />",
-  "check-circle-2": "<circle cx=\"12\" cy=\"12\" r=\"10\" /> <path d=\"m16 9-5.5 5.5L8 12\" />",
-  "check-square": "<path d=\"M21 10.656V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.344\" /> <path d=\"m9 11 3 3L22 4\" />",
-  "clipboard-list": "<rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\" ry=\"1\" /> <path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\" /> <path d=\"M12 11h4\" /> <path d=\"M12 16h4\" /> <path d=\"M8 11h.01\" /> <path d=\"M8 16h.01\" />",
-  "code-2": "<path d=\"m18 16 4-4-4-4\" /> <path d=\"m6 8-4 4 4 4\" /> <path d=\"m14.5 4-5 16\" />",
-  "coins": "<path d=\"M13.744 17.736a6 6 0 1 1-7.48-7.48\" /> <path d=\"M15 6h1v4\" /> <path d=\"m6.134 14.768.866-.5 2 3.464\" /> <circle cx=\"16\" cy=\"8\" r=\"6\" />",
-  "copy": "<rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\" ry=\"2\" /> <path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\" />",
-  "cpu": "<path d=\"M12 20v2\" /> <path d=\"M12 2v2\" /> <path d=\"M17 20v2\" /> <path d=\"M17 2v2\" /> <path d=\"M2 12h2\" /> <path d=\"M2 17h2\" /> <path d=\"M2 7h2\" /> <path d=\"M20 12h2\" /> <path d=\"M20 17h2\" /> <path d=\"M20 7h2\" /> <path d=\"M7 20v2\" /> <path d=\"M7 2v2\" /> <rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"2\" /> <rect x=\"8\" y=\"8\" width=\"8\" height=\"8\" rx=\"1\" />",
-  "dollar-sign": "<path d=\"M12 3v18\" /> <path d=\"M17 5H9.5a1 1 0 000 7h5a1 1 0 010 7H6\" />",
-  "eye": "<path d=\"M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0\" /> <circle cx=\"12\" cy=\"12\" r=\"3\" />",
-  "file-text": "<path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> <path d=\"M10 9H8\" /> <path d=\"M16 13H8\" /> <path d=\"M16 17H8\" />",
-  "filter": "<path d=\"M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z\" />",
-  "flag": "<path d=\"M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528\" />",
-  "flask-conical": "<path d=\"M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2\" /> <path d=\"M6.453 15h11.094\" /> <path d=\"M8.5 2h7\" />",
-  "gauge": "<path d=\"m12 14 4-4\" /> <path d=\"M3.34 19a10 10 0 1 1 17.32 0\" />",
-  "hash": "<line x1=\"4\" x2=\"20\" y1=\"9\" y2=\"9\" /> <line x1=\"4\" x2=\"20\" y1=\"15\" y2=\"15\" /> <line x1=\"10\" x2=\"8\" y1=\"3\" y2=\"21\" /> <line x1=\"16\" x2=\"14\" y1=\"3\" y2=\"21\" />",
-  "image": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\" /> <circle cx=\"9\" cy=\"9\" r=\"2\" /> <path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\" />",
-  "info": "<circle cx=\"12\" cy=\"12\" r=\"10\" /> <path d=\"M12 16v-4\" /> <path d=\"M12 8h.01\" />",
-  "layers": "<path d=\"M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z\" /> <path d=\"M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12\" /> <path d=\"M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17\" />",
-  "layout-dashboard": "<rect width=\"7\" height=\"9\" x=\"3\" y=\"3\" rx=\"1\" /> <rect width=\"7\" height=\"5\" x=\"14\" y=\"3\" rx=\"1\" /> <rect width=\"7\" height=\"9\" x=\"14\" y=\"12\" rx=\"1\" /> <rect width=\"7\" height=\"5\" x=\"3\" y=\"16\" rx=\"1\" />",
-  "loader": "<path d=\"M12 2v4\" /> <path d=\"m16.2 7.8 2.9-2.9\" /> <path d=\"M18 12h4\" /> <path d=\"m16.2 16.2 2.9 2.9\" /> <path d=\"M12 18v4\" /> <path d=\"m4.9 19.1 2.9-2.9\" /> <path d=\"M2 12h4\" /> <path d=\"m4.9 4.9 2.9 2.9\" />",
-  "map-pin": "<path d=\"M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0\" /> <circle cx=\"12\" cy=\"10\" r=\"3\" />",
-  "microscope": "<path d=\"M6 18h8\" /> <path d=\"M3 22h18\" /> <path d=\"M14 22a7 7 0 1 0 0-14h-1\" /> <path d=\"M9 14h2\" /> <path d=\"M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z\" /> <path d=\"M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3\" />",
-  "package-check": "<path d=\"M12 22V12\" /> <path d=\"m16 17 2 2 4-4\" /> <path d=\"M21 11.127V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.729l7 4a2 2 0 0 0 2 .001l1.32-.753\" /> <path d=\"M3.29 7 12 12l8.71-5\" /> <path d=\"m7.5 4.27 8.997 5.148\" />",
-  "package-search": "<path d=\"M12 22V12\" /> <path d=\"M20.27 18.27 22 20\" /> <path d=\"M21 10.498V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.729l7 4a2 2 0 0 0 2 .001l.98-.559\" /> <path d=\"M3.29 7 12 12l8.71-5\" /> <path d=\"m7.5 4.27 8.997 5.148\" /> <circle cx=\"18.5\" cy=\"16.5\" r=\"2.5\" />",
-  "percent": "<line x1=\"19\" x2=\"5\" y1=\"5\" y2=\"19\" /> <circle cx=\"6.5\" cy=\"6.5\" r=\"2.5\" /> <circle cx=\"17.5\" cy=\"17.5\" r=\"2.5\" />",
-  "pie-chart": "<path d=\"M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z\" /> <path d=\"M21.21 15.89A10 10 0 1 1 8 2.83\" />",
-  "refresh-cw": "<path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\" /> <path d=\"M21 3v5h-5\" /> <path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\" /> <path d=\"M8 16H3v5\" />",
-  "rotate-ccw": "<path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\" /> <path d=\"M3 3v5h5\" />",
-  "scan-line": "<path d=\"M3 7V5a2 2 0 0 1 2-2h2\" /> <path d=\"M17 3h2a2 2 0 0 1 2 2v2\" /> <path d=\"M21 17v2a2 2 0 0 1-2 2h-2\" /> <path d=\"M7 21H5a2 2 0 0 1-2-2v-2\" /> <path d=\"M7 12h10\" />",
-  "search": "<path d=\"m21 21-4.34-4.34\" /> <circle cx=\"11\" cy=\"11\" r=\"8\" />",
-  "shield-alert": "<path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\" /> <path d=\"M12 8v4\" /> <path d=\"M12 16h.01\" />",
-  "shield-check": "<path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\" /> <path d=\"m9 12 2 2 4-4\" />",
-  "sparkles": "<path d=\"M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z\" /> <path d=\"M20 2v4\" /> <path d=\"M22 4h-4\" /> <circle cx=\"4\" cy=\"20\" r=\"2\" />",
-  "store": "<path d=\"M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5\" /> <path d=\"M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244\" /> <path d=\"M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05\" />",
-  "tag": "<path d=\"M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z\" /> <circle cx=\"7.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\" />",
-  "trending-up": "<path d=\"M16 7h6v6\" /> <path d=\"m22 7-8.5 8.5-5-5L2 17\" />",
-  "upload-cloud": "<path d=\"M12 13v8\" /> <path d=\"M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242\" /> <path d=\"m8 17 4-4 4 4\" />",
-  "workflow": "<rect width=\"8\" height=\"8\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M7 11v4a2 2 0 0 0 2 2h4\" /> <rect width=\"8\" height=\"8\" x=\"13\" y=\"13\" rx=\"2\" />",
-  "zap": "<path d=\"M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z\" />"
-};
+      "activity": "<path d=\"M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2\" />",
+      "alert-circle": "<circle cx=\"12\" cy=\"12\" r=\"10\" /> <line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\" /> <line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\" />",
+      "alert-octagon": "<path d=\"M12 16h.01\" /> <path d=\"M12 8v4\" /> <path d=\"M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z\" />",
+      "alert-triangle": "<path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\" /> <path d=\"M12 9v4\" /> <path d=\"M12 17h.01\" />",
+      "arrow-down-left": "<path d=\"M17 7 7 17\" /> <path d=\"M17 17H7V7\" />",
+      "arrow-up-right": "<path d=\"M7 7h10v10\" /> <path d=\"M7 17 17 7\" />",
+      "badge-check": "<path d=\"M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z\" /> <path d=\"m16 9-5.5 5.5L8 12\" />",
+      "bar-chart-3": "<path d=\"M3 3v16a2 2 0 0 0 2 2h16\" /> <path d=\"M18 17V9\" /> <path d=\"M13 17V5\" /> <path d=\"M8 17v-3\" />",
+      "book-open": "<path d=\"M12 5v16\" /> <path d=\"M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z\" />",
+      "boxes": "<path d=\"M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z\" /> <path d=\"m7 16.5-4.74-2.85\" /> <path d=\"m7 16.5 5-3\" /> <path d=\"M7 16.5v5.17\" /> <path d=\"M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z\" /> <path d=\"m17 16.5-5-3\" /> <path d=\"m17 16.5 4.74-2.85\" /> <path d=\"M17 16.5v5.17\" /> <path d=\"M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z\" /> <path d=\"M12 8 7.26 5.15\" /> <path d=\"m12 8 4.74-2.85\" /> <path d=\"M12 13.5V8\" />",
+      "camera": "<path d=\"M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z\" /> <circle cx=\"12\" cy=\"13\" r=\"3\" />",
+      "check": "<path d=\"M20 6 9 17l-5-5\" />",
+      "check-circle": "<path d=\"M21.801 10A10 10 0 1 1 17 3.335\" /> <path d=\"m9 11 3 3L22 4\" />",
+      "check-circle-2": "<circle cx=\"12\" cy=\"12\" r=\"10\" /> <path d=\"m16 9-5.5 5.5L8 12\" />",
+      "check-square": "<path d=\"M21 10.656V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.344\" /> <path d=\"m9 11 3 3L22 4\" />",
+      "clipboard-list": "<rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\" ry=\"1\" /> <path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\" /> <path d=\"M12 11h4\" /> <path d=\"M12 16h4\" /> <path d=\"M8 11h.01\" /> <path d=\"M8 16h.01\" />",
+      "code-2": "<path d=\"m18 16 4-4-4-4\" /> <path d=\"m6 8-4 4 4 4\" /> <path d=\"m14.5 4-5 16\" />",
+      "coins": "<path d=\"M13.744 17.736a6 6 0 1 1-7.48-7.48\" /> <path d=\"M15 6h1v4\" /> <path d=\"m6.134 14.768.866-.5 2 3.464\" /> <circle cx=\"16\" cy=\"8\" r=\"6\" />",
+      "copy": "<rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\" ry=\"2\" /> <path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\" />",
+      "cpu": "<path d=\"M12 20v2\" /> <path d=\"M12 2v2\" /> <path d=\"M17 20v2\" /> <path d=\"M17 2v2\" /> <path d=\"M2 12h2\" /> <path d=\"M2 17h2\" /> <path d=\"M2 7h2\" /> <path d=\"M20 12h2\" /> <path d=\"M20 17h2\" /> <path d=\"M20 7h2\" /> <path d=\"M7 20v2\" /> <path d=\"M7 2v2\" /> <rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"2\" /> <rect x=\"8\" y=\"8\" width=\"8\" height=\"8\" rx=\"1\" />",
+      "dollar-sign": "<path d=\"M12 3v18\" /> <path d=\"M17 5H9.5a1 1 0 000 7h5a1 1 0 010 7H6\" />",
+      "eye": "<path d=\"M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0\" /> <circle cx=\"12\" cy=\"12\" r=\"3\" />",
+      "file-text": "<path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> <path d=\"M10 9H8\" /> <path d=\"M16 13H8\" /> <path d=\"M16 17H8\" />",
+      "filter": "<path d=\"M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z\" />",
+      "flag": "<path d=\"M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528\" />",
+      "flask-conical": "<path d=\"M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2\" /> <path d=\"M6.453 15h11.094\" /> <path d=\"M8.5 2h7\" />",
+      "gauge": "<path d=\"m12 14 4-4\" /> <path d=\"M3.34 19a10 10 0 1 1 17.32 0\" />",
+      "hash": "<line x1=\"4\" x2=\"20\" y1=\"9\" y2=\"9\" /> <line x1=\"4\" x2=\"20\" y1=\"15\" y2=\"15\" /> <line x1=\"10\" x2=\"8\" y1=\"3\" y2=\"21\" /> <line x1=\"16\" x2=\"14\" y1=\"3\" y2=\"21\" />",
+      "image": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\" /> <circle cx=\"9\" cy=\"9\" r=\"2\" /> <path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\" />",
+      "info": "<circle cx=\"12\" cy=\"12\" r=\"10\" /> <path d=\"M12 16v-4\" /> <path d=\"M12 8h.01\" />",
+      "layers": "<path d=\"M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z\" /> <path d=\"M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12\" /> <path d=\"M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17\" />",
+      "layout-dashboard": "<rect width=\"7\" height=\"9\" x=\"3\" y=\"3\" rx=\"1\" /> <rect width=\"7\" height=\"5\" x=\"14\" y=\"3\" rx=\"1\" /> <rect width=\"7\" height=\"9\" x=\"14\" y=\"12\" rx=\"1\" /> <rect width=\"7\" height=\"5\" x=\"3\" y=\"16\" rx=\"1\" />",
+      "loader": "<path d=\"M12 2v4\" /> <path d=\"m16.2 7.8 2.9-2.9\" /> <path d=\"M18 12h4\" /> <path d=\"m16.2 16.2 2.9 2.9\" /> <path d=\"M12 18v4\" /> <path d=\"m4.9 19.1 2.9-2.9\" /> <path d=\"M2 12h4\" /> <path d=\"m4.9 4.9 2.9 2.9\" />",
+      "map-pin": "<path d=\"M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0\" /> <circle cx=\"12\" cy=\"10\" r=\"3\" />",
+      "microscope": "<path d=\"M6 18h8\" /> <path d=\"M3 22h18\" /> <path d=\"M14 22a7 7 0 1 0 0-14h-1\" /> <path d=\"M9 14h2\" /> <path d=\"M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z\" /> <path d=\"M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3\" />",
+      "package-check": "<path d=\"M12 22V12\" /> <path d=\"m16 17 2 2 4-4\" /> <path d=\"M21 11.127V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.729l7 4a2 2 0 0 0 2 .001l1.32-.753\" /> <path d=\"M3.29 7 12 12l8.71-5\" /> <path d=\"m7.5 4.27 8.997 5.148\" />",
+      "package-search": "<path d=\"M12 22V12\" /> <path d=\"M20.27 18.27 22 20\" /> <path d=\"M21 10.498V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.729l7 4a2 2 0 0 0 2 .001l.98-.559\" /> <path d=\"M3.29 7 12 12l8.71-5\" /> <path d=\"m7.5 4.27 8.997 5.148\" /> <circle cx=\"18.5\" cy=\"16.5\" r=\"2.5\" />",
+      "percent": "<line x1=\"19\" x2=\"5\" y1=\"5\" y2=\"19\" /> <circle cx=\"6.5\" cy=\"6.5\" r=\"2.5\" /> <circle cx=\"17.5\" cy=\"17.5\" r=\"2.5\" />",
+      "pie-chart": "<path d=\"M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z\" /> <path d=\"M21.21 15.89A10 10 0 1 1 8 2.83\" />",
+      "refresh-cw": "<path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\" /> <path d=\"M21 3v5h-5\" /> <path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\" /> <path d=\"M8 16H3v5\" />",
+      "rotate-ccw": "<path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\" /> <path d=\"M3 3v5h5\" />",
+      "scan-line": "<path d=\"M3 7V5a2 2 0 0 1 2-2h2\" /> <path d=\"M17 3h2a2 2 0 0 1 2 2v2\" /> <path d=\"M21 17v2a2 2 0 0 1-2 2h-2\" /> <path d=\"M7 21H5a2 2 0 0 1-2-2v-2\" /> <path d=\"M7 12h10\" />",
+      "search": "<path d=\"m21 21-4.34-4.34\" /> <circle cx=\"11\" cy=\"11\" r=\"8\" />",
+      "shield-alert": "<path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\" /> <path d=\"M12 8v4\" /> <path d=\"M12 16h.01\" />",
+      "shield-check": "<path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\" /> <path d=\"m9 12 2 2 4-4\" />",
+      "sparkles": "<path d=\"M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z\" /> <path d=\"M20 2v4\" /> <path d=\"M22 4h-4\" /> <circle cx=\"4\" cy=\"20\" r=\"2\" />",
+      "store": "<path d=\"M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5\" /> <path d=\"M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244\" /> <path d=\"M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05\" />",
+      "tag": "<path d=\"M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z\" /> <circle cx=\"7.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\" />",
+      "trending-up": "<path d=\"M16 7h6v6\" /> <path d=\"m22 7-8.5 8.5-5-5L2 17\" />",
+      "upload-cloud": "<path d=\"M12 13v8\" /> <path d=\"M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242\" /> <path d=\"m8 17 4-4 4 4\" />",
+      "workflow": "<rect width=\"8\" height=\"8\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M7 11v4a2 2 0 0 0 2 2h4\" /> <rect width=\"8\" height=\"8\" x=\"13\" y=\"13\" rx=\"2\" />",
+      "zap": "<path d=\"M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z\" />"
+    };
 
     function initLucideIcons() {
       // 1. If Lucide UMD library is available, run its icon parser
       if (window.lucide && typeof window.lucide.createIcons === 'function') {
         try {
           window.lucide.createIcons();
-        } catch(e) {}
+        } catch (e) { }
       }
 
       // 2. Built-in Embedded SVG Renderer (Works 100% offline, without CDN or network delay)
@@ -1527,11 +1639,11 @@
           svg.setAttribute('stroke-width', '2');
           svg.setAttribute('stroke-linecap', 'round');
           svg.setAttribute('stroke-linejoin', 'round');
-          
+
           const classes = ['lucide', `lucide-${iconName}`];
           if (el.className) classes.push(el.className);
           svg.setAttribute('class', classes.join(' '));
-          
+
           if (el.getAttribute('style')) {
             svg.setAttribute('style', el.getAttribute('style'));
           }
@@ -1753,7 +1865,7 @@
       }
 
       // 3. Arrangement Score
-      let arrScore = (report.shelf_metrics && report.shelf_metrics.arrangement_score != null) 
+      let arrScore = (report.shelf_metrics && report.shelf_metrics.arrangement_score != null)
         ? Number(report.shelf_metrics.arrangement_score) : 0;
       if (arrScore > 0 && arrScore <= 10.0) {
         arrScore = arrScore * 10.0;
@@ -1792,7 +1904,7 @@
       const eyeEl = document.getElementById('mEyeLevelShareChip');
       if (eyeEl) eyeEl.textContent = eyeLevelPct + "%";
 
-      const gapsCount = (report.availability_alerts && report.availability_alerts.visible_gaps) 
+      const gapsCount = (report.availability_alerts && report.availability_alerts.visible_gaps)
         ? report.availability_alerts.visible_gaps.length : 0;
       const gapsEl = document.getElementById('mGapsCount');
       if (gapsEl) gapsEl.textContent = gapsCount;
@@ -1810,8 +1922,8 @@
         if (pricingData.length > 0) {
           pricingList.innerHTML = pricingData.map(p => {
             const isPromo = p.promotion_detected;
-            const promoBadge = isPromo 
-              ? `<span class="pill pill-green"><i data-lucide="sparkles" class="icon-sm"></i> Promo / Wobbler Active</span>` 
+            const promoBadge = isPromo
+              ? `<span class="pill pill-green"><i data-lucide="sparkles" class="icon-sm"></i> Promo / Wobbler Active</span>`
               : `<span class="pill" style="background:var(--bg-subtle); color:var(--text-muted); border:1px solid var(--border);"><i data-lucide="tag" class="icon-sm"></i> Standard Shelf Price</span>`;
             const priceVal = (p.visible_price != null) ? `RM ${Number(p.visible_price).toFixed(2)}` : 'N/A';
             return `
@@ -1891,7 +2003,7 @@
             const isPran = (p.brand || '').toUpperCase().includes('PRAN');
             const brandPillClass = isPran ? 'pill-red' : 'pill-amber';
             const brandName = p.brand || (isPran ? 'PRAN' : 'Competitor');
-            
+
             let thumbUrl = '';
             let matchConf = '';
             if (p.catalogue_suggestions && p.catalogue_suggestions.length > 0) {
@@ -1990,7 +2102,7 @@
       initLucideIcons();
     }
 
-function loadSampleWaferAudit() {
+    function loadSampleWaferAudit() {
       const errBanner = document.getElementById('mAuditErrorBanner');
       if (errBanner) errBanner.style.display = 'none';
 
@@ -2317,7 +2429,7 @@ function loadSampleWaferAudit() {
       renderAuditReport(sampleData);
     }
 
-    
+
 
     function loadSampleScenario() {
       const sampleUrl = "https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=800";
@@ -2489,7 +2601,7 @@ function loadSampleWaferAudit() {
                   <td style="color:var(--text-main); font-weight:600;">${escapeHtml(r['Item Name'] || r.item_name)}</td>
                   <td>${escapeHtml(r['Category Name'] || r.category_name)}</td>
                   <td>${escapeHtml(r['Sub Category Name'] || r.sub_category_name)}</td>
-                  <td style="color:var(--success); font-weight:700;">${Math.round((r.confidence || 0.85)*100)}%</td>
+                  <td style="color:var(--success); font-weight:700;">${Math.round((r.confidence || 0.85) * 100)}%</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -2509,7 +2621,7 @@ function loadSampleWaferAudit() {
       try {
         const r = await fetch('/survey/analyze', {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_url: url || "https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=800" })
         });
         const d = await r.json();

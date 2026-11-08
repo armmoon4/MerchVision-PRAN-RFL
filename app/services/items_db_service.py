@@ -64,6 +64,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
+from functools import lru_cache
+from app.brands import BASE_PRAN_BRANDS, build_brand_registry, is_competitor_brand, is_known_pran_token
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +85,52 @@ _model = None                               # SentenceTransformer singleton
 _reranker = None                            # CrossEncoder singleton (lazy)
 _bm25 = None                               # BM25Okapi index over all product names
 _bm25_corpus: List[List[str]] = []         # tokenised corpus (parallel to _catalogue)
+_catalogue_tokens: List[Set[str]] = []     # precomputed token sets for fast overlap
+_catalogue_clean_names: List[str] = []     # precomputed lowercase item names
+_catalogue_flavors: List[Set[frozenset]] = []  # precomputed flavor groups per row
+_catalogue_formats: List[Set[frozenset]] = []  # precomputed format groups per row
 _loaded: bool = False                       # True once load_items_db() has completed
+
+# Semantic flavor groups for FMCG product variant conflict detection
+FLAVOR_GROUPS: List[Set[str]] = [
+    {"chocolate", "choco", "cocoa"},
+    {"strawberry", "s.berry", "sberry", "straw"},
+    {"orange"},
+    {"pineapple", "p.apple", "papple"},
+    {"mango"},
+    {"vanilla", "vanila", "milk vanilla"},
+    {"milk"},
+    {"cheese"},
+    {"peanut"},
+    {"butter"},
+    {"spicy", "chilli", "chili", "hot"},
+    {"chicken", "ayam"},
+    {"curry", "kari"},
+    {"masala"},
+    {"lemon", "lime"},
+    {"litchi", "lychee"},
+    {"coconut"},
+    {"blueberry"},
+]
+
+# Physical product format groups for structural FMCG conflict detection
+FORMAT_GROUPS: List[Set[str]] = [
+    {"wafer", "wafers"},
+    {"biscuit", "biscuits", "cookie", "cookies", "cracker", "crackers"},
+    {"cake", "cakes"},
+    {"rusk", "toast"},
+    {"noodle", "noodles"},
+    {"juice", "drink", "lassi"},
+    {"chips", "crackers"},
+    {"oil"},
+    {"sauce", "ketchup"},
+    {"ghee", "butter"},
+]
+
+STOP_TOKENS: Set[str] = {
+    "pcs", "pack", "packet", "combo", "box", "and", "with", "in", "the", "of", "for", "by",
+    "at", "x", "gm", "g", "ml", "kg", "ltr", "size", "flavour", "flavor", "flavoured", "flavored"
+}
 
 # Index: sub_category_code -> list of row indices into _catalogue / _embeddings
 _subcat_index: Dict[str, List[int]] = {}
@@ -168,6 +215,17 @@ _ABBR_MAP: Dict[str, str] = {
     "falvoured": "flavoured",
     "falvor":    "flavor",
     "litchi":    "lychee",
+    "bisc":      "biscuit",
+    "bisk":      "bisk club",
+    "biskclub":  "bisk club",
+    "bisc-cream": "cream biscuit",
+    "bisc-cracker": "cracker biscuit",
+    "choclate":  "chocolate",
+    "chocolat":  "chocolate",
+    "strwberry": "strawberry",
+    "straw":     "strawberry",
+    "cury":      "curry",
+    "chikn":     "chicken",
 }
 
 
@@ -282,14 +340,35 @@ def _get_reranker():
 
 
 def _build_bm25_index(catalogue: List[CatalogueRow]) -> None:
-    """Build a BM25 index over product Item Names."""
-    global _bm25, _bm25_corpus
+    """Build a BM25 index over product Item Names and precompute token sets, flavors, formats."""
+    global _bm25, _bm25_corpus, _catalogue_tokens, _catalogue_clean_names, _catalogue_flavors, _catalogue_formats
     try:
         from rank_bm25 import BM25Okapi  # type: ignore
         logger.info("Building BM25 index for %d products ...", len(catalogue))
-        _bm25_corpus = [_tokenize(r.get("Item Name", "")) for r in catalogue]
+        _bm25_corpus = [_tokenize(r.get("Item Name", "") + " " + r.get("Sub Category Name", "")) for r in catalogue]
         _bm25 = BM25Okapi(_bm25_corpus)
-        logger.info("BM25 index built.")
+        
+        # Precompute candidate token sets and metadata for sub-millisecond retrieval
+        _catalogue_tokens = [set(_tokenize(r.get("Item Name", "") + " " + r.get("Sub Category Name", ""))) for r in catalogue]
+        _catalogue_clean_names = [r.get("Item Name", "").strip().lower() for r in catalogue]
+        
+        _catalogue_flavors = []
+        for tok_set in _catalogue_tokens:
+            f_set = set()
+            for g in FLAVOR_GROUPS:
+                if any(f in tok_set for f in g):
+                    f_set.add(frozenset(g))
+            _catalogue_flavors.append(f_set)
+            
+        _catalogue_formats = []
+        for tok_set in _catalogue_tokens:
+            fmt_set = set()
+            for g in FORMAT_GROUPS:
+                if any(f in tok_set for f in g):
+                    fmt_set.add(frozenset(g))
+            _catalogue_formats.append(fmt_set)
+            
+        logger.info("BM25 and precomputed token indexes built successfully for %d products.", len(catalogue))
     except ImportError:
         logger.warning(
             "rank_bm25 is not installed — BM25 disabled. "
@@ -297,23 +376,39 @@ def _build_bm25_index(catalogue: List[CatalogueRow]) -> None:
         )
         _bm25 = None
         _bm25_corpus = []
+        _catalogue_tokens = [set(_tokenize(r.get("Item Name", ""))) for r in catalogue]
+        _catalogue_clean_names = [r.get("Item Name", "").strip().lower() for r in catalogue]
+        _catalogue_flavors = [set() for _ in catalogue]
+        _catalogue_formats = [set() for _ in catalogue]
 
 
 def _bm25_scores(query: str, n: int) -> Optional[np.ndarray]:
     """
-    Return BM25 scores for *query* across all catalogue products.
-    Returns shape (N,) array normalised to [0,1], or None if BM25 unavailable.
+    Return calibrated BM25 scores for *query* normalized relative to theoretical full match.
+    Returns shape (N,) array in [0,1], or None if BM25 unavailable.
     """
     if _bm25 is None:
         return None
-    tokens = _tokenize(query)
+    tokens = [t for t in _tokenize(query) if t not in STOP_TOKENS]
+    if not tokens:
+        tokens = _tokenize(query)
     if not tokens:
         return None
-    scores: np.ndarray = np.array(_bm25.get_scores(tokens), dtype=np.float32)
-    max_score = scores.max()
-    if max_score > 0:
-        scores = scores / max_score   # normalise to [0, 1]
-    return scores
+    try:
+        from rank_bm25 import BM25Okapi  # type: ignore
+        scores: np.ndarray = np.array(_bm25.get_scores(tokens), dtype=np.float32)
+        # Normalize relative to an ideal document matching all query tokens
+        temp_bm25 = BM25Okapi([tokens])
+        perfect_score = float(temp_bm25.get_scores(tokens)[0])
+        if perfect_score > 0.01:
+            scores = np.clip(scores / perfect_score, 0.0, 1.0)
+        elif scores.max() > 0:
+            scores = scores / scores.max()
+        return scores
+    except Exception:
+        scores = np.array(_bm25.get_scores(tokens), dtype=np.float32)
+        m = scores.max()
+        return scores / m if m > 0 else scores
 
 
 # ---------------------------------------------------------------------------
@@ -546,8 +641,28 @@ def _hybrid_search_indices(
     if bm25_global is None:
         bm25_global = _bm25_scores(query, len(_catalogue))
 
+    # Extract query content tokens, flavors, and formats
+    q_content_tokens = [t for t in _tokenize(query) if t not in STOP_TOKENS]
+    if not q_content_tokens:
+        q_content_tokens = _tokenize(query)
+    q_tokens_set = set(q_content_tokens)
+    len_q = max(len(q_content_tokens), 1)
+
+    clean_q = query.strip().lower()
+
+    q_flavors = set()
+    for g in FLAVOR_GROUPS:
+        if any(f in q_tokens_set for f in g):
+            q_flavors.add(frozenset(g))
+
+    q_formats = set()
+    for g in FORMAT_GROUPS:
+        if any(f in q_tokens_set for f in g):
+            q_formats.add(frozenset(g))
+
+    # Dense semantic embedding similarity if available
+    faiss_sub = None
     if _embeddings is not None:
-        # --- FAISS scores for the subset ---
         if q_vec is None:
             try:
                 model = _get_model()
@@ -557,30 +672,55 @@ def _hybrid_search_indices(
                 ).astype(np.float32)
             except Exception:
                 q_vec = None
-
         if q_vec is not None:
-            sub_emb    = _embeddings[idx_array]
-            faiss_sub  = (sub_emb @ q_vec).astype(np.float32)  # shape (M,)
-            if bm25_global is not None:
-                bm25_sub = bm25_global[idx_array]              # shape (M,)
-                hybrid   = FAISS_WEIGHT * faiss_sub + BM25_WEIGHT * bm25_sub
-            else:
-                hybrid = faiss_sub
+            faiss_sub = (_embeddings[idx_array] @ q_vec).astype(np.float32)
+
+    # Calculate calibrated hybrid score across all candidates in subset
+    scores_list: List[float] = []
+    has_precomputed = len(_catalogue_tokens) == len(_catalogue)
+
+    for i, orig_idx in enumerate(candidate_indices):
+        bm25_val = float(bm25_global[orig_idx]) if (bm25_global is not None and orig_idx < len(bm25_global)) else 0.0
+
+        if has_precomputed:
+            it_tokens = _catalogue_tokens[orig_idx]
+            clean_it = _catalogue_clean_names[orig_idx]
+            it_flv = _catalogue_flavors[orig_idx]
+            it_fmt = _catalogue_formats[orig_idx]
         else:
-            hybrid = bm25_global[idx_array] if bm25_global is not None else np.zeros(len(idx_array), dtype=np.float32)
-    else:
-        # Fallback when embeddings are not available (BM25 or token matching)
-        if bm25_global is not None:
-            hybrid = bm25_global[idx_array]
+            row = _catalogue[orig_idx]
+            combined_txt = row.get("Item Name", "") + " " + row.get("Sub Category Name", "")
+            it_tokens = set(_tokenize(combined_txt))
+            clean_it = row.get("Item Name", "").strip().lower()
+            it_flv = {frozenset(g) for g in FLAVOR_GROUPS if any(f in it_tokens for f in g)}
+            it_fmt = {frozenset(g) for g in FORMAT_GROUPS if any(f in it_tokens for f in g)}
+
+        # Content Token Recall (Overlap)
+        overlap = len(q_tokens_set & it_tokens)
+        recall = overlap / len_q
+
+        # Base score
+        if faiss_sub is not None:
+            f_val = float(faiss_sub[i])
+            base = FAISS_WEIGHT * f_val + BM25_WEIGHT * (0.50 * bm25_val + 0.50 * recall)
         else:
-            q_tokens = set(_tokenize(query))
-            scores = []
-            for idx in candidate_indices:
-                it_name = _catalogue[idx].get("Item Name", "")
-                it_toks = set(_tokenize(it_name))
-                overlap = len(q_tokens & it_toks) / max(1, len(q_tokens)) if q_tokens else 0.0
-                scores.append(overlap)
-            hybrid = np.array(scores, dtype=np.float32)
+            base = 0.50 * bm25_val + 0.50 * recall
+
+        # 1. Exact phrase match boost
+        if clean_q in clean_it or clean_it in clean_q:
+            base += 0.15
+
+        # 2. Flavor conflict penalty (e.g. Chocolate vs Orange / Strawberry)
+        if q_flavors and it_flv and len(q_flavors & it_flv) == 0:
+            base -= 0.40
+
+        # 3. Format conflict penalty (e.g. Wafer vs Cake / Rusk)
+        if q_formats and it_fmt and len(q_formats & it_fmt) == 0:
+            base -= 0.35
+
+        scores_list.append(max(0.0, min(1.0, base)))
+
+    hybrid = np.array(scores_list, dtype=np.float32)
 
     # Sort descending by hybrid score
     sorted_order = np.argsort(hybrid)[::-1]
@@ -665,28 +805,32 @@ def _row_contains_brand(row: CatalogueRow, brand_tokens: Set[str]) -> bool:
 # Maps a trigger word (must appear in detected name) to a list of sub-category
 # or category name fragments to look for (case-insensitive substring match).
 _SUBCAT_KEYWORD_HINTS: List[Tuple[str, List[str]]] = [
-    ("lassi",       ["lassi"]),
-    ("yogurt",      ["lassi", "yogurt"]),
-    ("juice",       ["juice", "ju-", "ju ", "jus", "frooto"]),
-    ("drink",       ["drink", "dr-", "dr ", "ju-", "ju ", "jus", "frooto", "bever"]),
-    ("cocktail",    ["ju-", "jus", "pak"]),
-    ("fruit",       ["ju-", "jus", "pak", "frooto", "fruit"]),
-    ("noodle",      ["noodle"]),
-    ("biscuit",     ["bisc", "cookie", "cracke"]),
-    ("cookie",      ["bisc", "cookie"]),
-    ("oil",         ["oil"]),
-    ("soap",        ["soap"]),
-    ("shampoo",     ["shampoo"]),
-    ("rice",        ["rice"]),
-    ("flour",       ["flour", "atta"]),
-    ("milk",        ["milk", "dairy"]),
-    ("water",       ["water"]),
-    ("chips",       ["chips", "snack"]),
-    ("chocolate",   ["choc"]),
-    ("candy",       ["candy", "confect"]),
-    ("vinegar",     ["vinegar"]),
-    ("sauce",       ["sauce"]),
-    ("mustard",     ["mustard"]),
+    ("wafer",       ["wafer", "300"]),
+    ("bisk",        ["bisc", "wafer", "crack", "cookie", "145"]),
+    ("biscuit",     ["bisc", "cookie", "crack", "145"]),
+    ("cream",       ["bisc-cream", "cream", "272"]),
+    ("marie",       ["bisc-crack", "marie", "273", "274"]),
+    ("cracker",     ["bisc-crack", "cracker", "274"]),
+    ("shero",       ["bisc-cream", "272", "145"]),
+    ("mama",        ["wafer", "300"]),
+    ("europa",      ["wafer", "300", "146"]),
+    ("potata",      ["potata", "bisc", "snack", "130", "145"]),
+    ("toast",       ["toast", "147"]),
+    ("rusk",        ["toast", "rusk", "147"]),
+    ("cake",        ["cake", "bakery", "146"]),
+    ("lassi",       ["lassi", "120"]),
+    ("yogurt",      ["lassi", "yogurt", "120"]),
+    ("juice",       ["juice", "ju-", "ju ", "jus", "frooto", "110", "112"]),
+    ("frooto",      ["frooto", "jus", "juice", "060", "110"]),
+    ("drinko",      ["drinko", "015", "105"]),
+    ("drink",       ["drink", "dr-", "dr ", "ju-", "ju ", "jus", "frooto", "bever", "105", "116"]),
+    ("noodle",      ["noodle", "130"]),
+    ("oil",         ["oil", "140"]),
+    ("chips",       ["chips", "snack", "130"]),
+    ("chocolate",   ["choc", "272", "300"]),
+    ("candy",       ["candy", "confect", "160"]),
+    ("sauce",       ["sauce", "180"]),
+    ("mustard",     ["mustard", "140", "150"]),
 ]
 
 
@@ -949,6 +1093,13 @@ def _lookup_by_code(code: str) -> List[CatalogueRow]:
 # ---------------------------------------------------------------------------
 
 
+@lru_cache(maxsize=2048)
+def _cached_priority_search(clean: str, top_k: int) -> Tuple[Tuple[float, str], ...]:
+    """Fast in-memory cache returning tuple of (confidence, item_code) for 0ms repeat queries."""
+    res = _priority_search(clean, top_k=top_k, q_vec=None)
+    return tuple((round(score, 4), row.get("Item Code", "")) for score, row in res)
+
+
 def search_item_with_scores(
     product_name: str,
     top_k: int = DEFAULT_TOP_K,
@@ -974,6 +1125,17 @@ def search_item_with_scores(
 
     if clean.isdigit():
         return [(1.0, r) for r in _lookup_by_code(clean)[:top_k]]
+
+    if q_vec is None:
+        cached = _cached_priority_search(clean, top_k)
+        if cached:
+            results = []
+            for score, code in cached:
+                rows = _lookup_by_code(code)
+                if rows:
+                    results.append((score, rows[0]))
+            if results:
+                return results
 
     return _priority_search(clean, top_k=top_k, q_vec=q_vec)
 

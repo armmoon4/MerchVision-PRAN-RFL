@@ -277,7 +277,7 @@ async def audit_image_only_alias(
     else:
         body = await request.json()
         req_obj = AuditAnalyzeRequest(**body)
-        return await run_shelf_audit(request=req_obj, db=db)
+        return run_shelf_audit(payload=req_obj, db=db)
 
 
 # ── System & UI Endpoints ─────────────────────────────────────────────────────

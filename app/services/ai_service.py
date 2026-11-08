@@ -54,7 +54,7 @@ from google.genai.errors import APIError
 from openai import OpenAI, OpenAIError
 import httpx
 
-from app.brands import build_brand_registry, is_known_pran_token
+from app.brands import build_brand_registry, is_known_pran_token, is_competitor_brand
 from app.config import get_settings
 from app.schemas import (
     AuditSummary,
@@ -93,28 +93,30 @@ Rules:
 - NO markdown, NO JSON, NO explanations. If none visible, output single empty line."""
 
 MERCHANDISING_SYSTEM_PROMPT = """You are PRAN Merchandising AI, an expert retail shelf auditor in image-only mode.
-Your core task is: "What PRAN products are on this shelf and how much space do they take?"
+Your core task is visual perception of retail shelves: detect PRAN-portfolio and competitor products, count visible front facings, estimate Share of Shelf (SOS), classify vertical tiers, read price tags, and detect promotional wobblers.
 
-DETECTION RULES:
-1. Product Detection:
-   - Identify every visible product on the shelf.
-   - Set "brand_class":
-     * "pran": PRAN, RFL, Frooto, Drinko, Mr. Noodles, Potata, Bisk Club, Pran UP, Lassi, Cheer Up, Maxx, All Time, Badam/Dal Vaja, Chanachur, Toast, Rusk, Litchi, Semai, Mama Cube, or any product carrying the PRAN or RFL logo/branding.
-     * "competitor": Any non-PRAN commercial brand (e.g. Julie's, Nabati, Jacker, Oreo, Coca-Cola, Pepsi, Sprite, Maggi, Knorr, Nestle, Olympic).
-     * "unknown": Unidentifiable package or brand.
-   - Set "brand_evidence": Specific visual evidence observed (e.g., "logo: PRAN", "text: 'Frooto'", "pack design: Potata", "text: 'Julie's Love Letters'").
-   - Set "brand_confidence": Float between 0.0 and 1.0.
-   - Set "brand": Brand name (e.g., "PRAN", "Julie's", "Nabati", "Unknown").
-   - Set "product_name": Full product name with variant/flavor and size if readable.
-   - Set "facing_count": Integer count of front-facing packages.
-   - Set "shelf_level": "top", "eye_level" (golden zone, 1.2m-1.6m high), "middle", or "bottom".
-2. Fixture Category: Set "fixture_category" to one of: "biscuit", "beverage", "noodles", "culinary", "confectionery", or "general".
-3. Image Quality: Provide "image_quality": {"score": float 0.0-1.0, "issues": ["glare | blur | partial_view"]}.
-4. Shelf Share (SOS): Estimate pran_shelf_share_pct and competitor_shelf_share_pct (0-100) by visible linear shelf width.
-5. Pricing & Promotions: Extract visible price tags and promotional talkers/wobblers (e.g., 'BELI & MENANG' contest wobblers).
-6. Conciseness: Keep sentences tight. Omit filler text. Bounding boxes are not required (set to null).
+FMCG BRAND DETECTION RULES:
+1. PRAN Portfolio Brands (brand_class: "pran"):
+   - PRAN, Bisk Club, Mama Cube, Europa, Shero, Potata, Frooto, Drinko, Mr. Noodles, Pran UP, Lassi, Cheer Up, Maxx, Power, All Time, Jhatpat, Canton, Current, Latina, Lavilla, or any pack displaying the PRAN logo/seal.
+   - For "brand", specify the specific brand name (e.g., "Bisk Club", "PRAN", "Frooto", "Mr. Noodles", "Mama Cube").
+   - Bisk Club Packaging Guide: Cylindrical flow-wrap rolls, rectangular trays, and boxes. Distinguish flavor variants: Chocolate (Brown), Orange (Orange/Yellow), Strawberry (Pink/Red), Pineapple (Green/Yellow), Milk/Vanilla (Blue/White), Cream Cracker/Marie (Yellow/Tan).
+   - Mama Cube Wafers: Small cube-shaped boxes (Chocolate, Milk, Orange, Strawberry).
+2. Competitor Brands (brand_class: "competitor"):
+   - Commercial brands NOT owned by PRAN, e.g.: Julie's, Nabati, Jacker, Oreo, Munchy's, Hup Seng, Roma, Olympic, Coca-Cola, Pepsi, Sprite, Fanta, 7up, Maggi, Knorr, Nestle, Danone, V-Soy, Tropicana Twister, Yeo's.
+   - Do NOT classify competitor products as PRAN.
+3. Unknown (brand_class: "unknown"):
+   - Completely obscured or unidentifiable packaging with no readable text or recognizable logo.
 
-Return JSON adhering strictly to this structure:
+ENVIRONMENTAL ADAPTATION:
+- Read tilted, angled, and perspective-distorted packaging labels.
+- Compensate for lighting glare, reflections from plastic wrap, and shadows under shelf dividers.
+- For partially occluded items (behind shelf lip, price tag, or wobbler), identify product from visible brand typography, color schemes, and flavor badges.
+- Scan systematically shelf-by-shelf (top, eye_level, middle, bottom).
+
+OUTPUT INSTRUCTIONS:
+Return pure, valid JSON adhering strictly to the schema below. Keep strings concise. Do not generate markdown code fences or narrative essays.
+
+JSON SCHEMA:
 {
   "fixture_category": "biscuit | beverage | noodles | culinary | confectionery | general",
   "image_quality": {
@@ -124,38 +126,28 @@ Return JSON adhering strictly to this structure:
   "audit_summary": {
     "status": "needs_attention | acceptable | unable_to_determine",
     "image_quality": "good | fair | poor",
-    "key_findings": ["1-sentence finding", "1-sentence finding"]
+    "key_findings": ["1-sentence key visual finding", "1-sentence secondary finding"]
   },
   "shelf_metrics": {
     "pran_shelf_share_pct": null,
     "competitor_shelf_share_pct": null,
-    "empty_shelf_share_pct": null,
+    "empty_shelf_share_pct": 0.0,
     "pran_facing_count": null,
     "competitor_facing_count": null,
-    "arrangement_score": null,
+    "arrangement_score": 80.0,
     "measurement_type": "estimated"
   },
   "detected_products": [
     {
-      "brand": "PRAN or competitor brand",
+      "brand": "PRAN | Bisk Club | Frooto | Competitor Brand Name",
       "brand_class": "pran | competitor | unknown",
-      "brand_evidence": "text: 'Frooto' or logo: PRAN",
+      "brand_evidence": "text: 'Bisk Club' | logo: PRAN | pack design",
       "brand_confidence": 0.95,
-      "product_name": "Full product name",
-      "variant": "Flavor or pack type or null",
-      "sku": null,
+      "product_name": "Full product name with flavor/variant and size",
+      "variant": "Flavor or pack size or null",
       "facing_count": 1,
       "shelf_level": "top | eye_level | middle | bottom",
       "confidence": "high | medium | low"
-    }
-  ],
-  "issues_detected": [
-    {
-      "issue": "Short issue title",
-      "evidence": "1-sentence evidence",
-      "severity": "HIGH | MEDIUM | LOW",
-      "confidence": "high | medium | low",
-      "recommended_action": "1-sentence corrective action"
     }
   ],
   "availability_alerts": {
@@ -169,18 +161,12 @@ Return JSON adhering strictly to this structure:
       "visible_price": null,
       "promotion_detected": false,
       "pricing_violation": "not_evaluated",
-      "confidence": "high | medium | low"
+      "confidence": "high"
     }
   ],
-  "recommended_actions": ["1-sentence action"],
-  "management_insights": ["1-sentence strategic business insight"],
   "limitations": [],
   "human_verification_required": false
-}
-Rules:
-Return valid JSON only. Do not include Markdown, code fences, or text outside the JSON.
-Never invent product identities, SKUs, prices, percentages, inventory, or sales metrics.
-Set human_verification_required to true only if the shelf image is unclear or ambiguous."""
+}"""
 
 _FENCE_PATTERN = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 _OBJECT_PATTERN = re.compile(
@@ -357,11 +343,18 @@ def _detect_mime_type(data: bytes) -> str:
 
 def _optimize_image_bytes(raw_data: bytes, max_dim: int = 1024) -> tuple[bytes, str]:
     """
-    Downscale camera photos to max dimension (default 1024px) using Lanczos antialiasing.
+    Fast downscale camera photos to max dimension (default 1024px) using Lanczos antialiasing.
     Optimized vision preserves fine packaging text, labels, readable prices & barcodes
-    while reducing vision tokens and inference latency.
+    while minimizing vision tokens and latency (<10ms processing).
     """
     try:
+        # Fast path: already small JPEG with dimensions within max_dim
+        if len(raw_data) < 350_000 and raw_data.startswith(b"\xff\xd8\xff"):
+            with Image.open(io.BytesIO(raw_data)) as im:
+                w, h = im.size
+                if max(w, h) <= max_dim:
+                    return raw_data, "image/jpeg"
+
         with Image.open(io.BytesIO(raw_data)) as im:
             detected_format = (im.format or "JPEG").upper()
             if im.mode not in ("RGB", "L"):
@@ -370,7 +363,7 @@ def _optimize_image_bytes(raw_data: bytes, max_dim: int = 1024) -> tuple[bytes, 
             if max(w, h) > max_dim:
                 im.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
                 buf = io.BytesIO()
-                im.save(buf, format="JPEG", quality=85, optimize=True)
+                im.save(buf, format="JPEG", quality=85, optimize=False)
                 opt_data = buf.getvalue()
                 logger.info(
                     "Optimized image from %dx%d (%d bytes) to %dx%d (%d bytes)",
@@ -378,10 +371,9 @@ def _optimize_image_bytes(raw_data: bytes, max_dim: int = 1024) -> tuple[bytes, 
                 )
                 return opt_data, "image/jpeg"
 
-            # If image is large (>250KB) and not already JPEG/WebP, compress to quality 85 JPEG
             if len(raw_data) > 250_000 and detected_format not in ("JPEG", "WEBP"):
                 buf = io.BytesIO()
-                im.save(buf, format="JPEG", quality=85, optimize=True)
+                im.save(buf, format="JPEG", quality=85, optimize=False)
                 return buf.getvalue(), "image/jpeg"
 
             mime = "image/png" if detected_format == "PNG" else ("image/webp" if detected_format == "WEBP" else "image/jpeg")
@@ -1013,25 +1005,32 @@ def analyze_shelf_audit(
         confidence = str(item.get("confidence") or "high")
         bbox = item.get("bounding_box_normalized") or item.get("bbox")
 
-        # Split brand identity from SKU identity
-        is_pran_token = is_known_pran_token(p_name) or is_known_pran_token(raw_brand)
+        # Robust brand classification with domain guardrails
+        is_comp = is_competitor_brand(p_name) or is_competitor_brand(raw_brand)
+        is_pran = is_known_pran_token(p_name) or is_known_pran_token(raw_brand)
 
-        if raw_bclass == "pran" or (not raw_bclass and is_pran_token):
+        if is_comp:
+            brand_class = BrandClass.COMPETITOR
+            brand = raw_brand or "Competitor"
+        elif is_pran:
             brand_class = BrandClass.PRAN
-            # Guardrail: If model says PRAN but evidence is only "colour" or vague without text/logo/subbrand, downgrade to UNKNOWN
+            # Preserve actual brand / sub-brand name (e.g. Bisk Club, Frooto, Potata)
+            brand = raw_brand if (raw_brand and raw_brand.lower() not in ("", "unknown")) else "PRAN"
+        elif raw_bclass == "pran":
+            # Model stated PRAN: check if evidence is not purely vague color
             ev_lower = brand_evidence.lower()
             is_weak_evidence = (
                 ("colour" in ev_lower or "color" in ev_lower)
-                and not any(k in ev_lower for k in ["logo", "text", "name", "pack", "font", "label", "pran", "bisk", "frooto"])
-                and not is_pran_token
+                and not any(k in ev_lower for k in ["logo", "text", "name", "pack", "font", "label", "pran", "bisk", "frooto", "mama"])
             )
-            if is_weak_evidence or (brand_confidence < 0.40 and not is_pran_token):
+            if is_weak_evidence or brand_confidence < 0.40:
                 brand_class = BrandClass.UNKNOWN
                 brand_evidence = f"{brand_evidence} (downgraded to unknown: insufficient text/logo evidence)"
                 brand = "Unknown"
             else:
-                brand = "PRAN"
-        elif raw_bclass == "competitor" or (raw_brand.lower() not in ["", "unknown", "pran"] and not is_pran_token):
+                brand_class = BrandClass.PRAN
+                brand = raw_brand or "PRAN"
+        elif raw_bclass == "competitor" or (raw_brand.lower() not in ["", "unknown", "pran"]):
             brand_class = BrandClass.COMPETITOR
             brand = raw_brand or "Competitor"
         else:
@@ -1046,7 +1045,11 @@ def analyze_shelf_audit(
 
         if brand_class == BrandClass.PRAN:
             try:
-                matches = enrich_product(p_name, top_k=3)
+                # Include brand context in query if not already present
+                lookup_name = p_name
+                if brand and brand.lower() not in ("unknown", "competitor") and brand.lower() not in p_name.lower():
+                    lookup_name = f"{brand} {p_name}".strip()
+                matches = enrich_product(lookup_name, top_k=3)
                 if matches:
                     top_conf, top_row = matches[0]
                     second_conf = matches[1][0] if len(matches) > 1 else 0.0
